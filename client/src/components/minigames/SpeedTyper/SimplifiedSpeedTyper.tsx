@@ -1,9 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban, Award, TrendingUp, Zap } from 'lucide-react';
+import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
-import { useSpeedTyper, FallingWord, GameMode as StoreGameMode, Level } from '@/lib/stores/useSpeedTyper';
+
+// Define a type for falling words
+interface FallingWord {
+  id: string;
+  word: string;
+  x: number;  // horizontal position (%)
+  y: number;  // vertical position (%)
+  speed: number; // falling speed
+  color: string; // text color
+}
 
 // List of word colors with enhanced visual effects
 const wordColors = [
@@ -265,7 +274,7 @@ const generateId = (): string => {
 // Word spawn rates as multipliers
 type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 type Language = 'english' | 'türkçe';
-type GameMode = StoreGameMode; // Use the imported type
+type GameMode = 'falling' | 'linear';
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
@@ -273,27 +282,18 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const wordSpawnerRef = useRef<NodeJS.Timeout | null>(null);
   const animationRef = useRef<NodeJS.Timeout | null>(null);
-  const levelTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Game state from Zustand store
-  const {
-    score, setScore,
-    timeLeft, setTimeLeft,
-    fallingWords, setFallingWords, addFallingWord, removeFallingWord,
-    inputValue, setInputValue,
-    isGameOver, setGameOver,
-    isPaused, setPaused,
-    gameMode, setGameMode,
-    currentLevel, levels, isLevelCompleted, isLevelTransition,
-    targetScore,
-    setCurrentLevel, completeLevel, startNextLevel, setLevelTransition,
-    resetGame
-  } = useSpeedTyper();
-  
-  // Local state
+  // Game state
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(60);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
   const [spawnRate, setSpawnRate] = useState<SpawnRateMultiplier>(1);
   const [language, setLanguage] = useState<Language>('english');
+  const [gameMode, setGameMode] = useState<GameMode>('falling');
   
   // Linear mode specific state
   const [linearQueue, setLinearQueue] = useState<string[]>([]);
@@ -307,62 +307,35 @@ const SimplifiedSpeedTyper: React.FC = () => {
   // Sound effects
   const { playHit, playSuccess } = useAudio();
 
-  // Timer effect - using a different approach with refs
+  // Timer effect
   useEffect(() => {
-    console.log('Timer effect running, isPlaying:', isPlaying, 'isPaused:', isPaused);
-    
     // Only run the timer when game is playing and not paused
     if (isPlaying && !isPaused) {
-      console.log('Starting countdown - initial timeLeft:', timeLeft);
-      
-      // Clear any existing timer
-      if (timerRef.current) {
-        console.log('Clearing existing timer');
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      
-      // Store time in a ref to avoid dependency issues
-      const startTime = Date.now();
-      const initialTimeLeft = timeLeft;
-      
-      console.log('Setting up new timer with startTime:', startTime, 'initialTimeLeft:', initialTimeLeft);
-      
-      // Set up timer that relies on actual elapsed time, not interval callbacks
       timerRef.current = setInterval(() => {
-        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-        const newTimeLeft = Math.max(0, initialTimeLeft - elapsedSeconds);
-        
-        console.log('Timer tick - elapsed:', elapsedSeconds, 'new time left:', newTimeLeft);
-        
-        // Update display time
-        setTimeLeft(newTimeLeft);
-        
-        // Check if game over
-        if (newTimeLeft <= 0) {
-          console.log('Game over - time reached zero');
-          if (timerRef.current) clearInterval(timerRef.current);
-          if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
-          if (animationRef.current) clearInterval(animationRef.current);
-          setGameOver(true);
-          setIsPlaying(false);
-          playSuccess();
-        }
-      }, 200); // Check more frequently for smoother updates
+        setTimeLeft((time) => {
+          // Game over when time runs out
+          if (time <= 1) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+            if (animationRef.current) clearInterval(animationRef.current);
+            setIsGameOver(true);
+            setIsPlaying(false);
+            playSuccess();
+            return 0;
+          }
+          return time - 1;
+        });
+      }, 1000);
       
       // Clean up
       return () => {
         if (timerRef.current) {
-          console.log('Cleaning up timer interval');
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
       };
     }
-    
-    // Note: We intentionally don't include timeLeft in the dependency array
-    // because we're using a ref-based approach with Date.now()
-  }, [isPlaying, isPaused, playSuccess, setGameOver]);
+  }, [isPlaying, isPaused, playSuccess]);
 
   // Clean up function for all timers
   const cleanupTimers = () => {
@@ -408,221 +381,29 @@ const SimplifiedSpeedTyper: React.FC = () => {
     });
   };
   
-  // Initialize the level mode
-  const initializeLevelMode = () => {
-    // Start with level 1
-    setCurrentLevel(1);
-    
-    // Set spawn rate based on level
-    const level = levels[0];
-    const levelSpawnRate = level.spawnRate;
-    
-    // Convert to multiplier (assuming base is 1.0)
-    // For example, 2.0s interval becomes 0.5x multiplier
-    const multiplier = 1.0 / levelSpawnRate as SpawnRateMultiplier;
-    setSpawnRate(Math.min(Math.max(multiplier, 0.25), 3) as SpawnRateMultiplier);
-    
-    // Start with 60 seconds per level
-    setTimeLeft(60);
-    
-    // Start spawning words and animation
-    startWordSpawner();
-    startFallingAnimation();
-    
-    // Focus the input field
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-  };
-
-  // Handle level completion
-  const handleLevelCompletion = () => {
-    // Clean up timers
-    if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
-    if (animationRef.current) clearInterval(animationRef.current);
-    
-    // Set transition state
-    completeLevel();
-    setFallingWords([]);
-    
-    // Start a timer for level transition (10 seconds rest)
-    levelTimerRef.current = setTimeout(() => {
-      startNextLevel();
-      
-      // If game is not over after starting next level, start new words
-      if (!isGameOver) {
-        const nextLevel = currentLevel;
-        if (nextLevel <= levels.length) {
-          // Calculate new spawn rate based on level
-          const levelSpawnRate = levels[nextLevel - 1].spawnRate;
-          const multiplier = 1.0 / levelSpawnRate as SpawnRateMultiplier;
-          setSpawnRate(Math.min(Math.max(multiplier, 0.25), 3) as SpawnRateMultiplier);
-          
-          // Reset time for next level
-          setTimeLeft(60);
-          
-          // Start word spawning again
-          startWordSpawner();
-          startFallingAnimation();
-          
-          // Focus input
-          setTimeout(() => {
-            inputRef.current?.focus();
-          }, 0);
-        }
-      }
-    }, 10000); // 10 seconds rest between levels
-  };
-  
-  // Effect to check for level completion
-  useEffect(() => {
-    // Log data for debugging
-    if (gameMode === 'levels') {
-      console.log('Level mode data:', {
-        currentLevel,
-        targetScore: currentLevel > 0 && currentLevel <= levels.length 
-          ? levels[currentLevel - 1].requiredPoints 
-          : null,
-        score,
-        isLevelCompleted,
-        isLevelTransition,
-        isPlaying
-      });
-      
-      // Check if we reached the required score for current level
-      if (isPlaying && !isLevelCompleted && currentLevel > 0 && currentLevel <= levels.length) {
-        const requiredPoints = levels[currentLevel - 1].requiredPoints;
-        if (score >= requiredPoints) {
-          console.log(`Level ${currentLevel} completed! Score: ${score}, Required: ${requiredPoints}`);
-          completeLevel(); // Mark level as completed, which will trigger handling in the next effect
-        }
-      }
-    }
-  }, [gameMode, isPlaying, currentLevel, score, isLevelCompleted]);
-  
-  // Effect to handle level transition
-  useEffect(() => {
-    if (isPlaying && gameMode === 'levels' && isLevelCompleted) {
-      console.log("Level completed, handling transition");
-      handleLevelCompletion();
-    }
-  }, [isLevelCompleted, gameMode, isPlaying]);
-  
   // Start the game
   const handleStartGame = () => {
-    console.log('Starting game with super simplified approach');
-    
-    // Clear any existing timers
-    cleanupTimers();
-    
-    // Reset core game state
-    resetGame();
+    // Reset state
+    setScore(0);
+    setTimeLeft(60);
+    setIsGameOver(false);
+    setIsPaused(false);
+    setFallingWords([]);
+    setLinearQueue([]);
+    setCurrentLinearWord('');
+    setInputValue('');
     setIsPlaying(true);
     
-    // Set up a single game loop for all game modes
-    const gameLoop = () => {
-      if (!isPaused && isPlaying) {
-        // Update falling words (only in falling/levels mode)
-        if (gameMode === 'falling' || gameMode === 'levels') {
-          // Every 10 loops (approximately 1 second), spawn a new word
-          if (Math.random() < (0.2 * spawnRate)) {
-            console.log("Spawning new word");
-            const newWord: FallingWord = {
-              id: generateId(),
-              word: getRandomWord(language),
-              x: Math.random() * 80 + 10, // Between 10% and 90% horizontally
-              y: 0, // Start at the top
-              speed: 0.5, // Fixed speed
-              color: wordColors[Math.floor(Math.random() * wordColors.length)]
-            };
-            
-            // Direct update to falling words
-            const updatedWords = [...fallingWords, newWord];
-            setFallingWords(updatedWords);
-          }
-          
-          // Move all existing words down
-          const movedWords = fallingWords.map((word: FallingWord) => ({
-            ...word,
-            y: word.y + 0.5 // Fixed movement speed
-          }));
-          
-          // Remove words that have fallen off screen
-          const remainingWords = movedWords.filter((word: FallingWord) => word.y < 100);
-          
-          // Penalize for lost words
-          if (remainingWords.length < movedWords.length) {
-            const pointsToDeduct = (movedWords.length - remainingWords.length) * 5;
-            setScore(Math.max(0, score - pointsToDeduct));
-          }
-          
-          // Update falling words state
-          setFallingWords(remainingWords);
-        }
-      }
-    };
-    
-    // Set up a simpler game mode initialization
     if (gameMode === 'falling') {
-      // Reset and start falling mode
-      setTimeLeft(60);
-      setFallingWords([
-        {
-          id: generateId(),
-          word: getRandomWord(language),
-          x: 30, // Left side
-          y: 10, // Near top
-          speed: 0.5,
-          color: wordColors[0]
-        },
-        {
-          id: generateId(),
-          word: getRandomWord(language),
-          x: 70, // Right side
-          y: 15, // Near top
-          speed: 0.5,
-          color: wordColors[1]
-        }
-      ]);
+      // Start spawning words
+      startWordSpawner();
       
-      // Start the game loop
-      animationRef.current = setInterval(gameLoop, 100);
-      
-    } else if (gameMode === 'linear') {
-      // Reset linear mode
-      setTimeLeft(60);
-      setLinearQueue([]);
-      setCurrentLinearWord('');
+      // Start falling animation
+      startFallingAnimation();
+    } else {
+      // Initialize linear mode
       initializeLinearMode();
-    } else if (gameMode === 'levels') {
-      // Initialize level mode
-      initializeLevelMode();
-      
-      // Start the animation for falling words in level mode
-      animationRef.current = setInterval(gameLoop, 100);
     }
-    
-    // Start the timer
-    const startTime = Date.now();
-    timerRef.current = setInterval(() => {
-      if (!isPaused && isPlaying) {
-        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-        const newTimeLeft = Math.max(0, 60 - elapsedSeconds);
-        
-        // Update time
-        setTimeLeft(newTimeLeft);
-        
-        // Check for game over
-        if (newTimeLeft <= 0) {
-          // Game over
-          console.log('Game over - time reached zero');
-          setGameOver(true);
-          setIsPlaying(false);
-          playSuccess();
-          cleanupTimers();
-        }
-      }
-    }, 1000);
     
     // Focus the input field
     setTimeout(() => {
@@ -630,115 +411,74 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }, 0);
   };
   
-  // Unified game loop that handles both word spawning and animation
-  const startGameLoop = () => {
-    // Clean up any existing timers
-    if (animationRef.current) {
-      clearInterval(animationRef.current);
-      animationRef.current = null;
-    }
+  // Start the word spawner
+  const startWordSpawner = () => {
+    // Clear any existing spawner
+    if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
     
-    if (wordSpawnerRef.current) {
-      clearInterval(wordSpawnerRef.current);
-      wordSpawnerRef.current = null;
-    }
-    
-    console.log('Starting new unified game loop');
-    
-    // Create initial words immediately
-    const initialWords: FallingWord[] = [
-      {
-        id: generateId(),
-        word: getRandomWord(language),
-        x: 25 + Math.random() * 10, // Left side
-        y: 5, // Near top
-        speed: 0.5,
-        color: wordColors[0]
-      },
-      {
-        id: generateId(),
-        word: getRandomWord(language),
-        x: 65 + Math.random() * 10, // Right side
-        y: 10, // Near top
-        speed: 0.5,
-        color: wordColors[1]
-      }
-    ];
-    
-    // Set initial words
-    setFallingWords(initialWords);
-    
-    // Calculate spawn rate
-    const baseSpawnTime = 2000; // 2 seconds base time for 1x spawn rate
+    // Calculate spawn interval based on the multiplier (in milliseconds)
+    // Base time is 1 second for 1x spawn rate
+    const baseSpawnTime = 1000; // 1 second base time for 1x spawn rate
     const spawnInterval = Math.round(baseSpawnTime / spawnRate);
-    let lastSpawnTime = Date.now();
     
-    // Fixed game tick interval (60ms ≈ 15fps)
-    const tickInterval = 60;
-    
-    // Main game loop
-    const gameLoop = () => {
-      if (!isPaused && isPlaying) {
-        const now = Date.now();
+    // Start spawning words
+    wordSpawnerRef.current = setInterval(() => {
+      if (!isPaused) {
+        // Create a new word using the current language
+        const newWord: FallingWord = {
+          id: generateId(),
+          word: getRandomWord(language),
+          x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
+          y: 0, // Start at the top
+          speed: 1 * spawnRate, // Speed scales with spawn rate
+          color: wordColors[Math.floor(Math.random() * wordColors.length)]
+        };
         
-        // PART 1: Check if it's time to spawn a new word
-        if (now - lastSpawnTime >= spawnInterval) {
-          // Create a new word
-          const newWord: FallingWord = {
-            id: generateId(),
-            word: getRandomWord(language),
-            x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
-            y: 0, // Start at the top
-            speed: 0.5, // Fixed speed for consistent falling
-            color: wordColors[Math.floor(Math.random() * wordColors.length)]
-          };
-          
-          console.log('Spawning new word:', newWord.word);
-          
-          // Direct update
-          const updatedWords = [...fallingWords, newWord];
-          setFallingWords(updatedWords);
-          
-          // Update last spawn time
-          lastSpawnTime = now;
-        }
-        
-        // PART 2: Move all words down
-        // Move each word down by creating a new array with updated positions
-        const updatedPositions = fallingWords.map((word: FallingWord) => ({
-          ...word,
-          y: word.y + 0.5 // Fixed movement amount
-        }));
-        
-        // Remove words that have fallen off the bottom
-        const remainingWords = updatedPositions.filter((word: FallingWord) => word.y < 100);
-        
-        // Handle lost words
-        if (remainingWords.length < updatedPositions.length) {
-          const lostCount = updatedPositions.length - remainingWords.length;
-          const newScore = Math.max(0, score - (5 * lostCount));
-          setScore(newScore);
-        }
-        
-        // Update state with new positions
-        setFallingWords(remainingWords);
+        // Add the word to the falling words array
+        setFallingWords(words => [...words, newWord]);
       }
-    };
-    
-    // Start the game loop
-    animationRef.current = setInterval(gameLoop, tickInterval);
+    }, spawnInterval);
     
     return () => {
-      if (animationRef.current) {
-        clearInterval(animationRef.current);
-        animationRef.current = null;
-      }
+      if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
     };
   };
   
-  // Simplified function names for backward compatibility
-  const startWordSpawner = startGameLoop;
-  const startFallingAnimation = () => {}; // No-op, as everything is handled by the game loop
+  // Animate falling words
+  const startFallingAnimation = () => {
+    // Clear any existing animation
+    if (animationRef.current) clearInterval(animationRef.current);
+    
+    // Set animation frame rate
+    const frameRate = 50; // ms per frame
+    
+    // Start animation loop
+    animationRef.current = setInterval(() => {
+      if (!isPaused) {
+        setFallingWords(words => {
+          // Move each word down based on its speed
+          const updatedWords = words.map(word => ({
+            ...word,
+            y: word.y + word.speed
+          }));
+          
+          // Remove words that have fallen off the bottom
+          const remainingWords = updatedWords.filter(word => word.y < 100);
+          
+          // If a word was removed (reached the bottom), reduce score slightly
+          if (remainingWords.length < updatedWords.length) {
+            setScore(s => Math.max(0, s - 5));
+          }
+          
+          return remainingWords;
+        });
+      }
+    }, frameRate);
+    
+    return () => {
+      if (animationRef.current) clearInterval(animationRef.current);
+    };
+  };
   
   // Handle input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -750,8 +490,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
     e.preventDefault();
     
     if (inputValue.trim()) {
-      if (gameMode === 'falling' || gameMode === 'levels') {
-        // Falling words mode or level mode: check for any matching word
+      if (gameMode === 'falling') {
+        // Falling words mode: check for any matching word
         const matchedWordIndex = fallingWords.findIndex(
           word => word.word.toLowerCase() === inputValue.toLowerCase()
         );
@@ -761,27 +501,14 @@ const SimplifiedSpeedTyper: React.FC = () => {
           const matchedWord = fallingWords[matchedWordIndex];
           
           // Remove the matched word
-          const updatedWords = fallingWords.filter((w: FallingWord) => w.id !== matchedWord.id);
-          setFallingWords(updatedWords);
+          setFallingWords(words => words.filter(w => w.id !== matchedWord.id));
           
           // Add points based on word length and spawn rate
           const basePoints = matchedWord.word.length * 5;
           // Higher spawn rate gives more points
           const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
           
-          // Calculate new score
-          const pointsToAdd = Math.floor(basePoints * spawnRateMultiplier);
-          const newScore = score + pointsToAdd;
-          setScore(newScore);
-          
-          // Check if we completed the level in level mode
-          if (gameMode === 'levels' && !isLevelCompleted && currentLevel > 0 && currentLevel <= levels.length) {
-            const requiredPoints = levels[currentLevel - 1].requiredPoints;
-            if (newScore >= requiredPoints) {
-              console.log(`Level ${currentLevel} completed! Score: ${newScore}, Required: ${requiredPoints}`);
-              // The level is completed - this will trigger the useEffect that handles level transition
-            }
-          }
+          setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
           
           // Play hit sound
           playHit();
@@ -794,9 +521,11 @@ const SimplifiedSpeedTyper: React.FC = () => {
           // Add points based on word length
           const basePoints = currentLinearWord.length * 5;
           
-          // Update score - no time bonus as per requirements
-          const newScore = score + basePoints;
-          setScore(newScore);
+          // Add time bonus - add 1 second for each letter in the word
+          setTimeLeft(time => time + currentLinearWord.length);
+          
+          // Update score
+          setScore(s => s + basePoints);
           
           // Play hit sound
           playHit();
@@ -837,7 +566,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
   
   // Toggle pause
   const handleTogglePause = () => {
-    setPaused(!isPaused);
+    setIsPaused(!isPaused);
     
     // Focus input when resuming
     if (isPaused) {
@@ -856,7 +585,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
       if (animationRef.current) clearInterval(animationRef.current);
       
       // Set game over state
-      setGameOver(true);
+      setIsGameOver(true);
       setIsPlaying(false);
       playSuccess(); // Play success sound as feedback
     }
@@ -915,26 +644,6 @@ const SimplifiedSpeedTyper: React.FC = () => {
           <Trophy className="h-5 w-5 text-yellow-500" />
           <span className="font-semibold">Score:</span>
           <span className="text-lg font-bold text-primary">{score}</span>
-          
-          {/* Display level info in level mode */}
-          {gameMode === 'levels' && (
-            <div className="ml-4 flex items-center gap-2">
-              <Zap className="h-5 w-5 text-purple-500" />
-              <span className="font-semibold">{language === 'english' ? 'Level:' : 'Seviye:'}</span>
-              <span className="text-lg font-bold text-purple-600">{currentLevel}</span>
-              {isLevelCompleted ? (
-                <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">
-                  {language === 'english' ? 'Completed!' : 'Tamamlandı!'}
-                </span>
-              ) : (
-                <span className="ml-1 text-xs text-muted-foreground">
-                  {language === 'english' 
-                    ? `Target: ${currentLevel > 0 && currentLevel <= levels.length ? levels[currentLevel - 1].requiredPoints : '-'}` 
-                    : `Hedef: ${currentLevel > 0 && currentLevel <= levels.length ? levels[currentLevel - 1].requiredPoints : '-'}`}
-                </span>
-              )}
-            </div>
-          )}
         </div>
         
         <div className="flex items-center gap-2">
@@ -951,8 +660,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
         {isPlaying ? (
           <>
             {/* Game display based on mode */}
-            {gameMode === 'falling' || gameMode === 'levels' ? (
-              // Falling words mode (used for both falling and level modes)
+            {gameMode === 'falling' ? (
+              // Falling words mode
               <div className="falling-words-container absolute inset-0">
                 {fallingWords.map((word) => (
                   <div
@@ -1009,8 +718,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
                   {/* Instructions */}
                   <div className="mt-8 text-sm opacity-75">
                     {language === 'english'
-                      ? 'Type the word above and press Enter to continue!'
-                      : 'Yukarıdaki kelimeyi yazın ve Enter tuşuna basın!'
+                      ? 'Type the word above and press Enter → Get more time → Keep going!'
+                      : 'Yukarıdaki kelimeyi yazın ve Enter tuşuna basın → Daha fazla zaman kazanın → Devam edin!'
                     }
                   </div>
                 </div>
@@ -1190,7 +899,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </span>
           
           <div className="flex items-center justify-center border rounded-md overflow-hidden h-9">
-            {(['falling', 'linear', 'levels'] as const).map((mode) => (
+            {(['falling', 'linear'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => handleGameModeChange(mode)}
@@ -1206,16 +915,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
                 }`}
               >
                 {language === 'english'
-                  ? mode === 'falling' 
-                    ? 'Falling Words' 
-                    : mode === 'linear' 
-                      ? 'Linear Train' 
-                      : 'Level Mode'
-                  : mode === 'falling' 
-                    ? 'Düşen Kelimeler' 
-                    : mode === 'linear' 
-                      ? 'Sıralı Kelimeler' 
-                      : 'Seviye Modu'
+                  ? mode === 'falling' ? 'Falling Words' : 'Linear Train'
+                  : mode === 'falling' ? 'Düşen Kelimeler' : 'Sıralı Kelimeler'
                 }
               </button>
             ))}
