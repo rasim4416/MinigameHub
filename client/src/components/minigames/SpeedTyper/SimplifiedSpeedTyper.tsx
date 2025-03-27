@@ -87,7 +87,8 @@ const generateId = (): string => {
   return Math.random().toString(36).substring(2, 9);
 };
 
-type Difficulty = 'easy' | 'medium' | 'hard';
+// Word spawn rates as multipliers
+type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 type Language = 'english' | 'türkçe';
 
 const SimplifiedSpeedTyper: React.FC = () => {
@@ -105,7 +106,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const [isGameOver, setIsGameOver] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [spawnRate, setSpawnRate] = useState<SpawnRateMultiplier>(1);
   const [language, setLanguage] = useState<Language>('english');
   
   // UI styles based on language
@@ -190,14 +191,10 @@ const SimplifiedSpeedTyper: React.FC = () => {
     // Clear any existing spawner
     if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
     
-    // Determine spawn rate based on difficulty
-    let spawnRate: number;
-    switch (difficulty) {
-      case 'easy': spawnRate = 3000; break; // Spawn every 3 seconds
-      case 'hard': spawnRate = 1000; break; // Spawn every 1 second
-      case 'medium': 
-      default: spawnRate = 2000; break; // Spawn every 2 seconds
-    }
+    // Calculate spawn interval based on the multiplier (in milliseconds)
+    // Base time is 1 second for 1x spawn rate
+    const baseSpawnTime = 1000; // 1 second base time for 1x spawn rate
+    const spawnInterval = Math.round(baseSpawnTime / spawnRate);
     
     // Start spawning words
     wordSpawnerRef.current = setInterval(() => {
@@ -208,16 +205,14 @@ const SimplifiedSpeedTyper: React.FC = () => {
           word: getRandomWord(language),
           x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
           y: 0, // Start at the top
-          speed: difficulty === 'easy' ? 0.5 : 
-                 difficulty === 'medium' ? 1 : 
-                 1.5, // Speed based on difficulty
+          speed: 1 * spawnRate, // Speed scales with spawn rate
           color: wordColors[Math.floor(Math.random() * wordColors.length)]
         };
         
         // Add the word to the falling words array
         setFallingWords(words => [...words, newWord]);
       }
-    }, spawnRate);
+    }, spawnInterval);
     
     return () => {
       if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
@@ -282,14 +277,12 @@ const SimplifiedSpeedTyper: React.FC = () => {
         // Remove the matched word
         setFallingWords(words => words.filter(w => w.id !== matchedWord.id));
         
-        // Add points based on word length and difficulty
+        // Add points based on word length and spawn rate
         const basePoints = matchedWord.word.length * 5;
-        const difficultyMultiplier = 
-          difficulty === 'easy' ? 1 :
-          difficulty === 'medium' ? 1.5 :
-          2; // Hard
+        // Higher spawn rate gives more points
+        const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
         
-        setScore(s => s + Math.floor(basePoints * difficultyMultiplier));
+        setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
         
         // Play hit sound
         playHit();
@@ -312,10 +305,19 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }
   };
   
-  // Handle difficulty change
-  const handleDifficultyChange = (level: Difficulty) => {
+  // Handle spawn rate change
+  const handleSpawnRateChange = (rate: SpawnRateMultiplier) => {
     if (!isPlaying || isPaused) {
-      setDifficulty(level);
+      setSpawnRate(rate);
+      
+      // Restart word spawner if game is paused
+      if (isPlaying && isPaused) {
+        if (wordSpawnerRef.current) {
+          clearInterval(wordSpawnerRef.current);
+          wordSpawnerRef.current = null;
+        }
+        startWordSpawner();
+      }
     }
   };
   
@@ -552,18 +554,22 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </div>
         </div>
         
-        {/* Bottom row with difficulty selector */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">{language === 'english' ? 'Difficulty:' : 'Zorluk:'}</span>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center border rounded-md overflow-hidden h-9">
-              {(['easy', 'medium', 'hard'] as const).map((level) => (
+        {/* Bottom row with word spawn rate selector */}
+        <div className="flex flex-col sm:flex-row justify-between gap-2 sm:items-center">
+          <span className="text-sm text-muted-foreground">
+            {language === 'english' ? 'Word Spawn Rate:' : 'Kelime Üretim Hızı:'}
+            <span className="ml-1 font-semibold">{spawnRate}x</span>
+          </span>
+          
+          <div className="flex flex-1 flex-col sm:flex-row items-end sm:items-center gap-3">
+            <div className="flex w-full sm:w-auto items-center border rounded-md overflow-hidden h-9">
+              {([0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const).map((rate) => (
                 <button
-                  key={level}
-                  onClick={() => handleDifficultyChange(level)}
+                  key={rate}
+                  onClick={() => handleSpawnRateChange(rate)}
                   disabled={isPlaying && !isPaused}
-                  className={`px-3 py-1 text-sm ${
-                    level === difficulty
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm whitespace-nowrap ${
+                    rate === spawnRate
                       ? 'bg-primary text-primary-foreground' 
                       : 'bg-card hover:bg-muted'
                   } ${
@@ -572,19 +578,16 @@ const SimplifiedSpeedTyper: React.FC = () => {
                       : ''
                   }`}
                 >
-                  {language === 'english' 
-                    ? level.charAt(0).toUpperCase() + level.slice(1)
-                    : level === 'easy' ? 'Kolay' : level === 'medium' ? 'Orta' : 'Zor'
-                  }
+                  {rate}x
                 </button>
               ))}
             </div>
             
-            {difficulty === 'hard' && (
+            {spawnRate >= 2 && (
               <div className="hidden sm:flex items-center">
                 <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1" />
                 <span className="text-xs text-yellow-500">
-                  {language === 'english' ? 'Words fall faster!' : 'Kelimeler daha hızlı düşer!'}
+                  {language === 'english' ? 'Words spawn faster!' : 'Kelimeler daha hızlı düşer!'}
                 </span>
               </div>
             )}
