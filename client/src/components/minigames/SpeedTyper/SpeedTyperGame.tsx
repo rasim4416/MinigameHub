@@ -142,50 +142,93 @@ const SpeedTyperGame = () => {
   
   // Start the word spawning system
   const startWordSpawner = useCallback(() => {
-    if (wordSpawnTimerRef.current) clearInterval(wordSpawnTimerRef.current);
+    console.log('Starting word spawner, rate:', wordSpawnRate);
+    
+    if (wordSpawnTimerRef.current) {
+      console.log('Clearing existing word spawner');
+      clearInterval(wordSpawnTimerRef.current);
+    }
+    
+    // Immediately generate a word to make sure things are working
+    if (!isPaused && !isGameOver) {
+      console.log('Generating initial word immediately');
+      generateWord();
+    }
     
     wordSpawnTimerRef.current = setInterval(() => {
+      console.log('Word spawner tick, isPaused:', isPaused, 'isGameOver:', isGameOver, 'words on screen:', fallingWords.length);
+      
       if (!isPaused && !isGameOver) {
         generateWord();
       }
     }, wordSpawnRate);
     
     return () => {
+      console.log('Cleaning up word spawner');
       if (wordSpawnTimerRef.current) clearInterval(wordSpawnTimerRef.current);
     };
-  }, [generateWord, wordSpawnRate, isPaused, isGameOver]);
+  }, [generateWord, wordSpawnRate, isPaused, isGameOver, fallingWords.length]);
   
   // Start the game timer
   const startGameTimer = useCallback(() => {
-    if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+    console.log('Starting game timer, current time:', timeLeft);
     
+    if (gameTimerRef.current) {
+      console.log('Clearing existing timer');
+      clearInterval(gameTimerRef.current);
+    }
+    
+    // Create interval for countdown
     gameTimerRef.current = setInterval(() => {
-      if (!isPaused && !isGameOver) {
-        // Update the time left
-        if (timeLeft <= 1) {
-          // Game over when time runs out
-          setTimeLeft(0);
-          setGameOver(true);
-          end();
-          if (gameTimerRef.current) clearInterval(gameTimerRef.current);
-        } else {
-          setTimeLeft(timeLeft - 1);
+      console.log('Timer tick, isPaused:', isPaused, 'isGameOver:', isGameOver, 'timeLeft:', timeLeft);
+      
+      if (isPaused || isGameOver) {
+        return; // Do nothing if game is paused or over
+      }
+      
+      // Use direct value for simplicity, will access latest state
+      if (timeLeft <= 1) {
+        console.log('Game over - time ran out');
+        setTimeLeft(0);
+        setGameOver(true);
+        end();
+        
+        // Clean up timer
+        if (gameTimerRef.current) {
+          clearInterval(gameTimerRef.current);
+          gameTimerRef.current = null;
         }
+      } else {
+        // Decrement time
+        setTimeLeft(timeLeft - 1);
       }
     }, 1000);
     
+    // Return cleanup function
     return () => {
-      if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+      console.log('Cleaning up game timer');
+      if (gameTimerRef.current) {
+        clearInterval(gameTimerRef.current);
+        gameTimerRef.current = null;
+      }
     };
   }, [isPaused, isGameOver, timeLeft, setTimeLeft, setGameOver, end]);
   
   // Initialize the game
   useEffect(() => {
     if (phase === 'playing' && !isGameOver) {
+      console.log('Game started - initializing game systems');
+      
       // Reset game state if not already reset
       if (score !== 0 || timeLeft !== 60 || fallingWords.length > 0) {
         resetGame();
       }
+      
+      // Generate the first word immediately
+      setTimeout(() => {
+        console.log('Generating first word');
+        generateWord();
+      }, 500);
       
       // Start game systems
       const cleanupWordSpawner = startWordSpawner();
@@ -197,10 +240,12 @@ const SpeedTyperGame = () => {
       return () => {
         cleanupWordSpawner();
         cleanupGameTimer();
-        cancelAnimationFrame(requestRef.current!);
+        if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+        }
       };
     }
-  }, [phase, isGameOver, score, timeLeft, fallingWords.length, resetGame, startWordSpawner, startGameTimer]);
+  }, [phase, isGameOver, score, timeLeft, fallingWords.length, resetGame, startWordSpawner, startGameTimer, generateWord]);
   
   // Handle animation for falling words
   useEffect(() => {
