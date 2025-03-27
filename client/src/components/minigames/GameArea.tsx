@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Play, RotateCcw } from "lucide-react";
-import SpeedTyperGame from "./SpeedTyper";
+import SimplifiedSpeedTyper from "./SpeedTyper/SimplifiedSpeedTyper";
 
 interface GameAreaProps {
   game: GameType;
@@ -80,7 +80,7 @@ const GameArea = ({ game }: GameAreaProps) => {
     
     // Speed Typer Game
     if (game.id === "speed-typer") {
-      return <SpeedTyperGame />;
+      return <SimplifiedSpeedTyper />;
     }
     
     // Default placeholder for other games

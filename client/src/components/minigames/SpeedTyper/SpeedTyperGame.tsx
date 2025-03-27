@@ -233,7 +233,7 @@ const SpeedTyperGame: React.FC = () => {
     // Set up interval for counting down time
     gameTimerRef.current = setInterval(() => {
       if (!isPaused && !isGameOver) {
-        setTimeLeft(prevTime => {
+        setTimeLeft((prevTime: number) => {
           // Handle game over
           if (prevTime <= 1) {
             // Clean up the timer
@@ -266,7 +266,27 @@ const SpeedTyperGame: React.FC = () => {
     };
   }, [isPaused, isGameOver, setTimeLeft, setGameOver, end]);
   
-  // Initialize or reset game when it starts
+  // Manual reset function that doesn't cause infinite updates
+  const manualResetGameState = useCallback(() => {
+    // Reset score to 0
+    if (score !== 0) setScore(0);
+    // Clear any pause state
+    if (isPaused) setPaused(false);
+    // Reset the game timer
+    setTimeLeft(60);
+    // Clear input field
+    if (inputValue !== '') setInputValue('');
+    // Clear all falling words
+    if (fallingWords.length > 0) setFallingWords([]);
+  }, [
+    score, setScore, 
+    isPaused, setPaused, 
+    setTimeLeft, 
+    inputValue, setInputValue, 
+    fallingWords, setFallingWords
+  ]);
+  
+  // Initialize game when it starts
   useEffect(() => {
     // Only run when game phase is 'playing' and not over
     if (phase === 'playing' && !isGameOver) {
@@ -275,17 +295,17 @@ const SpeedTyperGame: React.FC = () => {
       // Clean up any existing timers
       cleanupAllTimers();
       
-      // Reset game state if needed
-      resetGame();
+      // Manually reset game state
+      manualResetGameState();
       
-      // Use a timeout to ensure state is updated
+      // Start game systems with a slight delay
       const initTimer = setTimeout(() => {
-        // Start animation
-        const animationCleanup = animateFallingWords();
-        
         // Start word spawner and game timer
         const wordSpawnerCleanup = startWordSpawner();
         const gameTimerCleanup = startGameTimer();
+        
+        // Start animation
+        const animationCleanup = animateFallingWords();
         
         // Focus input
         inputRef.current?.focus();
@@ -301,10 +321,10 @@ const SpeedTyperGame: React.FC = () => {
     phase, 
     isGameOver, 
     cleanupAllTimers, 
-    resetGame, 
-    animateFallingWords, 
+    manualResetGameState,
     startWordSpawner, 
-    startGameTimer
+    startGameTimer,
+    animateFallingWords
   ]);
   
   // Handle input changes

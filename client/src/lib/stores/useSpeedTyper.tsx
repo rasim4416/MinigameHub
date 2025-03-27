@@ -134,8 +134,14 @@ export const useSpeedTyper = create<SpeedTyperState>((set) => ({
     };
   }),
   
-  resetGame: () => set(() => ({
-    ...initialState,
-    fallingWords: []
-  }))
+  resetGame: () => set({
+    score: 0,
+    isGameOver: false,
+    isPaused: false,
+    timeLeft: initialState.maxGameTime,
+    inputValue: "",
+    fallingWords: [],
+    // Keep the current difficulty setting
+    // Keep the current word bank
+  })
 }));
