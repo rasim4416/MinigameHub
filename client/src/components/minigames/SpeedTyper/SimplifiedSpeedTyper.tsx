@@ -14,37 +14,72 @@ interface FallingWord {
   color: string; // text color
 }
 
-// List of word colors
+// List of word colors with enhanced visual effects
 const wordColors = [
-  'text-blue-500',
-  'text-green-500',
-  'text-yellow-500',
-  'text-purple-500',
-  'text-pink-500',
-  'text-indigo-500',
-  'text-teal-500',
-  'text-orange-500',
-  'text-red-500',
+  'text-blue-500 drop-shadow-[0_0_10px_rgba(59,130,246,0.7)]',
+  'text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.7)]',
+  'text-yellow-500 drop-shadow-[0_0_10px_rgba(234,179,8,0.7)]',
+  'text-purple-500 drop-shadow-[0_0_10px_rgba(168,85,247,0.7)]',
+  'text-pink-500 drop-shadow-[0_0_10px_rgba(236,72,153,0.7)]',
+  'text-indigo-500 drop-shadow-[0_0_10px_rgba(99,102,241,0.7)]',
+  'text-teal-500 drop-shadow-[0_0_10px_rgba(20,184,166,0.7)]',
+  'text-orange-500 drop-shadow-[0_0_10px_rgba(249,115,22,0.7)]',
+  'text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.7)]',
 ];
 
-// Sample word list (3-8 letters)
-const wordBank = [
-  "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", 
-  "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
-  "his", "how", "new", "now", "old", "see", "two", "way", "who", "eye",
-  "book", "game", "life", "time", "year", "work", "code", "play", "fast",
-  "slow", "good", "last", "long", "make", "many", "more", "most", "only",
-  "over", "very", "word", "after", "again", "about", "below", "could",
-  "every", "first", "found", "great", "house", "large", "learn", "never",
-  "other", "place", "plant", "point", "right", "small", "sound", "spell",
-  "still", "study", "world", "around", "because", "between", "brought",
-  "certain", "enough", "example", "explain", "message", "picture", "coding",
-  "program", "computer", "software", "keyboard", "amazing", "explore"
-];
+// Word banks for different languages
+const wordBanks = {
+  english: [
+    // Common 3-letter words
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", 
+    "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
+    "his", "how", "new", "now", "old", "see", "two", "way", "who", "eye",
+    // Common 4-letter words
+    "book", "game", "life", "time", "year", "work", "code", "play", "fast",
+    "slow", "good", "last", "long", "make", "many", "more", "most", "only",
+    "over", "very", "word", "love", "help", "find", "look", "hand", "part",
+    // Common 5-letter words
+    "after", "again", "about", "below", "could", "every", "first", "found",
+    "great", "house", "large", "learn", "never", "other", "place", "plant",
+    "point", "right", "small", "sound", "spell", "still", "study", "think",
+    "water", "where", "which", "world", "would", "write", "happy", "peace",
+    // Longer words (6-8 letters)
+    "around", "because", "between", "brought", "certain", "enough", "example",
+    "explain", "message", "picture", "program", "quality", "receive", "science",
+    "someone", "student", "success", "support", "through", "understand",
+    // Tech-related words
+    "coding", "browser", "computer", "software", "keyboard", "website", "internet",
+    "network", "database", "function", "variable", "algorithm", "framework",
+    "digital", "virtual", "amazing", "explore", "develop", "creative", "learning"
+  ],
+  
+  türkçe: [
+    // Common 3-letter Turkish words
+    "bir", "çok", "göz", "yol", "son", "gün", "bak", "iki", "ben", "sen", 
+    "git", "gel", "yer", "sev", "ara", "bul", "yap", "sor", "ver", "dün",
+    // Common 4-letter Turkish words
+    "daha", "hava", "çalı", "gece", "ayak", "balık", "anne", "baba", "kedi",
+    "köpek", "masa", "kapı", "yemek", "ağaç", "deniz", "ayna", "boya", "kova",
+    "toka", "okul", "renk", "sevgi", "güzel", "kitap", "kalem", "defter",
+    // Common 5-letter Turkish words
+    "bugün", "yarın", "sonra", "önce", "beyaz", "siyah", "elma", "armut",
+    "üzüm", "kiraz", "kaşık", "çatal", "kenar", "fırın", "tarih", "müzik",
+    "çiçek", "yaprak", "toprak", "tohum", "lamba", "ışık", "yıldız", "bulut",
+    // Longer words (6-8 letters)
+    "telefon", "bilgisayar", "internet", "kütüphane", "hastane", "öğrenci",
+    "öğretmen", "arkadaş", "kelebek", "böcek", "balina", "yunus", "ördek",
+    "martı", "güneş", "gezegen", "başarı", "mutluluk", "sağlık", "yaşam",
+    // Tech-related Turkish words
+    "ekran", "klavye", "fare", "yazılım", "uygulama", "veri", "bellek", 
+    "bağlantı", "tarayıcı", "işlemci", "yüklemek", "indirmek", "çevrimiçi",
+    "kablosuz", "dijital", "sanal", "dosya", "klasör", "şifre", "hesap"
+  ]
+};
 
-// Generate a random word from the word bank
-const getRandomWord = (): string => {
-  return wordBank[Math.floor(Math.random() * wordBank.length)];
+// Generate a random word from the word bank based on selected language
+const getRandomWord = (lang: Language): string => {
+  const words = wordBanks[lang];
+  return words[Math.floor(Math.random() * words.length)];
 };
 
 // Generate a unique ID for a word
@@ -53,6 +88,7 @@ const generateId = (): string => {
 };
 
 type Difficulty = 'easy' | 'medium' | 'hard';
+type Language = 'english' | 'türkçe';
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
@@ -70,6 +106,12 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [language, setLanguage] = useState<Language>('english');
+  
+  // UI styles based on language
+  const gameBackground = language === 'english' 
+    ? 'bg-gradient-to-b from-blue-900/20 to-purple-900/20' 
+    : 'bg-gradient-to-b from-red-900/20 to-orange-900/20';
   
   // Sound effects
   const { playHit, playSuccess } = useAudio();
@@ -160,10 +202,10 @@ const SimplifiedSpeedTyper: React.FC = () => {
     // Start spawning words
     wordSpawnerRef.current = setInterval(() => {
       if (!isPaused) {
-        // Create a new word
+        // Create a new word using the current language
         const newWord: FallingWord = {
           id: generateId(),
-          word: getRandomWord(),
+          word: getRandomWord(language),
           x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
           y: 0, // Start at the top
           speed: difficulty === 'easy' ? 0.5 : 
@@ -277,6 +319,13 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }
   };
   
+  // Handle language change
+  const handleLanguageChange = (lang: Language) => {
+    if (!isPlaying || isPaused) {
+      setLanguage(lang);
+    }
+  };
+  
   // Go back to menu
   const handleBackToMenu = () => {
     // Clean up any timers
@@ -318,8 +367,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
         </div>
       </div>
       
-      {/* Game area */}
-      <div className="relative flex-1 bg-muted/30 rounded-lg overflow-hidden">
+      {/* Game area with language-specific background */}
+      <div className={cn("relative flex-1 rounded-lg overflow-hidden", gameBackground)}>
         {isPlaying ? (
           <>
             {/* Falling words */}
@@ -369,12 +418,14 @@ const SimplifiedSpeedTyper: React.FC = () => {
             {isPaused && (
               <div className="absolute inset-0 bg-background/80 flex items-center justify-center z-20">
                 <div className="text-center">
-                  <h3 className="text-3xl font-bold mb-4">Game Paused</h3>
+                  <h3 className="text-3xl font-bold mb-4">
+                    {language === 'english' ? 'Game Paused' : 'Oyun Duraklatıldı'}
+                  </h3>
                   <button
                     onClick={handleTogglePause}
                     className="px-6 py-2 bg-primary text-primary-foreground rounded-md"
                   >
-                    Resume
+                    {language === 'english' ? 'Resume' : 'Devam Et'}
                   </button>
                 </div>
               </div>
@@ -384,26 +435,55 @@ const SimplifiedSpeedTyper: React.FC = () => {
           <div className="absolute inset-0 flex items-center justify-center">
             {isGameOver ? (
               <div className="text-center">
-                <h3 className="text-3xl font-bold mb-2">Game Over!</h3>
-                <p className="text-xl mb-6">Final Score: {score}</p>
-                <button
-                  onClick={handleStartGame}
-                  className="px-6 py-2 bg-primary text-primary-foreground rounded-md"
-                >
-                  Play Again
-                </button>
-              </div>
-            ) : (
-              <div className="text-center">
-                <h3 className="text-3xl font-bold mb-4">Speed Typer</h3>
-                <p className="text-lg mb-6">
-                  Type the falling words before they reach the bottom!
+                <h3 className="text-3xl font-bold mb-2">
+                  {language === 'english' ? 'Game Over!' : 'Oyun Bitti!'}
+                </h3>
+                <p className="text-xl mb-6">
+                  {language === 'english' ? 'Final Score: ' : 'Son Puan: '}{score}
                 </p>
                 <button
                   onClick={handleStartGame}
                   className="px-6 py-2 bg-primary text-primary-foreground rounded-md"
                 >
-                  Start Game
+                  {language === 'english' ? 'Play Again' : 'Tekrar Oyna'}
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <h3 className="text-3xl font-bold mb-2">
+                  {language === 'english' ? 'Speed Typer' : 'Hızlı Yazma'}
+                </h3>
+                <p className="text-lg mb-3">
+                  {language === 'english' 
+                    ? 'Type the falling words before they reach the bottom!' 
+                    : 'Düşen kelimeleri aşağıya ulaşmadan önce yaz!'}
+                </p>
+                
+                <div className={cn(
+                  "px-4 py-3 rounded-lg mb-6 inline-block",
+                  language === 'english' 
+                    ? 'bg-blue-100 text-blue-800 border border-blue-300' 
+                    : 'bg-red-100 text-red-800 border border-red-300'
+                )}>
+                  <p className="font-medium">
+                    {language === 'english' 
+                      ? 'Playing with English words' 
+                      : 'Oynamak için Türkçe kelimeler'
+                    }
+                  </p>
+                  <p className="text-sm mt-1 opacity-80">
+                    {language === 'english'
+                      ? 'Change language in settings below'
+                      : 'Aşağıdaki ayarlardan dili değiştirin'
+                    }
+                  </p>
+                </div>
+                
+                <button
+                  onClick={handleStartGame}
+                  className="px-6 py-2 bg-primary text-primary-foreground rounded-md"
+                >
+                  {language === 'english' ? 'Start Game' : 'Oyunu Başlat'}
                 </button>
               </div>
             )}
@@ -412,65 +492,103 @@ const SimplifiedSpeedTyper: React.FC = () => {
       </div>
       
       {/* Game controls */}
-      <div className="p-4 flex justify-between items-center bg-card rounded-b-lg border-t border-border">
-        <div className="flex gap-2">
-          <button 
-            onClick={handleBackToMenu}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md bg-transparent hover:bg-muted transition-colors"
-          >
-            <Home className="h-4 w-4" />
-            <span className="hidden sm:inline">Menu</span>
-          </button>
-          
-          {isPlaying && (
-            <button
-              onClick={handleTogglePause}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-muted hover:bg-muted transition-colors"
+      <div className="p-4 flex flex-col gap-3 bg-card rounded-b-lg border-t border-border">
+        {/* Top row with menu and pause buttons */}
+        <div className="flex justify-between items-center">
+          <div className="flex gap-2">
+            <button 
+              onClick={handleBackToMenu}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md bg-transparent hover:bg-muted transition-colors"
             >
-              {isPaused ? (
-                <>
-                  <PlayCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">Resume</span>
-                </>
-              ) : (
-                <>
-                  <PauseCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">Pause</span>
-                </>
-              )}
+              <Home className="h-4 w-4" />
+              <span className="hidden sm:inline">{language === 'english' ? 'Menu' : 'Menü'}</span>
             </button>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Difficulty:</span>
-          <div className="flex items-center border rounded-md overflow-hidden h-9">
-            {(['easy', 'medium', 'hard'] as const).map((level) => (
+            
+            {isPlaying && (
               <button
-                key={level}
-                onClick={() => handleDifficultyChange(level)}
-                disabled={isPlaying && !isPaused}
-                className={`px-3 py-1 text-sm ${
-                  level === difficulty
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-card hover:bg-muted'
-                } ${
-                  (isPlaying && !isPaused)
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : ''
-                }`}
+                onClick={handleTogglePause}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-muted hover:bg-muted transition-colors"
               >
-                {level.charAt(0).toUpperCase() + level.slice(1)}
+                {isPaused ? (
+                  <>
+                    <PlayCircle className="h-4 w-4" />
+                    <span className="hidden sm:inline">{language === 'english' ? 'Resume' : 'Devam Et'}</span>
+                  </>
+                ) : (
+                  <>
+                    <PauseCircle className="h-4 w-4" />
+                    <span className="hidden sm:inline">{language === 'english' ? 'Pause' : 'Duraklat'}</span>
+                  </>
+                )}
               </button>
-            ))}
+            )}
           </div>
           
-          {difficulty === 'hard' && (
-            <div className="hidden sm:flex items-center">
-              <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1" />
-              <span className="text-xs text-yellow-500">Words fall faster!</span>
+          {/* Language selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">{language === 'english' ? 'Language:' : 'Dil:'}</span>
+            <div className="flex items-center border rounded-md overflow-hidden h-8">
+              {(['english', 'türkçe'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => handleLanguageChange(lang)}
+                  disabled={isPlaying && !isPaused}
+                  className={`px-3 py-1 text-sm ${
+                    lang === language
+                      ? lang === 'english' 
+                          ? 'bg-blue-500 text-white' 
+                          : 'bg-red-500 text-white'
+                      : 'bg-card hover:bg-muted'
+                  } ${
+                    (isPlaying && !isPaused)
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : ''
+                  }`}
+                >
+                  {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+        </div>
+        
+        {/* Bottom row with difficulty selector */}
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">{language === 'english' ? 'Difficulty:' : 'Zorluk:'}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center border rounded-md overflow-hidden h-9">
+              {(['easy', 'medium', 'hard'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => handleDifficultyChange(level)}
+                  disabled={isPlaying && !isPaused}
+                  className={`px-3 py-1 text-sm ${
+                    level === difficulty
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'bg-card hover:bg-muted'
+                  } ${
+                    (isPlaying && !isPaused)
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : ''
+                  }`}
+                >
+                  {language === 'english' 
+                    ? level.charAt(0).toUpperCase() + level.slice(1)
+                    : level === 'easy' ? 'Kolay' : level === 'medium' ? 'Orta' : 'Zor'
+                  }
+                </button>
+              ))}
+            </div>
+            
+            {difficulty === 'hard' && (
+              <div className="hidden sm:flex items-center">
+                <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1" />
+                <span className="text-xs text-yellow-500">
+                  {language === 'english' ? 'Words fall faster!' : 'Kelimeler daha hızlı düşer!'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
