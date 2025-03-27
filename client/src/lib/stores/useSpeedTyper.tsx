@@ -9,6 +9,16 @@ export interface FallingWord {
   color: string; // text color
 }
 
+// Level data structure
+export interface Level {
+  number: number;
+  spawnRate: number;  // spawn rate in seconds
+  requiredPoints: number;  // points needed to advance to next level
+}
+
+// Game modes
+export type GameMode = 'falling' | 'linear' | 'levels';
+
 interface SpeedTyperState {
   // Game state
   score: number;
@@ -17,6 +27,16 @@ interface SpeedTyperState {
   timeLeft: number;
   inputValue: string;
   fallingWords: FallingWord[];
+  
+  // Level mode state
+  currentLevel: number;
+  levels: Level[];
+  targetScore: number;
+  isLevelCompleted: boolean;
+  isLevelTransition: boolean;
+  
+  // Game mode
+  gameMode: GameMode;
   
   // Settings
   difficulty: 'easy' | 'medium' | 'hard';
@@ -37,6 +57,14 @@ interface SpeedTyperState {
   updateFallingWordPosition: (id: string, y: number) => void;
   setFallingWords: (words: FallingWord[]) => void;
   setDifficulty: (difficulty: 'easy' | 'medium' | 'hard') => void;
+  setGameMode: (mode: GameMode) => void;
+  
+  // Level mode actions
+  setCurrentLevel: (level: number) => void;
+  completeLevel: () => void;
+  startNextLevel: () => void;
+  setLevelTransition: (isTransitioning: boolean) => void;
+  
   resetGame: () => void;
 }
 
@@ -70,23 +98,67 @@ const wordList = [
   "aircraft", "alliance"
 ];
 
+// Define level data based on requirements
+const levelData: Level[] = [
+  { number: 1, spawnRate: 2.00, requiredPoints: 500 },
+  { number: 2, spawnRate: 1.80, requiredPoints: 600 },
+  { number: 3, spawnRate: 1.62, requiredPoints: 720 },
+  { number: 4, spawnRate: 1.46, requiredPoints: 864 },
+  { number: 5, spawnRate: 1.31, requiredPoints: 1037 },
+  { number: 6, spawnRate: 1.18, requiredPoints: 1244 },
+  { number: 7, spawnRate: 1.06, requiredPoints: 1493 },
+  { number: 8, spawnRate: 0.95, requiredPoints: 1791 },
+  { number: 9, spawnRate: 0.86, requiredPoints: 2149 },
+  { number: 10, spawnRate: 0.77, requiredPoints: 2579 }
+];
+
 // Default initial state for the game
 const initialState = {
+  // Game state
   score: 0,
   isGameOver: false,
   isPaused: false,
   timeLeft: 60, // 60 seconds default game time
   inputValue: "",
   fallingWords: [],
+  
+  // Level mode state
+  currentLevel: 1,
+  levels: levelData,
+  targetScore: levelData[0].requiredPoints,
+  isLevelCompleted: false,
+  isLevelTransition: false,
+  
+  // Game mode
+  gameMode: 'falling' as GameMode,
+  
+  // Settings
   difficulty: 'medium' as const,
   maxGameTime: 60,
+  
+  // Word bank
   wordBank: wordList
 };
 
-export const useSpeedTyper = create<SpeedTyperState>((set) => ({
+export const useSpeedTyper = create<SpeedTyperState>((set, get) => ({
   ...initialState,
   
-  setScore: (score) => set({ score }),
+  setScore: (score) => set((state) => {
+    const { gameMode, currentLevel, levels } = state;
+    
+    // Check if level target has been reached in level mode
+    if (gameMode === 'levels' && 
+        currentLevel <= levels.length && 
+        score >= levels[currentLevel - 1].requiredPoints) {
+      return {
+        score,
+        isLevelCompleted: true
+      };
+    }
+    
+    return { score };
+  }),
+  
   incrementScore: () => set((state) => ({ score: state.score + 1 })),
   
   setGameOver: (isOver) => set({ isGameOver: isOver }),
@@ -134,14 +206,99 @@ export const useSpeedTyper = create<SpeedTyperState>((set) => ({
     };
   }),
   
-  resetGame: () => set({
-    score: 0,
-    isGameOver: false,
-    isPaused: false,
-    timeLeft: initialState.maxGameTime,
-    inputValue: "",
-    fallingWords: [],
-    // Keep the current difficulty setting
-    // Keep the current word bank
+  setGameMode: (gameMode) => set(() => {
+    // Reset time based on game mode
+    let timeLeft = 60;
+    
+    if (gameMode === 'levels') {
+      // Level mode starts with 60 seconds per level
+      timeLeft = 60;
+    }
+    
+    return { gameMode, timeLeft };
+  }),
+  
+  // Level mode actions
+  setCurrentLevel: (level) => set((state) => {
+    const { levels } = state;
+    const currentLevel = Math.min(Math.max(1, level), levels.length);
+    const targetScore = levels[currentLevel - 1].requiredPoints;
+    
+    return {
+      currentLevel,
+      targetScore
+    };
+  }),
+  
+  completeLevel: () => set((state) => ({
+    isLevelCompleted: true,
+    isPaused: true,
+    isLevelTransition: true,
+    fallingWords: [] // Clear words on level completion
+  })),
+  
+  startNextLevel: () => set((state) => {
+    const { currentLevel, levels } = state;
+    
+    // Check if this was the final level
+    if (currentLevel >= levels.length) {
+      return {
+        isGameOver: true,
+        isPaused: false,
+        isLevelCompleted: false,
+        isLevelTransition: false
+      };
+    }
+    
+    // Move to next level
+    const nextLevel = currentLevel + 1;
+    const targetScore = levels[nextLevel - 1].requiredPoints;
+    
+    return {
+      currentLevel: nextLevel,
+      targetScore,
+      timeLeft: 60, // Reset timer for next level
+      isLevelCompleted: false,
+      isLevelTransition: false,
+      isPaused: false,
+      fallingWords: [] // Start with clean board
+    };
+  }),
+  
+  setLevelTransition: (isTransitioning) => set({
+    isLevelTransition: isTransitioning
+  }),
+  
+  resetGame: () => set((state) => {
+    const { gameMode } = state;
+    
+    const resetState = {
+      score: 0,
+      isGameOver: false,
+      isPaused: false,
+      inputValue: "",
+      fallingWords: [],
+      isLevelCompleted: false,
+      isLevelTransition: false,
+      // Keep the current game mode
+      // Keep the current difficulty setting
+      // Keep the current word bank
+    };
+    
+    // Reset level-specific properties if in level mode
+    if (gameMode === 'levels') {
+      return {
+        ...resetState,
+        currentLevel: 1,
+        targetScore: levelData[0].requiredPoints,
+        timeLeft: 60
+      };
+    }
+    
+    // For other game modes
+    return {
+      ...resetState,
+      timeLeft: state.maxGameTime
+    };
   })
 }));

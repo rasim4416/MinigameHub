@@ -1,18 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban } from 'lucide-react';
+import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban, Award, TrendingUp, Zap } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
-
-// Define a type for falling words
-interface FallingWord {
-  id: string;
-  word: string;
-  x: number;  // horizontal position (%)
-  y: number;  // vertical position (%)
-  speed: number; // falling speed
-  color: string; // text color
-}
+import { useSpeedTyper, FallingWord, GameMode as StoreGameMode, Level } from '@/lib/stores/useSpeedTyper';
 
 // List of word colors with enhanced visual effects
 const wordColors = [
@@ -274,7 +265,7 @@ const generateId = (): string => {
 // Word spawn rates as multipliers
 type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 type Language = 'english' | 'türkçe';
-type GameMode = 'falling' | 'linear';
+type GameMode = StoreGameMode; // Use the imported type
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
@@ -282,18 +273,27 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const wordSpawnerRef = useRef<NodeJS.Timeout | null>(null);
   const animationRef = useRef<NodeJS.Timeout | null>(null);
+  const levelTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Game state
-  const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(60);
+  // Game state from Zustand store
+  const {
+    score, setScore,
+    timeLeft, setTimeLeft,
+    fallingWords, setFallingWords, addFallingWord, removeFallingWord,
+    inputValue, setInputValue,
+    isGameOver, setGameOver,
+    isPaused, setPaused,
+    gameMode, setGameMode,
+    currentLevel, levels, isLevelCompleted, isLevelTransition,
+    targetScore,
+    setCurrentLevel, completeLevel, startNextLevel, setLevelTransition,
+    resetGame
+  } = useSpeedTyper();
+  
+  // Local state
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isGameOver, setIsGameOver] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
   const [spawnRate, setSpawnRate] = useState<SpawnRateMultiplier>(1);
   const [language, setLanguage] = useState<Language>('english');
-  const [gameMode, setGameMode] = useState<GameMode>('falling');
   
   // Linear mode specific state
   const [linearQueue, setLinearQueue] = useState<string[]>([]);
@@ -312,19 +312,19 @@ const SimplifiedSpeedTyper: React.FC = () => {
     // Only run the timer when game is playing and not paused
     if (isPlaying && !isPaused) {
       timerRef.current = setInterval(() => {
-        setTimeLeft((time) => {
-          // Game over when time runs out
-          if (time <= 1) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
-            if (animationRef.current) clearInterval(animationRef.current);
-            setIsGameOver(true);
-            setIsPlaying(false);
-            playSuccess();
-            return 0;
-          }
-          return time - 1;
-        });
+        // Update time left, checking for game over
+        const newTime = timeLeft <= 1 ? 0 : timeLeft - 1;
+        setTimeLeft(newTime);
+        
+        // Check if game over
+        if (newTime <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+          if (animationRef.current) clearInterval(animationRef.current);
+          setGameOver(true);
+          setIsPlaying(false);
+          playSuccess();
+        }
       }, 1000);
       
       // Clean up
@@ -335,7 +335,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
         }
       };
     }
-  }, [isPlaying, isPaused, playSuccess]);
+  }, [isPlaying, isPaused, playSuccess, setGameOver]);
 
   // Clean up function for all timers
   const cleanupTimers = () => {
@@ -381,28 +381,113 @@ const SimplifiedSpeedTyper: React.FC = () => {
     });
   };
   
+  // Initialize the level mode
+  const initializeLevelMode = () => {
+    // Start with level 1
+    setCurrentLevel(1);
+    
+    // Set spawn rate based on level
+    const level = levels[0];
+    const levelSpawnRate = level.spawnRate;
+    
+    // Convert to multiplier (assuming base is 1.0)
+    // For example, 2.0s interval becomes 0.5x multiplier
+    const multiplier = 1.0 / levelSpawnRate as SpawnRateMultiplier;
+    setSpawnRate(Math.min(Math.max(multiplier, 0.25), 3) as SpawnRateMultiplier);
+    
+    // Start with 60 seconds per level
+    setTimeLeft(60);
+    
+    // Start spawning words and animation
+    startWordSpawner();
+    startFallingAnimation();
+    
+    // Focus the input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+
+  // Handle level completion
+  const handleLevelCompletion = () => {
+    // Clean up timers
+    if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+    if (animationRef.current) clearInterval(animationRef.current);
+    
+    // Set transition state
+    completeLevel();
+    setFallingWords([]);
+    
+    // Start a timer for level transition (10 seconds rest)
+    levelTimerRef.current = setTimeout(() => {
+      startNextLevel();
+      
+      // If game is not over after starting next level, start new words
+      if (!isGameOver) {
+        const nextLevel = currentLevel;
+        if (nextLevel <= levels.length) {
+          // Calculate new spawn rate based on level
+          const levelSpawnRate = levels[nextLevel - 1].spawnRate;
+          const multiplier = 1.0 / levelSpawnRate as SpawnRateMultiplier;
+          setSpawnRate(Math.min(Math.max(multiplier, 0.25), 3) as SpawnRateMultiplier);
+          
+          // Reset time for next level
+          setTimeLeft(60);
+          
+          // Start word spawning again
+          startWordSpawner();
+          startFallingAnimation();
+          
+          // Focus input
+          setTimeout(() => {
+            inputRef.current?.focus();
+          }, 0);
+        }
+      }
+    }, 10000); // 10 seconds rest between levels
+  };
+  
+  // Effect to check for level completion
+  useEffect(() => {
+    // Log data for debugging
+    if (gameMode === 'levels') {
+      console.log('Level mode data:', {
+        currentLevel,
+        targetScore: currentLevel > 0 && currentLevel <= levels.length 
+          ? levels[currentLevel - 1].requiredPoints 
+          : null,
+        score,
+        isLevelCompleted,
+        isLevelTransition,
+        isPlaying
+      });
+    }
+    
+    if (isPlaying && gameMode === 'levels' && isLevelCompleted) {
+      handleLevelCompletion();
+    }
+  }, [isLevelCompleted, gameMode, isPlaying, currentLevel, score]);
+  
   // Start the game
   const handleStartGame = () => {
-    // Reset state
-    setScore(0);
-    setTimeLeft(60);
-    setIsGameOver(false);
-    setIsPaused(false);
-    setFallingWords([]);
-    setLinearQueue([]);
-    setCurrentLinearWord('');
-    setInputValue('');
+    // Reset game state
+    resetGame();
     setIsPlaying(true);
     
     if (gameMode === 'falling') {
-      // Start spawning words
+      // Reset and start
+      setTimeLeft(60);
       startWordSpawner();
-      
-      // Start falling animation
       startFallingAnimation();
-    } else {
-      // Initialize linear mode
+    } else if (gameMode === 'linear') {
+      // Reset linear mode
+      setTimeLeft(60);
+      setLinearQueue([]);
+      setCurrentLinearWord('');
       initializeLinearMode();
+    } else if (gameMode === 'levels') {
+      // Initialize level mode
+      initializeLevelMode();
     }
     
     // Focus the input field
@@ -435,7 +520,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
         };
         
         // Add the word to the falling words array
-        setFallingWords(words => [...words, newWord]);
+        const updatedWords = [...fallingWords, newWord];
+        setFallingWords(updatedWords);
       }
     }, spawnInterval);
     
@@ -455,23 +541,24 @@ const SimplifiedSpeedTyper: React.FC = () => {
     // Start animation loop
     animationRef.current = setInterval(() => {
       if (!isPaused) {
-        setFallingWords(words => {
-          // Move each word down based on its speed
-          const updatedWords = words.map(word => ({
-            ...word,
-            y: word.y + word.speed
-          }));
-          
-          // Remove words that have fallen off the bottom
-          const remainingWords = updatedWords.filter(word => word.y < 100);
-          
-          // If a word was removed (reached the bottom), reduce score slightly
-          if (remainingWords.length < updatedWords.length) {
-            setScore(s => Math.max(0, s - 5));
-          }
-          
-          return remainingWords;
-        });
+        // Move each word down based on its speed
+        const updatedWords = fallingWords.map((word: FallingWord) => ({
+          ...word,
+          y: word.y + word.speed
+        }));
+        
+        // Remove words that have fallen off the bottom
+        const remainingWords = updatedWords.filter((word: FallingWord) => word.y < 100);
+        
+        // If a word was removed (reached the bottom), reduce score slightly
+        if (remainingWords.length < updatedWords.length) {
+          // Calculate new score (lose 5 points per missed word)
+          const newScore = Math.max(0, score - 5);
+          setScore(newScore);
+        }
+        
+        // Update falling words
+        setFallingWords(remainingWords);
       }
     }, frameRate);
     
@@ -490,8 +577,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
     e.preventDefault();
     
     if (inputValue.trim()) {
-      if (gameMode === 'falling') {
-        // Falling words mode: check for any matching word
+      if (gameMode === 'falling' || gameMode === 'levels') {
+        // Falling words mode or level mode: check for any matching word
         const matchedWordIndex = fallingWords.findIndex(
           word => word.word.toLowerCase() === inputValue.toLowerCase()
         );
@@ -501,14 +588,27 @@ const SimplifiedSpeedTyper: React.FC = () => {
           const matchedWord = fallingWords[matchedWordIndex];
           
           // Remove the matched word
-          setFallingWords(words => words.filter(w => w.id !== matchedWord.id));
+          const updatedWords = fallingWords.filter((w: FallingWord) => w.id !== matchedWord.id);
+          setFallingWords(updatedWords);
           
           // Add points based on word length and spawn rate
           const basePoints = matchedWord.word.length * 5;
           // Higher spawn rate gives more points
           const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
           
-          setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
+          // Calculate new score
+          const pointsToAdd = Math.floor(basePoints * spawnRateMultiplier);
+          const newScore = score + pointsToAdd;
+          setScore(newScore);
+          
+          // Check if we completed the level in level mode
+          if (gameMode === 'levels' && !isLevelCompleted && currentLevel > 0 && currentLevel <= levels.length) {
+            const requiredPoints = levels[currentLevel - 1].requiredPoints;
+            if (newScore >= requiredPoints) {
+              console.log(`Level ${currentLevel} completed! Score: ${newScore}, Required: ${requiredPoints}`);
+              // The level is completed - this will trigger the useEffect that handles level transition
+            }
+          }
           
           // Play hit sound
           playHit();
@@ -522,10 +622,13 @@ const SimplifiedSpeedTyper: React.FC = () => {
           const basePoints = currentLinearWord.length * 5;
           
           // Add time bonus - add 1 second for each letter in the word
-          setTimeLeft(time => time + currentLinearWord.length);
+          const timeBonus = currentLinearWord.length;
+          const newTime = timeLeft + timeBonus;
+          setTimeLeft(newTime);
           
           // Update score
-          setScore(s => s + basePoints);
+          const newScore = score + basePoints;
+          setScore(newScore);
           
           // Play hit sound
           playHit();
@@ -566,7 +669,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
   
   // Toggle pause
   const handleTogglePause = () => {
-    setIsPaused(!isPaused);
+    setPaused(!isPaused);
     
     // Focus input when resuming
     if (isPaused) {
@@ -585,7 +688,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
       if (animationRef.current) clearInterval(animationRef.current);
       
       // Set game over state
-      setIsGameOver(true);
+      setGameOver(true);
       setIsPlaying(false);
       playSuccess(); // Play success sound as feedback
     }
@@ -644,6 +747,26 @@ const SimplifiedSpeedTyper: React.FC = () => {
           <Trophy className="h-5 w-5 text-yellow-500" />
           <span className="font-semibold">Score:</span>
           <span className="text-lg font-bold text-primary">{score}</span>
+          
+          {/* Display level info in level mode */}
+          {gameMode === 'levels' && (
+            <div className="ml-4 flex items-center gap-2">
+              <Zap className="h-5 w-5 text-purple-500" />
+              <span className="font-semibold">{language === 'english' ? 'Level:' : 'Seviye:'}</span>
+              <span className="text-lg font-bold text-purple-600">{currentLevel}</span>
+              {isLevelCompleted ? (
+                <span className="ml-1 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">
+                  {language === 'english' ? 'Completed!' : 'Tamamlandı!'}
+                </span>
+              ) : (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  {language === 'english' 
+                    ? `Target: ${currentLevel > 0 && currentLevel <= levels.length ? levels[currentLevel - 1].requiredPoints : '-'}` 
+                    : `Hedef: ${currentLevel > 0 && currentLevel <= levels.length ? levels[currentLevel - 1].requiredPoints : '-'}`}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2">
@@ -899,7 +1022,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </span>
           
           <div className="flex items-center justify-center border rounded-md overflow-hidden h-9">
-            {(['falling', 'linear'] as const).map((mode) => (
+            {(['falling', 'linear', 'levels'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => handleGameModeChange(mode)}
@@ -915,8 +1038,16 @@ const SimplifiedSpeedTyper: React.FC = () => {
                 }`}
               >
                 {language === 'english'
-                  ? mode === 'falling' ? 'Falling Words' : 'Linear Train'
-                  : mode === 'falling' ? 'Düşen Kelimeler' : 'Sıralı Kelimeler'
+                  ? mode === 'falling' 
+                    ? 'Falling Words' 
+                    : mode === 'linear' 
+                      ? 'Linear Train' 
+                      : 'Level Mode'
+                  : mode === 'falling' 
+                    ? 'Düşen Kelimeler' 
+                    : mode === 'linear' 
+                      ? 'Sıralı Kelimeler' 
+                      : 'Seviye Modu'
                 }
               </button>
             ))}
