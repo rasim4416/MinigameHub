@@ -13,13 +13,6 @@ import {
   Clock,
   Trophy
 } from 'lucide-react';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 // Utility to generate a random id
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -34,7 +27,9 @@ const getRandomColor = () => {
   return colors[Math.floor(Math.random() * colors.length)];
 };
 
-const SpeedTyperGame = () => {
+// The main game component
+const SpeedTyperGame: React.FC = () => {
+  // Get state and actions from our stores
   const {
     score, 
     timeLeft, 
@@ -59,25 +54,47 @@ const SpeedTyperGame = () => {
   
   const { phase, start, end } = useGame();
   const { playHit, playSuccess } = useAudio();
-  const inputRef = useRef<HTMLInputElement>(null);
   
-  // References for animation frame and timers
-  const requestRef = useRef<number>();
+  // Local state for game settings
+  const [gameSpeed, setGameSpeed] = useState(1);
+  const [wordSpawnRate, setWordSpawnRate] = useState(2000);
+  
+  // Refs for DOM elements and timers
+  const inputRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<number | null>(null);
   const wordSpawnTimerRef = useRef<NodeJS.Timeout | null>(null);
   const gameTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const navigate = useNavigate();
   
-  // Game speed settings based on difficulty
-  const [gameSpeed, setGameSpeed] = useState(1);
-  const [wordSpawnRate, setWordSpawnRate] = useState(2000); // ms between words
+  // Clean up function to reset all timers
+  const cleanupAllTimers = useCallback(() => {
+    // Cancel animation frame
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
+    
+    // Clear word spawner
+    if (wordSpawnTimerRef.current) {
+      clearInterval(wordSpawnTimerRef.current);
+      wordSpawnTimerRef.current = null;
+    }
+    
+    // Clear game timer
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current);
+      gameTimerRef.current = null;
+    }
+  }, []);
   
-  // Focus input field when game starts
+  // Focus input when playing
   useEffect(() => {
     if (phase === 'playing' && !isGameOver && !isPaused) {
       inputRef.current?.focus();
     }
   }, [phase, isGameOver, isPaused]);
   
-  // Handle window focus/blur for pausing
+  // Auto-pause when window loses focus
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && phase === 'playing' && !isGameOver) {
@@ -86,15 +103,13 @@ const SpeedTyperGame = () => {
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', () => phase === 'playing' && !isGameOver && setPaused(true));
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', () => {});
     };
   }, [phase, isGameOver, setPaused]);
   
-  // Update difficulty settings when changed
+  // Update settings when difficulty changes
   useEffect(() => {
     switch (difficulty) {
       case 'easy':
@@ -112,153 +127,48 @@ const SpeedTyperGame = () => {
     }
   }, [difficulty]);
   
-  // Pick a random word from the word bank
+  // Get a random word from the word bank
   const getRandomWord = useCallback(() => {
     return wordBank[Math.floor(Math.random() * wordBank.length)];
   }, [wordBank]);
   
   // Generate a new falling word
   const generateWord = useCallback(() => {
-    if (fallingWords.length >= 10) return; // Limit max words on screen
+    // Limit max words on screen
+    if (fallingWords.length >= 10) return;
     
-    const word = getRandomWord();
+    let word = getRandomWord();
+    
     // Ensure the word length is 3-8 letters
-    if (word.length < 3 || word.length > 8) return generateWord();
+    while (word.length < 3 || word.length > 8 || 
+           fallingWords.some(w => w.word === word)) {
+      word = getRandomWord();
+    }
     
-    // Avoid duplicate words that are currently falling
-    if (fallingWords.some(w => w.word === word)) return generateWord();
-    
+    // Create the new word
     const newWord: FallingWord = {
       id: generateId(),
       word,
       x: Math.random() * 80 + 10, // 10% to 90% of screen width
       y: 0, // Start at the top
-      speed: (Math.random() * 0.3 + 0.7) * gameSpeed, // Random speed with game speed multiplier
+      speed: (Math.random() * 0.3 + 0.7) * gameSpeed, // Random speed
       color: getRandomColor()
     };
     
     addFallingWord(newWord);
   }, [fallingWords, addFallingWord, getRandomWord, gameSpeed]);
   
-  // Start the word spawning system
-  const startWordSpawner = useCallback(() => {
-    console.log('Starting word spawner, rate:', wordSpawnRate);
-    
-    if (wordSpawnTimerRef.current) {
-      console.log('Clearing existing word spawner');
-      clearInterval(wordSpawnTimerRef.current);
-    }
-    
-    // Immediately generate a word to make sure things are working
-    if (!isPaused && !isGameOver) {
-      console.log('Generating initial word immediately');
-      generateWord();
-    }
-    
-    wordSpawnTimerRef.current = setInterval(() => {
-      console.log('Word spawner tick, isPaused:', isPaused, 'isGameOver:', isGameOver, 'words on screen:', fallingWords.length);
-      
-      if (!isPaused && !isGameOver) {
-        generateWord();
-      }
-    }, wordSpawnRate);
-    
-    return () => {
-      console.log('Cleaning up word spawner');
-      if (wordSpawnTimerRef.current) clearInterval(wordSpawnTimerRef.current);
-    };
-  }, [generateWord, wordSpawnRate, isPaused, isGameOver, fallingWords.length]);
-  
-  // Start the game timer
-  const startGameTimer = useCallback(() => {
-    console.log('Starting game timer, current time:', timeLeft);
-    
-    if (gameTimerRef.current) {
-      console.log('Clearing existing timer');
-      clearInterval(gameTimerRef.current);
-    }
-    
-    // Create interval for countdown
-    gameTimerRef.current = setInterval(() => {
-      console.log('Timer tick, isPaused:', isPaused, 'isGameOver:', isGameOver, 'timeLeft:', timeLeft);
-      
-      if (isPaused || isGameOver) {
-        return; // Do nothing if game is paused or over
-      }
-      
-      // Use direct value for simplicity, will access latest state
-      if (timeLeft <= 1) {
-        console.log('Game over - time ran out');
-        setTimeLeft(0);
-        setGameOver(true);
-        end();
-        
-        // Clean up timer
-        if (gameTimerRef.current) {
-          clearInterval(gameTimerRef.current);
-          gameTimerRef.current = null;
-        }
-      } else {
-        // Decrement time
-        setTimeLeft(timeLeft - 1);
-      }
-    }, 1000);
-    
-    // Return cleanup function
-    return () => {
-      console.log('Cleaning up game timer');
-      if (gameTimerRef.current) {
-        clearInterval(gameTimerRef.current);
-        gameTimerRef.current = null;
-      }
-    };
-  }, [isPaused, isGameOver, timeLeft, setTimeLeft, setGameOver, end]);
-  
-  // Initialize the game
-  useEffect(() => {
-    if (phase === 'playing' && !isGameOver) {
-      console.log('Game started - initializing game systems');
-      
-      // Reset game state if not already reset
-      if (score !== 0 || timeLeft !== 60 || fallingWords.length > 0) {
-        resetGame();
-      }
-      
-      // Generate the first word immediately
-      setTimeout(() => {
-        console.log('Generating first word');
-        generateWord();
-      }, 500);
-      
-      // Start game systems
-      const cleanupWordSpawner = startWordSpawner();
-      const cleanupGameTimer = startGameTimer();
-      
-      // Focus input field
-      inputRef.current?.focus();
-      
-      return () => {
-        cleanupWordSpawner();
-        cleanupGameTimer();
-        if (requestRef.current) {
-          cancelAnimationFrame(requestRef.current);
-        }
-      };
-    }
-  }, [phase, isGameOver, score, timeLeft, fallingWords.length, resetGame, startWordSpawner, startGameTimer, generateWord]);
-  
-  // Handle animation for falling words
-  useEffect(() => {
+  // Handle animation of falling words
+  const animateFallingWords = useCallback(() => {
     if (isPaused || isGameOver) return;
     
     const animate = () => {
-      // Update positions of all falling words
+      // Update each word's position
       fallingWords.forEach(word => {
-        // Calculate new position based on speed
-        const newY = word.y + word.speed * 0.1; // 0.1 is a speed multiplier
+        const newY = word.y + word.speed * 0.1;
         
+        // Remove words that reach the bottom
         if (newY >= 100) {
-          // Word has reached bottom, remove it
           removeFallingWord(word.id);
         } else {
           updateFallingWordPosition(word.id, newY);
@@ -269,12 +179,133 @@ const SpeedTyperGame = () => {
       requestRef.current = requestAnimationFrame(animate);
     };
     
+    // Start animation
     requestRef.current = requestAnimationFrame(animate);
     
+    // Cleanup
     return () => {
-      cancelAnimationFrame(requestRef.current!);
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+        requestRef.current = null;
+      }
     };
   }, [fallingWords, isPaused, isGameOver, removeFallingWord, updateFallingWordPosition]);
+  
+  // Start the word spawner
+  const startWordSpawner = useCallback(() => {
+    console.log('Starting word spawner');
+    
+    // Clear any existing timer
+    if (wordSpawnTimerRef.current) {
+      clearInterval(wordSpawnTimerRef.current);
+      wordSpawnTimerRef.current = null;
+    }
+    
+    // Spawn a word immediately
+    generateWord();
+    
+    // Set up interval for spawning words
+    wordSpawnTimerRef.current = setInterval(() => {
+      if (!isPaused && !isGameOver) {
+        generateWord();
+      }
+    }, wordSpawnRate);
+    
+    // Return cleanup
+    return () => {
+      if (wordSpawnTimerRef.current) {
+        clearInterval(wordSpawnTimerRef.current);
+        wordSpawnTimerRef.current = null;
+      }
+    };
+  }, [generateWord, wordSpawnRate, isPaused, isGameOver]);
+  
+  // Start the game timer
+  const startGameTimer = useCallback(() => {
+    console.log('Starting game timer');
+    
+    // Clear any existing timer
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current);
+      gameTimerRef.current = null;
+    }
+    
+    // Set up interval for counting down time
+    gameTimerRef.current = setInterval(() => {
+      if (!isPaused && !isGameOver) {
+        setTimeLeft(prevTime => {
+          // Handle game over
+          if (prevTime <= 1) {
+            // Clean up the timer
+            if (gameTimerRef.current) {
+              clearInterval(gameTimerRef.current);
+              gameTimerRef.current = null;
+            }
+            
+            // Set game over state
+            setTimeout(() => {
+              setGameOver(true);
+              end();
+            }, 0);
+            
+            return 0;
+          }
+          
+          // Normal time decrement
+          return prevTime - 1;
+        });
+      }
+    }, 1000);
+    
+    // Return cleanup
+    return () => {
+      if (gameTimerRef.current) {
+        clearInterval(gameTimerRef.current);
+        gameTimerRef.current = null;
+      }
+    };
+  }, [isPaused, isGameOver, setTimeLeft, setGameOver, end]);
+  
+  // Initialize or reset game when it starts
+  useEffect(() => {
+    // Only run when game phase is 'playing' and not over
+    if (phase === 'playing' && !isGameOver) {
+      console.log('Initializing game');
+      
+      // Clean up any existing timers
+      cleanupAllTimers();
+      
+      // Reset game state if needed
+      resetGame();
+      
+      // Use a timeout to ensure state is updated
+      const initTimer = setTimeout(() => {
+        // Start animation
+        const animationCleanup = animateFallingWords();
+        
+        // Start word spawner and game timer
+        const wordSpawnerCleanup = startWordSpawner();
+        const gameTimerCleanup = startGameTimer();
+        
+        // Focus input
+        inputRef.current?.focus();
+      }, 100);
+      
+      // Clean up on unmount or when phase changes
+      return () => {
+        clearTimeout(initTimer);
+        cleanupAllTimers();
+      };
+    }
+  }, [
+    phase, 
+    isGameOver, 
+    cleanupAllTimers, 
+    resetGame, 
+    animateFallingWords, 
+    startWordSpawner, 
+    startGameTimer
+  ]);
   
   // Handle input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -286,13 +317,13 @@ const SpeedTyperGame = () => {
     e.preventDefault();
     
     if (inputValue.trim()) {
-      // Check if the typed word matches any falling word
+      // Check for a match
       const matchedWordIndex = fallingWords.findIndex(
         word => word.word.toLowerCase() === inputValue.toLowerCase()
       );
       
       if (matchedWordIndex !== -1) {
-        // Found a match!
+        // Found a match
         const matchedWord = fallingWords[matchedWordIndex];
         
         // Remove the matched word
@@ -305,7 +336,7 @@ const SpeedTyperGame = () => {
         playHit();
       }
       
-      // Clear input field regardless of match
+      // Clear input field
       setInputValue('');
     }
   };
@@ -313,7 +344,7 @@ const SpeedTyperGame = () => {
   // Handle game restart
   const handleRestartGame = () => {
     resetGame();
-    start(); // Restart the game
+    start();
     playSuccess();
   };
   
@@ -321,12 +352,23 @@ const SpeedTyperGame = () => {
   const togglePause = () => {
     setPaused(!isPaused);
     
+    // Focus input when resuming
     if (isPaused) {
-      // When resuming, immediately focus the input
       setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
     }
+  };
+  
+  // Handle returning to menu
+  const handleBackToMenu = () => {
+    playSuccess();
+    navigate('/minigames');
+  };
+  
+  // Handle difficulty change
+  const handleDifficultyChange = (value: string) => {
+    setDifficulty(value as 'easy' | 'medium' | 'hard');
   };
   
   // Format time as MM:SS
@@ -341,19 +383,6 @@ const SpeedTyperGame = () => {
     if (seconds <= 10) return 'text-red-500';
     if (seconds <= 30) return 'text-yellow-500';
     return 'text-green-500';
-  };
-  
-  const navigate = useNavigate();
-  
-  // Handle returning to menu
-  const handleBackToMenu = () => {
-    playSuccess();
-    navigate('/minigames');
-  };
-  
-  // Handle difficulty change
-  const handleDifficultyChange = (value: string) => {
-    setDifficulty(value as 'easy' | 'medium' | 'hard');
   };
   
   return (
@@ -512,20 +541,26 @@ const SpeedTyperGame = () => {
         
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Difficulty:</span>
-          <Select 
-            value={difficulty} 
-            onValueChange={handleDifficultyChange}
-            disabled={phase === 'playing' && !isGameOver && !isPaused}
-          >
-            <SelectTrigger className="w-[110px] h-9">
-              <SelectValue placeholder="Difficulty" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="easy">Easy</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="hard">Hard</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center border rounded-md overflow-hidden h-9">
+            {['easy', 'medium', 'hard'].map((level) => (
+              <button
+                key={level}
+                onClick={() => handleDifficultyChange(level)}
+                disabled={phase === 'playing' && !isGameOver && !isPaused}
+                className={`px-3 py-1 text-sm ${
+                  difficulty === level 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-card hover:bg-muted'
+                } ${
+                  (phase === 'playing' && !isGameOver && !isPaused) 
+                    ? 'opacity-50 cursor-not-allowed' 
+                    : ''
+                }`}
+              >
+                {level.charAt(0).toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
           
           {difficulty === 'hard' && (
             <div className="hidden sm:flex items-center">
