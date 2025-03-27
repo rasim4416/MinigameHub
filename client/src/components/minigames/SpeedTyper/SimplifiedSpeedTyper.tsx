@@ -274,6 +274,7 @@ const generateId = (): string => {
 // Word spawn rates as multipliers
 type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 type Language = 'english' | 'türkçe';
+type GameMode = 'falling' | 'linear';
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
@@ -292,6 +293,11 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
   const [spawnRate, setSpawnRate] = useState<SpawnRateMultiplier>(1);
   const [language, setLanguage] = useState<Language>('english');
+  const [gameMode, setGameMode] = useState<GameMode>('falling');
+  
+  // Linear mode specific state
+  const [linearQueue, setLinearQueue] = useState<string[]>([]);
+  const [currentLinearWord, setCurrentLinearWord] = useState<string>('');
   
   // UI styles based on language
   const gameBackground = language === 'english' 
@@ -347,6 +353,34 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }
   };
   
+  // Initialize linear mode
+  const initializeLinearMode = () => {
+    // Generate a queue of words
+    const wordQueue = Array.from({ length: 20 }, () => getRandomWord(language));
+    
+    // Set the initial queue and current word
+    setLinearQueue(wordQueue);
+    setCurrentLinearWord(wordQueue[0]);
+    
+    // Focus the input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+  
+  // Add more words to linear queue when needed
+  const addToLinearQueue = () => {
+    setLinearQueue(currentQueue => {
+      // Only add more if queue is getting smaller
+      if (currentQueue.length < 10) {
+        // Add 10 more words
+        const newWords = Array.from({ length: 10 }, () => getRandomWord(language));
+        return [...currentQueue, ...newWords];
+      }
+      return currentQueue;
+    });
+  };
+  
   // Start the game
   const handleStartGame = () => {
     // Reset state
@@ -355,14 +389,21 @@ const SimplifiedSpeedTyper: React.FC = () => {
     setIsGameOver(false);
     setIsPaused(false);
     setFallingWords([]);
+    setLinearQueue([]);
+    setCurrentLinearWord('');
     setInputValue('');
     setIsPlaying(true);
     
-    // Start spawning words
-    startWordSpawner();
-    
-    // Start falling animation
-    startFallingAnimation();
+    if (gameMode === 'falling') {
+      // Start spawning words
+      startWordSpawner();
+      
+      // Start falling animation
+      startFallingAnimation();
+    } else {
+      // Initialize linear mode
+      initializeLinearMode();
+    }
     
     // Focus the input field
     setTimeout(() => {
@@ -449,31 +490,77 @@ const SimplifiedSpeedTyper: React.FC = () => {
     e.preventDefault();
     
     if (inputValue.trim()) {
-      // Check for a match
-      const matchedWordIndex = fallingWords.findIndex(
-        word => word.word.toLowerCase() === inputValue.toLowerCase()
-      );
-      
-      if (matchedWordIndex !== -1) {
-        // Found a match
-        const matchedWord = fallingWords[matchedWordIndex];
+      if (gameMode === 'falling') {
+        // Falling words mode: check for any matching word
+        const matchedWordIndex = fallingWords.findIndex(
+          word => word.word.toLowerCase() === inputValue.toLowerCase()
+        );
         
-        // Remove the matched word
-        setFallingWords(words => words.filter(w => w.id !== matchedWord.id));
-        
-        // Add points based on word length and spawn rate
-        const basePoints = matchedWord.word.length * 5;
-        // Higher spawn rate gives more points
-        const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
-        
-        setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
-        
-        // Play hit sound
-        playHit();
+        if (matchedWordIndex !== -1) {
+          // Found a match
+          const matchedWord = fallingWords[matchedWordIndex];
+          
+          // Remove the matched word
+          setFallingWords(words => words.filter(w => w.id !== matchedWord.id));
+          
+          // Add points based on word length and spawn rate
+          const basePoints = matchedWord.word.length * 5;
+          // Higher spawn rate gives more points
+          const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
+          
+          setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
+          
+          // Play hit sound
+          playHit();
+        }
+      } else {
+        // Linear mode: check against the current word
+        if (inputValue.toLowerCase() === currentLinearWord.toLowerCase()) {
+          // Correct word typed
+          
+          // Add points based on word length
+          const basePoints = currentLinearWord.length * 5;
+          
+          // Add time bonus - add 1 second for each letter in the word
+          setTimeLeft(time => time + currentLinearWord.length);
+          
+          // Update score
+          setScore(s => s + basePoints);
+          
+          // Play hit sound
+          playHit();
+          
+          // Remove the first word from the queue and set the next word as current
+          setLinearQueue(queue => {
+            const newQueue = [...queue];
+            newQueue.shift(); // Remove the first word
+            
+            // Check if we need to add more words
+            if (newQueue.length < 10) {
+              const additionalWords = Array.from(
+                { length: 10 }, 
+                () => getRandomWord(language)
+              );
+              newQueue.push(...additionalWords);
+            }
+            
+            // Set the new current word
+            setCurrentLinearWord(newQueue[0] || '');
+            
+            return newQueue;
+          });
+        }
       }
       
       // Clear input field
       setInputValue('');
+    }
+  };
+  
+  // Handle game mode change
+  const handleGameModeChange = (mode: GameMode) => {
+    if (!isPlaying || isPaused) {
+      setGameMode(mode);
     }
   };
   
@@ -572,30 +659,72 @@ const SimplifiedSpeedTyper: React.FC = () => {
       <div className={cn("relative flex-1 rounded-lg overflow-hidden", gameBackground)}>
         {isPlaying ? (
           <>
-            {/* Falling words */}
-            <div className="falling-words-container absolute inset-0">
-              {fallingWords.map((word) => (
-                <div
-                  key={word.id}
-                  className={cn(
-                    "absolute font-bold transform -translate-x-1/2 transition-opacity duration-300",
-                    word.color,
-                    isPaused ? "animate-none" : ""
-                  )}
-                  style={{
-                    left: `${word.x}%`,
-                    top: `${word.y}%`,
-                    // Apply font size based on word length - shorter words are bigger
-                    fontSize: `${Math.max(22, 30 - word.word.length * 2)}px`,
-                    // Add a subtle glow effect
-                    textShadow: '0 0 5px currentColor',
-                    opacity: isPaused ? 0.7 : 1
-                  }}
-                >
-                  {word.word}
+            {/* Game display based on mode */}
+            {gameMode === 'falling' ? (
+              // Falling words mode
+              <div className="falling-words-container absolute inset-0">
+                {fallingWords.map((word) => (
+                  <div
+                    key={word.id}
+                    className={cn(
+                      "absolute font-bold transform -translate-x-1/2 transition-opacity duration-300",
+                      word.color,
+                      isPaused ? "animate-none" : ""
+                    )}
+                    style={{
+                      left: `${word.x}%`,
+                      top: `${word.y}%`,
+                      // Apply font size based on word length - shorter words are bigger
+                      fontSize: `${Math.max(22, 30 - word.word.length * 2)}px`,
+                      // Add a subtle glow effect
+                      textShadow: '0 0 5px currentColor',
+                      opacity: isPaused ? 0.7 : 1
+                    }}
+                  >
+                    {word.word}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // Linear mode - train of words
+              <div className="linear-words-container absolute inset-0 flex items-center justify-center">
+                <div className="text-center">
+                  {/* Current word to type */}
+                  <div 
+                    className="text-5xl font-bold mb-8"
+                    style={{
+                      textShadow: '0 0 8px currentColor',
+                      color: '#3b82f6'
+                    }}
+                  >
+                    {currentLinearWord}
+                  </div>
+                  
+                  {/* Upcoming words */}
+                  <div className="flex flex-wrap justify-center gap-2 max-w-lg mx-auto">
+                    {linearQueue.slice(1, 6).map((word, index) => (
+                      <div 
+                        key={index} 
+                        className="px-3 py-1 rounded bg-background/40 text-foreground/80 text-lg"
+                        style={{
+                          opacity: 1 - (index * 0.15)
+                        }}
+                      >
+                        {word}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Instructions */}
+                  <div className="mt-8 text-sm opacity-75">
+                    {language === 'english'
+                      ? 'Type the word above and press Enter → Get more time → Keep going!'
+                      : 'Yukarıdaki kelimeyi yazın ve Enter tuşuna basın → Daha fazla zaman kazanın → Devam edin!'
+                    }
+                  </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
             
             {/* Input field for typing */}
             <form 
@@ -763,56 +892,88 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </div>
         </div>
         
-        {/* Bottom row with word spawn rate selector */}
+        {/* Game mode selector */}
         <div className="flex flex-col sm:flex-row justify-between gap-2 sm:items-center">
           <span className="text-sm text-muted-foreground">
-            {language === 'english' ? 'Word Spawn Rate:' : 'Kelime Üretim Hızı:'}
-            <span className="ml-1 font-semibold">{spawnRate}x</span>
+            {language === 'english' ? 'Game Mode:' : 'Oyun Modu:'}
           </span>
           
-          <div className="flex flex-1 flex-col sm:flex-row items-end sm:items-center gap-3">
-            <div className="flex w-full sm:w-auto items-center justify-center border rounded-md overflow-hidden h-9 bg-card/50 p-0.5 gap-0.5">
-              {([0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const).map((rate) => (
-                <button
-                  key={rate}
-                  onClick={() => handleSpawnRateChange(rate)}
-                  disabled={isPlaying && !isPaused}
-                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
-                    rate === spawnRate
-                      ? 'bg-primary text-primary-foreground font-bold scale-110 shadow-md border-2 border-primary relative z-10 drop-shadow-[0_0_3px_rgba(99,102,241,0.7)]' 
-                      : 'bg-card hover:bg-muted hover:scale-105'
-                  } ${
-                    (isPlaying && !isPaused)
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : ''
-                  }`}
-                >
-                  {rate}x
-                </button>
-              ))}
-            </div>
-            
-            {spawnRate >= 2 && (
-              <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-yellow-500/10 border border-yellow-500/20">
-                <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1 inline-block" />
-                <span className="text-xs text-yellow-500">
-                  {language === 'english' 
-                    ? `${spawnRate >= 2.5 ? 'Very' : ''} fast spawn rate - challenge mode!` 
-                    : `${spawnRate >= 2.5 ? 'Çok' : ''} hızlı kelime üretimi - meydan okuma modu!`}
-                </span>
-              </div>
-            )}
-            {spawnRate <= 0.5 && (
-              <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-green-500/10 border border-green-500/20">
-                <span className="text-xs text-green-500">
-                  {language === 'english' 
-                    ? 'Relaxed mode - words spawn slowly' 
-                    : 'Rahat mod - kelimeler yavaşça düşer'}
-                </span>
-              </div>
-            )}
+          <div className="flex items-center justify-center border rounded-md overflow-hidden h-9">
+            {(['falling', 'linear'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => handleGameModeChange(mode)}
+                disabled={isPlaying && !isPaused}
+                className={`px-3 py-1 text-sm transition-colors ${
+                  mode === gameMode
+                    ? 'bg-primary text-primary-foreground font-semibold'
+                    : 'bg-card hover:bg-muted'
+                } ${
+                  (isPlaying && !isPaused)
+                    ? 'opacity-50 cursor-not-allowed' 
+                    : ''
+                }`}
+              >
+                {language === 'english'
+                  ? mode === 'falling' ? 'Falling Words' : 'Linear Train'
+                  : mode === 'falling' ? 'Düşen Kelimeler' : 'Sıralı Kelimeler'
+                }
+              </button>
+            ))}
           </div>
         </div>
+        
+        {/* Bottom row with word spawn rate selector - only shown in falling mode */}
+        {gameMode === 'falling' && (
+          <div className="flex flex-col sm:flex-row justify-between gap-2 sm:items-center">
+            <span className="text-sm text-muted-foreground">
+              {language === 'english' ? 'Word Spawn Rate:' : 'Kelime Üretim Hızı:'}
+              <span className="ml-1 font-semibold">{spawnRate}x</span>
+            </span>
+            <div className="flex flex-1 flex-col sm:flex-row items-end sm:items-center gap-3">
+              <div className="flex w-full sm:w-auto items-center justify-center border rounded-md overflow-hidden h-9 bg-card/50 p-0.5 gap-0.5">
+                {([0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const).map((rate) => (
+                  <button
+                    key={rate}
+                    onClick={() => handleSpawnRateChange(rate)}
+                    disabled={isPlaying && !isPaused}
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
+                      rate === spawnRate
+                        ? 'bg-primary text-primary-foreground font-bold scale-110 shadow-md border-2 border-primary relative z-10 drop-shadow-[0_0_3px_rgba(99,102,241,0.7)]' 
+                        : 'bg-card hover:bg-muted hover:scale-105'
+                    } ${
+                      (isPlaying && !isPaused)
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : ''
+                    }`}
+                  >
+                    {rate}x
+                  </button>
+                ))}
+              </div>
+              
+              {spawnRate >= 2 && (
+                <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-yellow-500/10 border border-yellow-500/20">
+                  <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1 inline-block" />
+                  <span className="text-xs text-yellow-500">
+                    {language === 'english' 
+                      ? `${spawnRate >= 2.5 ? 'Very' : ''} fast spawn rate - challenge mode!` 
+                      : `${spawnRate >= 2.5 ? 'Çok' : ''} hızlı kelime üretimi - meydan okuma modu!`}
+                  </span>
+                </div>
+              )}
+              {spawnRate <= 0.5 && (
+                <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-green-500/10 border border-green-500/20">
+                  <span className="text-xs text-green-500">
+                    {language === 'english' 
+                      ? 'Relaxed mode - words spawn slowly' 
+                      : 'Rahat mod - kelimeler yavaşça düşer'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
