@@ -34,45 +34,229 @@ const wordBanks = {
     "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", 
     "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
     "his", "how", "new", "now", "old", "see", "two", "way", "who", "eye",
+    "act", "add", "age", "air", "arm", "art", "ask", "bad", "bag", "bar",
+    "bed", "bet", "big", "bit", "box", "boy", "bus", "car", "cat", "cup",
+    "cut", "dad", "dog", "dry", "due", "ear", "eat", "egg", "end", "far",
+    "fat", "few", "fit", "fly", "fun", "gas", "gun", "guy", "hit", "hot",
+    "ice", "job", "joy", "key", "kid", "lay", "leg", "let", "lie", "lip",
+    "low", "map", "mom", "mud", "net", "odd", "oil", "pay", "pen", "pet",
+    "pie", "pin", "pop", "put", "red", "rub", "run", "sad", "sea", "set",
+    "sex", "shy", "sin", "sit", "six", "ski", "sky", "son", "sun", "tax",
+    "tea", "ten", "tip", "toe", "top", "try", "use", "war", "win", "yes",
+    "yet", "zoo",
+    
     // Common 4-letter words
     "book", "game", "life", "time", "year", "work", "code", "play", "fast",
     "slow", "good", "last", "long", "make", "many", "more", "most", "only",
     "over", "very", "word", "love", "help", "find", "look", "hand", "part",
+    "able", "acid", "aged", "also", "area", "army", "away", "baby", "back",
+    "ball", "band", "bank", "base", "bath", "bear", "beat", "been", "beer",
+    "bell", "belt", "best", "bill", "bird", "blow", "blue", "boat", "body",
+    "bomb", "bond", "bone", "born", "both", "bowl", "bulk", "burn", "bush",
+    "busy", "cake", "call", "calm", "came", "camp", "card", "care", "case",
+    "cash", "cast", "cell", "chat", "chef", "chip", "city", "club", "coal",
+    "coat", "cold", "come", "cook", "cool", "cope", "copy", "core", "cost",
+    "crew", "crop", "dark", "data", "date", "dawn", "days", "dead", "deal",
+    "dear", "debt", "deep", "deny", "desk", "dial", "diet", "dirt", "dish",
+    "disk", "does", "done", "door", "dose", "down", "draw", "drop", "drug",
+    "dual", "duke", "dust", "duty", "each", "earn", "ease", "east", "easy",
+    "edge", "else", "even", "ever", "evil", "exit", "face", "fact", "fade",
+    "fail", "fair", "fall", "farm", "fear", "feel", "feet", "fell", "felt",
+    "file", "fill", "film", "fire", "firm", "fish", "five", "flag", "flat",
+    "flow", "folk", "food", "foot", "form", "fort", "four", "free", "from",
+    "fuel", "full", "fund", "gain", "gave", "gear", "gift", "girl", "give",
+    "glad", "goal", "goes", "gold", "golf", "gone", "grew", "grey", "grow",
+    "gulf", "hair", "half", "hall", "hang", "hard", "harm", "hate", "have",
+    "head", "hear", "heat", "held", "hell", "here", "hero", "high", "hill",
+    "hire", "hold", "hole", "holy", "home", "hope", "host", "hour", "huge",
+    "hung", "hunt", "hurt", "idea", "inch", "into", "iron", "item", "java", 
+    "join", "jump", "jury", "just", "keen", "keep", "kick", "kill", "kind", 
+    "king", "knew", "know", "lack", "lady", "laid", "lake", "land", "lane", 
+    "lead", "left", "less", "like", "line", "link", "list", "live", "load", 
+    "loan", "lock", "logo", "went", "west", "what", "when", "whom", "wide", 
+    "wife", "wild", "will", "wind", "wine", "wing", "wire", "wise", "wish", 
+    "with", "wood", "wool", "wore", "work", "yard", "yeah", "year", "your", 
+    "zero", "zone",
+    
     // Common 5-letter words
     "after", "again", "about", "below", "could", "every", "first", "found",
     "great", "house", "large", "learn", "never", "other", "place", "plant",
     "point", "right", "small", "sound", "spell", "still", "study", "think",
     "water", "where", "which", "world", "would", "write", "happy", "peace",
+    "black", "board", "brave", "break", "bring", "build", "built", "carry",
+    "catch", "cause", "chain", "chair", "chart", "chase", "cheap", "check",
+    "chest", "chief", "child", "chose", "civil", "claim", "class", "clean",
+    "clear", "clock", "close", "coach", "coast", "color", "count", "court",
+    "cover", "crash", "crazy", "cream", "crime", "cross", "crowd", "crown",
+    "cycle", "daily", "dance", "dated", "dealt", "death", "dozen", "draft",
+    "drama", "drawn", "dream", "dress", "drink", "drive", "dying", "eager",
+    "early", "earth", "eight", "elite", "empty", "enemy", "enjoy", "enter",
+    "entry", "equal", "error", "event", "exact", "exist", "extra", "power", 
+    "press", "price", "pride", "prime", "print", "prior", "prize", "proof", 
+    "proud", "prove", "queen", "quick", "quiet", "quite", "radio", "raise", 
+    "range", "rapid", "ratio", "reach", "ready", "refer", "right", "rival", 
+    "river", "robin", "robot", "rocky", "rough", "round", "route", "royal", 
+    "rural", "scale", "scene", "scope", "score", "sense", "serve", "seven", 
+    "shade", "shake", "shall", "shape", "share", "sharp", "sheep", "sheer", 
+    "sheet", "shelf", "shell", "shift", "shirt", "shock", "shoot", "short", 
+    "shown", "sight", "since", "sixty", "sized", "skill", "sleep", "slide", 
+    "small", "smart", "smile", "smith", "smoke", "solid", "solve", "sorry", 
+    "sound", "south", "space", "spare", "speak", "speed", "spend", "spent", 
+    "split", "spoke", "sport", "staff", "stage", "stake", "stand", "women", 
+    "woken", "worth", "wound", "woven", "yacht", "young", "youth", "zeros",
+    
     // Longer words (6-8 letters)
     "around", "because", "between", "brought", "certain", "enough", "example",
     "explain", "message", "picture", "program", "quality", "receive", "science",
     "someone", "student", "success", "support", "through", "understand",
+    "ability", "absence", "academy", "account", "accused", "achieve", "acquire",
+    "address", "advance", "advised", "adviser", "against", "airline", "airport",
+    "alcohol", "alleged", "already", "analyst", "ancient", "another", "anxiety",
+    "anxious", "anybody", "applied", "arrange", "arrival", "article", "assault",
+    "assumed", "assured", "attempt", "attract", "auction", "average", "backing",
+    "balance", "banking", "barrier", "battery", "bearing", "beating", "because",
+    "bedroom", "believe", "beneath", "benefit", "besides", "between", "biggest",
+    "billion", "binding", "brother", "brought", "burning", "cabinet", "caliber",
+    "calling", "capable", "capital", "captain", "caption", "capture", "careful",
+    "carrier", "caution", "ceiling", "central", "centric", "century", "certain",
+    "chamber", "channel", "chapter", "charity", "charlie", "charter", "checked",
+    "chicken", "chronic", "circuit", "citizen", "clarity", "classic", "climate",
+    "closely", "clothes", "cluster", "coastal", "comfort", "command", "comment",
+    "compact", "company", "compare", "compete", "complex", "concept", "concern",
+    "concert", "conduct", "confirm", "connect", "consent", "consist", "console",
+    "contact", "contain", "content", "contest", "context", "control", "convert",
+    "correct", "council", "counsel", "counter", "country", "crucial", "crystal",
+    "culture", "current", "cutting", "dealing", "decided", "decline", "default",
+    "defence", "deficit", "deliver", "density", "deposit", "desktop", "despite",
+    "destroy", "develop", "devoted", "summary", "sunrise", "waiting", "welfare", 
+    "windows", "without", "witness", "workers", "working", "writing", "written",
+    
     // Tech-related words
     "coding", "browser", "computer", "software", "keyboard", "website", "internet",
     "network", "database", "function", "variable", "algorithm", "framework",
-    "digital", "virtual", "amazing", "explore", "develop", "creative", "learning"
+    "digital", "virtual", "amazing", "explore", "develop", "creative", "learning",
+    "access", "analog", "anchor", "backup", "binary", "bitmap", "buffer", "bundle",
+    "button", "bypass", "cached", "client", "column", "cookie", "cursor",
+    "device", "dialog", "domain", "driver", "engine", "entity", "export", "filter",
+    "folder", "format", "global", "header", "import", "inputs", "insert", "kernel",
+    "linker", "logger", "memory", "method", "module", "object", "packet", "parser",
+    "plugin", "portal", "prefix", "prompt", "python", "render", "router", "script",
+    "sector", "server", "socket", "source", "static", "stream", "string", "struct",
+    "syntax", "system", "tablet", "thread", "toggle", "upload", "vector", "widget"
   ],
   
   türkçe: [
     // Common 3-letter Turkish words
     "bir", "çok", "göz", "yol", "son", "gün", "bak", "iki", "ben", "sen", 
     "git", "gel", "yer", "sev", "ara", "bul", "yap", "sor", "ver", "dün",
+    "acı", "adı", "ağa", "ana", "art", "aşk", "bal", "baş", "bay", "bez",
+    "biz", "boş", "buz", "cam", "can", "cep", "çay", "çek", "dağ", "dal",
+    "dam", "dil", "diş", "duş", "düz", "ebe", "ele", "erk", "ers", "evi",
+    "eşi", "eli", "far", "fal", "fes", "göl", "güç", "güz", "hal", "ham",
+    "has", "hat", "hep", "her", "his", "hoş", "hız", "içi", "iyi", "ile",
+    "ilk", "iri", "işe", "kel", "kız", "kim", "kir", "köy", "kum", "kuş",
+    "kül", "laf", "leke", "lüks", "mal", "maç", "mum", "net", "not", "oda",
+    "oku", "onu", "oto", "ova", "öne", "öte", "pas", "pek", "pul", "raf",
+    "rol", "sağ", "sal", "sat", "sel", "ses", "sık", "sır", "sol", "son",
+    "süt", "şah", "şal", "şey", "taç", "tam", "tas", "taş", "tel", "tem",
+    "ten", "tez", "top", "toz", "tüm", "tür", "tüy", "ucu", "uçak", "ulu",
+    "unu", "uyan", "uyu", "uza", "uzak", "var", "vay", "vur", "yağ", "yak",
+    "yan", "yaş", "yel", "yen", "yeşil", "yok", "yön", "yüz", "zam", "zar",
+    "zil", "zor",
+    
     // Common 4-letter Turkish words
     "daha", "hava", "çalı", "gece", "ayak", "balık", "anne", "baba", "kedi",
     "köpek", "masa", "kapı", "yemek", "ağaç", "deniz", "ayna", "boya", "kova",
     "toka", "okul", "renk", "sevgi", "güzel", "kitap", "kalem", "defter",
+    "acele", "açık", "adam", "adım", "ağır", "ahır", "aile", "akıl", "aksi",
+    "alan", "alçı", "alem", "algı", "alma", "altı", "amca", "anıt", "anma",
+    "aptal", "araç", "arka", "artı", "arzu", "asal", "asıl", "asır", "atak",
+    "ateş", "atıf", "atık", "avlu", "ayna", "ayva", "azim", "azot", "bahar",
+    "bahçe", "bakım", "baki", "bala", "balkon", "bamya", "bant", "bardak",
+    "barış", "basit", "baskı", "başak", "başkan", "batı", "batık", "bavul",
+    "bayır", "bebek", "beden", "bekçi", "bela", "belge", "belki", "belli",
+    "bellik", "benek", "bent", "bere", "bereket", "beri", "beton", "beyin",
+    "beyaz", "beşik", "bilgi", "bilet", "bilim", "bilye", "bina", "birim",
+    "bitki", "bitim", "bomba", "borç", "borsa", "boşluk", "boyun", "boyut",
+    "bozkır", "bölge", "bölüm", "börek", "buçuk", "budak", "buğday", "buhar",
+    "buhran", "burun", "butik", "buton", "bütçe", "bütün", "büyük", "cami",
+    "canavar", "canlı", "caps", "ceket", "cesur", "cevap", "ceza", "cılız",
+    "cihan", "cimri", "cinli", "cisim", "coşku", "cüzdan", "çaba", "çadır",
+    "çakal", "çakmak", "çalar", "çalı", "çalım", "çanak", "çanta", "çapa",
+    "çare", "çarşı", "çatal", "çatı", "çekim", "çekiç", "çelik", "çeşit",
+    "çevre", "çeyiz", "çığır", "çıkar", "çıkış", "çiçek", "çifçi", "çiğli",
+    "çizgi", "çizim", "çocuk", "çoğul", "çorap", "çöküş", "çözüm", "daire",
+    "damat", "damla", "darbe", "dava", "davul", "delik", "denge", "dergi",
+    
     // Common 5-letter Turkish words
     "bugün", "yarın", "sonra", "önce", "beyaz", "siyah", "elma", "armut",
     "üzüm", "kiraz", "kaşık", "çatal", "kenar", "fırın", "tarih", "müzik",
     "çiçek", "yaprak", "toprak", "tohum", "lamba", "ışık", "yıldız", "bulut",
+    "abiye", "açgöz", "açlık", "adres", "afili", "afiş", "ahşap", "akran",
+    "alarm", "albüm", "alçak", "alıcı", "alıntı", "alkış", "alman", "altın",
+    "ambar", "amber", "amblem", "amele", "ampul", "anket", "anlam", "ansız",
+    "antik", "apolet", "araba", "arama", "arazi", "ardıç", "arena", "argın",
+    "arıza", "arife", "arşiv", "aseton", "asker", "aslında", "astım", "aşçı",
+    "aşırı", "atlas", "atmak", "avize", "avukat", "ayran", "azade", "azami",
+    "bağırma", "bahis", "bakır", "bakkal", "balans", "balkan", "bando", "banyo",
+    "baraj", "baskül", "basınç", "başlık", "batarya", "batık", "battı", "bayat",
+    "bayır", "bazen", "bebek", "bedel", "beğeni", "bekçi", "belge", "belki",
+    "bemol", "benek", "benzin", "berber", "besin", "beste", "beşeri", "betim",
+    "beyin", "bıçak", "biber", "bıyık", "bilim", "bilir", "binek", "birey",
+    "birik", "birlik", "bitiş", "bitki", "boğaz", "boğum", "bomba", "boran",
+    "borçlu", "borda", "borsa", "boşluk", "boyun", "bozkır", "bölge", "bölüm",
+    "börek", "bronz", "bucak", "budak", "buğday", "buğulu", "bugün", "buhran",
+    "bukle", "bulaşık", "bulma", "buluş", "bungun", "burak", "burjuva", "burun",
+    "butik", "büyü", "büyük", "canan", "canlı", "cariye", "cazibe", "cedvel",
+    "ceket", "cellat", "cennet", "cephe", "ceren", "cesur", "cevap", "cevher",
+    "ceviz", "ceylan", "cıvata", "ciğer", "cimri", "cinsel", "cisim", "cömert",
+    "curcuna", "cümle", "çabuk", "çadır", "çağrı", "çakal", "çakmak", "çalar",
+    "çalgı", "çanak", "çanta", "çardak", "çarşı", "çatı", "çatış", "çaycı",
+    "çekim", "çekiş", "çekül", "çelik", "çember", "çenber", "çenen", "çeper",
+    
     // Longer words (6-8 letters)
     "telefon", "bilgisayar", "internet", "kütüphane", "hastane", "öğrenci",
     "öğretmen", "arkadaş", "kelebek", "böcek", "balina", "yunus", "ördek",
     "martı", "güneş", "gezegen", "başarı", "mutluluk", "sağlık", "yaşam",
+    "abartı", "abartma", "abartmak", "abone", "abonelik", "acayip", "acele", 
+    "aceleyle", "aceleci", "acemi", "acemilik", "acente", "acıklı", "acıkmak", 
+    "aciliyet", "acilen", "acıma", "açıklama", "açılış", "açlık", "adalet", 
+    "adaletli", "adaletsiz", "aday", "adımlama", "adlandırma", "affetmek", 
+    "aforizma", "afsane", "ağırbaşlı", "ağırlamak", "ağırlık", "ağlamak", 
+    "aheste", "ahlaki", "ahşap", "ailece", "akılcı", "akıllı", "akılsız", 
+    "aklama", "akmak", "akraba", "aktarma", "aktüel", "aktüerya", "akustik", 
+    "alacaklı", "alakalı", "alakasız", "alamet", "alansal", "alaturka", 
+    "alaycı", "albeni", "albino", "aldanma", "aldatma", "aldırmaz", "algılama", 
+    "alıcı", "alımlı", "alındı", "alıntı", "alışkanlık", "alıştırma", "alkış", 
+    "almak", "almanca", "altyapı", "ambalaj", "anadolu", "analist", "analiz", 
+    "analjezik", "anason", "anayasa", "ancemin", "andante", "angarya", 
+    "anırmak", "anıtsal", "anlamak", "anlaşma", "anlaşmak", "anlatan", "anma", 
+    "anormallik", "ansızın", "antika", "antikacı", "antrakt", "antrenman", 
+    "anzarot", "apaçık", "apayrı", "apartman", "aplike", "apolet", "apolitik",
+    
     // Tech-related Turkish words
     "ekran", "klavye", "fare", "yazılım", "uygulama", "veri", "bellek", 
     "bağlantı", "tarayıcı", "işlemci", "yüklemek", "indirmek", "çevrimiçi",
-    "kablosuz", "dijital", "sanal", "dosya", "klasör", "şifre", "hesap"
+    "kablosuz", "dijital", "sanal", "dosya", "klasör", "şifre", "hesap",
+    "adres", "adware", "ağgeçidi", "ağzembereği", "akışhızı", "algoritma", 
+    "alfabetik", "anahat", "analiz", "anamenu", "anahtar", "android", "animasyon", 
+    "antivirüs", "aradisim", "arakimliği", "aramaçubuğu", "aramba", "aramucu", 
+    "arayüz", "arşivleme", "artalan", "ayarlar", "bakmak", "başlangıç", 
+    "başlık", "belge", "benioku", "benizbankı", "biçimlemek", "bilgisayar", 
+    "birleşim", "bulut", "bütünlük", "çalıştırmak", "çerezler", "derleyici",
+    "dikte", "diskimdülleyici", "doğrulama", "doküman", "donanım", "dönüştürücü", 
+    "dosya", "döşeme", "etiket", "evhayvanı", "fişleme", "forum", "genişletme", 
+    "gezgin", "girdi", "görüntü", "gösterge", "gözatma", "grafik", "güncelleme", 
+    "güvenlik", "hareketlidosya", "hatakodu", "havalı", "hesaplama", "ikon",
+    "iletişim", "imleç", "işlemci", "işlevsel", "istisna", "iyiyazılım", 
+    "izleme", "karakter", "karşıdan", "kaydedici", "kayıt", "kaynakça", 
+    "kısayol", "klasör", "kodlama", "köprü", "kurabiye", "masaüstü", "metin", 
+    "modem", "montaj", "motor", "mültimedya", "oturum", "oyun", "paket", 
+    "paradizimi", "parola", "paylaşım", "program", "pusu", "sabitdisk", 
+    "sayısaluçurum", "sekme", "senkronizasyon", "sertifika", "sıfırlama", 
+    "sıkıştırılmış", "simge", "slayt", "sürücü", "sürüm", "tarayıcı", "tıklama", 
+    "tutkalbellegi", "tuş", "ücretli", "üstveri", "varsayılan", "vektör", 
+    "veri", "virüs", "yama", "yazdırma", "yazılım", "yedekleme", "yönlendirici"
   ]
 };
 
@@ -562,16 +746,16 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </span>
           
           <div className="flex flex-1 flex-col sm:flex-row items-end sm:items-center gap-3">
-            <div className="flex w-full sm:w-auto items-center border rounded-md overflow-hidden h-9">
+            <div className="flex w-full sm:w-auto items-center justify-center border rounded-md overflow-hidden h-9 bg-card/50 p-0.5 gap-0.5">
               {([0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const).map((rate) => (
                 <button
                   key={rate}
                   onClick={() => handleSpawnRateChange(rate)}
                   disabled={isPlaying && !isPaused}
-                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm whitespace-nowrap ${
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
                     rate === spawnRate
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'bg-card hover:bg-muted'
+                      ? 'bg-primary text-primary-foreground font-bold scale-110 shadow-md border-2 border-primary relative z-10 drop-shadow-[0_0_3px_rgba(99,102,241,0.7)]' 
+                      : 'bg-card hover:bg-muted hover:scale-105'
                   } ${
                     (isPlaying && !isPaused)
                       ? 'opacity-50 cursor-not-allowed' 
@@ -584,10 +768,21 @@ const SimplifiedSpeedTyper: React.FC = () => {
             </div>
             
             {spawnRate >= 2 && (
-              <div className="hidden sm:flex items-center">
-                <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1" />
+              <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-yellow-500/10 border border-yellow-500/20">
+                <AlertTriangle className="h-4 w-4 text-yellow-500 mr-1 inline-block" />
                 <span className="text-xs text-yellow-500">
-                  {language === 'english' ? 'Words spawn faster!' : 'Kelimeler daha hızlı düşer!'}
+                  {language === 'english' 
+                    ? `${spawnRate >= 2.5 ? 'Very' : ''} fast spawn rate - challenge mode!` 
+                    : `${spawnRate >= 2.5 ? 'Çok' : ''} hızlı kelime üretimi - meydan okuma modu!`}
+                </span>
+              </div>
+            )}
+            {spawnRate <= 0.5 && (
+              <div className="flex-1 text-center sm:text-left sm:flex items-center mt-2 sm:mt-0 py-1 px-2 sm:py-0 rounded-md bg-green-500/10 border border-green-500/20">
+                <span className="text-xs text-green-500">
+                  {language === 'english' 
+                    ? 'Relaxed mode - words spawn slowly' 
+                    : 'Rahat mod - kelimeler yavaşça düşer'}
                 </span>
               </div>
             )}
