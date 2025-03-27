@@ -307,17 +307,40 @@ const SimplifiedSpeedTyper: React.FC = () => {
   // Sound effects
   const { playHit, playSuccess } = useAudio();
 
-  // Timer effect
+  // Timer effect - using a different approach with refs
   useEffect(() => {
+    console.log('Timer effect running, isPlaying:', isPlaying, 'isPaused:', isPaused);
+    
     // Only run the timer when game is playing and not paused
     if (isPlaying && !isPaused) {
+      console.log('Starting countdown - initial timeLeft:', timeLeft);
+      
+      // Clear any existing timer
+      if (timerRef.current) {
+        console.log('Clearing existing timer');
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      // Store time in a ref to avoid dependency issues
+      const startTime = Date.now();
+      const initialTimeLeft = timeLeft;
+      
+      console.log('Setting up new timer with startTime:', startTime, 'initialTimeLeft:', initialTimeLeft);
+      
+      // Set up timer that relies on actual elapsed time, not interval callbacks
       timerRef.current = setInterval(() => {
-        // Update time left, checking for game over
-        const newTime = timeLeft <= 1 ? 0 : timeLeft - 1;
-        setTimeLeft(newTime);
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const newTimeLeft = Math.max(0, initialTimeLeft - elapsedSeconds);
+        
+        console.log('Timer tick - elapsed:', elapsedSeconds, 'new time left:', newTimeLeft);
+        
+        // Update display time
+        setTimeLeft(newTimeLeft);
         
         // Check if game over
-        if (newTime <= 0) {
+        if (newTimeLeft <= 0) {
+          console.log('Game over - time reached zero');
           if (timerRef.current) clearInterval(timerRef.current);
           if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
           if (animationRef.current) clearInterval(animationRef.current);
@@ -325,17 +348,21 @@ const SimplifiedSpeedTyper: React.FC = () => {
           setIsPlaying(false);
           playSuccess();
         }
-      }, 1000);
+      }, 200); // Check more frequently for smoother updates
       
       // Clean up
       return () => {
         if (timerRef.current) {
+          console.log('Cleaning up timer interval');
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
       };
     }
-  }, [isPlaying, isPaused, playSuccess, setGameOver, timeLeft]);
+    
+    // Note: We intentionally don't include timeLeft in the dependency array
+    // because we're using a ref-based approach with Date.now()
+  }, [isPlaying, isPaused, playSuccess, setGameOver]);
 
   // Clean up function for all timers
   const cleanupTimers = () => {
@@ -499,15 +526,23 @@ const SimplifiedSpeedTyper: React.FC = () => {
   // Start the word spawner
   const startWordSpawner = () => {
     // Clear any existing spawner
-    if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+    if (wordSpawnerRef.current) {
+      console.log('Clearing existing word spawner interval');
+      clearInterval(wordSpawnerRef.current);
+      wordSpawnerRef.current = null;
+    }
     
     // Calculate spawn interval based on the multiplier (in milliseconds)
     // Base time is 1 second for 1x spawn rate
     const baseSpawnTime = 1000; // 1 second base time for 1x spawn rate
     const spawnInterval = Math.round(baseSpawnTime / spawnRate);
     
+    console.log(`Starting word spawner with interval: ${spawnInterval}ms (${spawnRate}x rate)`);
+    
     // Start spawning words
     wordSpawnerRef.current = setInterval(() => {
+      console.log('Spawner tick - isPaused:', isPaused);
+      
       if (!isPaused) {
         // Create a new word using the current language
         const newWord: FallingWord = {
@@ -519,6 +554,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
           color: wordColors[Math.floor(Math.random() * wordColors.length)]
         };
         
+        console.log('Creating new word:', newWord.word);
+        
         // Add the word to the falling words array
         const updatedWords = [...fallingWords, newWord];
         setFallingWords(updatedWords);
@@ -526,44 +563,66 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }, spawnInterval);
     
     return () => {
-      if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+      if (wordSpawnerRef.current) {
+        console.log('Cleaning up word spawner interval');
+        clearInterval(wordSpawnerRef.current);
+        wordSpawnerRef.current = null;
+      }
     };
   };
   
   // Animate falling words
   const startFallingAnimation = () => {
     // Clear any existing animation
-    if (animationRef.current) clearInterval(animationRef.current);
+    if (animationRef.current) {
+      console.log('Clearing existing animation interval');
+      clearInterval(animationRef.current);
+      animationRef.current = null;
+    }
     
     // Set animation frame rate
     const frameRate = 50; // ms per frame
     
+    console.log('Starting falling animation with frame rate:', frameRate);
+    
     // Start animation loop
     animationRef.current = setInterval(() => {
       if (!isPaused) {
-        // Move each word down based on its speed
-        const updatedWords = fallingWords.map((word: FallingWord) => ({
-          ...word,
-          y: word.y + word.speed
-        }));
-        
-        // Remove words that have fallen off the bottom
-        const remainingWords = updatedWords.filter((word: FallingWord) => word.y < 100);
-        
-        // If a word was removed (reached the bottom), reduce score slightly
-        if (remainingWords.length < updatedWords.length) {
-          // Calculate new score (lose 5 points per missed word)
-          const newScore = Math.max(0, score - 5);
-          setScore(newScore);
+        // Check if we have words to animate
+        if (fallingWords.length > 0) {
+          console.log(`Animating ${fallingWords.length} falling words`);
+          
+          // Move each word down based on its speed
+          const updatedWords = fallingWords.map((word: FallingWord) => ({
+            ...word,
+            y: word.y + word.speed
+          }));
+          
+          // Remove words that have fallen off the bottom
+          const remainingWords = updatedWords.filter((word: FallingWord) => word.y < 100);
+          
+          // If a word was removed (reached the bottom), reduce score slightly
+          if (remainingWords.length < updatedWords.length) {
+            // Calculate new score (lose 5 points per missed word)
+            const newScore = Math.max(0, score - 5);
+            console.log(`Word missed, reducing score to ${newScore}`);
+            setScore(newScore);
+          }
+          
+          // Update falling words
+          setFallingWords(remainingWords);
+        } else {
+          console.log('No falling words to animate');
         }
-        
-        // Update falling words
-        setFallingWords(remainingWords);
       }
     }, frameRate);
     
     return () => {
-      if (animationRef.current) clearInterval(animationRef.current);
+      if (animationRef.current) {
+        console.log('Cleaning up animation interval');
+        clearInterval(animationRef.current);
+        animationRef.current = null;
+      }
     };
   };
   
