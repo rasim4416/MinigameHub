@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle } from 'lucide-react';
+import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
 
 // Define a type for falling words
@@ -489,6 +489,21 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }
   };
   
+  // Instantly end the game (give up)
+  const handleGiveUp = () => {
+    if (isPlaying) {
+      // Clear any timers
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+      if (animationRef.current) clearInterval(animationRef.current);
+      
+      // Set game over state
+      setIsGameOver(true);
+      setIsPlaying(false);
+      playSuccess(); // Play success sound as feedback
+    }
+  };
+  
   // Handle spawn rate change
   const handleSpawnRateChange = (rate: SpawnRateMultiplier) => {
     if (!isPlaying || isPaused) {
@@ -691,22 +706,32 @@ const SimplifiedSpeedTyper: React.FC = () => {
             </button>
             
             {isPlaying && (
-              <button
-                onClick={handleTogglePause}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-muted hover:bg-muted transition-colors"
-              >
-                {isPaused ? (
-                  <>
-                    <PlayCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline">{language === 'english' ? 'Resume' : 'Devam Et'}</span>
-                  </>
-                ) : (
-                  <>
-                    <PauseCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline">{language === 'english' ? 'Pause' : 'Duraklat'}</span>
-                  </>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={handleTogglePause}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-muted hover:bg-muted transition-colors"
+                >
+                  {isPaused ? (
+                    <>
+                      <PlayCircle className="h-4 w-4" />
+                      <span className="hidden sm:inline">{language === 'english' ? 'Resume' : 'Devam Et'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <PauseCircle className="h-4 w-4" />
+                      <span className="hidden sm:inline">{language === 'english' ? 'Pause' : 'Duraklat'}</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleGiveUp}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Ban className="h-4 w-4" />
+                  <span className="hidden sm:inline">{language === 'english' ? 'Give Up' : 'Pes Et'}</span>
+                </button>
+              </>
             )}
           </div>
           
