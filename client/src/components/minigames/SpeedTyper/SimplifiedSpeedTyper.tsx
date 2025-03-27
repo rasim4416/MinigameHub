@@ -335,7 +335,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
         }
       };
     }
-  }, [isPlaying, isPaused, playSuccess, setGameOver]);
+  }, [isPlaying, isPaused, playSuccess, setGameOver, timeLeft]);
 
   // Clean up function for all timers
   const cleanupTimers = () => {
@@ -621,12 +621,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
           // Add points based on word length
           const basePoints = currentLinearWord.length * 5;
           
-          // Add time bonus - add 1 second for each letter in the word
-          const timeBonus = currentLinearWord.length;
-          const newTime = timeLeft + timeBonus;
-          setTimeLeft(newTime);
-          
-          // Update score
+          // Update score - no time bonus as per requirements
           const newScore = score + basePoints;
           setScore(newScore);
           
@@ -783,8 +778,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
         {isPlaying ? (
           <>
             {/* Game display based on mode */}
-            {gameMode === 'falling' ? (
-              // Falling words mode
+            {gameMode === 'falling' || gameMode === 'levels' ? (
+              // Falling words mode (used for both falling and level modes)
               <div className="falling-words-container absolute inset-0">
                 {fallingWords.map((word) => (
                   <div
@@ -841,8 +836,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
                   {/* Instructions */}
                   <div className="mt-8 text-sm opacity-75">
                     {language === 'english'
-                      ? 'Type the word above and press Enter → Get more time → Keep going!'
-                      : 'Yukarıdaki kelimeyi yazın ve Enter tuşuna basın → Daha fazla zaman kazanın → Devam edin!'
+                      ? 'Type the word above and press Enter to continue!'
+                      : 'Yukarıdaki kelimeyi yazın ve Enter tuşuna basın!'
                     }
                   </div>
                 </div>
