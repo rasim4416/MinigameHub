@@ -16,6 +16,13 @@ interface MinigamesState {
 export const useMinigames = create<MinigamesState>(() => ({
   games: [
     {
+      id: "speed-typer",
+      title: "Speed Typer",
+      icon: "⌨️",
+      description: "Type falling words before they hit the bottom of the screen",
+      isAvailable: true
+    },
+    {
       id: "memory-match",
       title: "Memory Match",
       icon: "🎴",
@@ -62,13 +69,6 @@ export const useMinigames = create<MinigamesState>(() => ({
       title: "Whack-a-Mole",
       icon: "🔨",
       description: "Tap the moles as they appear",
-      isAvailable: false
-    },
-    {
-      id: "typing-race",
-      title: "Typing Race",
-      icon: "⌨️",
-      description: "Type words as fast as you can",
       isAvailable: false
     },
     {
