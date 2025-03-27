@@ -536,7 +536,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }, 0);
   };
   
-  // Start the word spawner
+  // Start the word spawner - super simplified version
   const startWordSpawner = () => {
     // Clear any existing spawner
     if (wordSpawnerRef.current) {
@@ -546,47 +546,57 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }
     
     // Calculate spawn interval based on the multiplier (in milliseconds)
-    // Base time is 1 second for 1x spawn rate
-    const baseSpawnTime = 1000; // 1 second base time for 1x spawn rate
+    const baseSpawnTime = 1500; // 1.5 seconds base time for 1x spawn rate
     const spawnInterval = Math.round(baseSpawnTime / spawnRate);
     
     console.log(`Starting word spawner with interval: ${spawnInterval}ms (${spawnRate}x rate)`);
     
-    // Create a few initial words to start with
-    if ((gameMode === 'falling' || gameMode === 'levels') && fallingWords.length === 0) {
-      // Start with 2-3 words depending on spawn rate
-      const initialWordCount = Math.min(Math.ceil(spawnRate), 3);
-      console.log(`Creating ${initialWordCount} initial words`);
-      
-      const initialWords = Array.from({ length: initialWordCount }, () => ({
+    // Create initial words immediately
+    const initialWords = [
+      {
+        id: generateId(),
+        word: getRandomWord(language),
+        x: 20 + Math.random() * 20, // Left side
+        y: 5, // Near top
+        speed: 0.5,
+        color: wordColors[0]
+      },
+      {
+        id: generateId(),
+        word: getRandomWord(language),
+        x: 60 + Math.random() * 20, // Right side
+        y: 10, // Near top
+        speed: 0.5,
+        color: wordColors[1]
+      }
+    ];
+    
+    // Set initial words
+    setFallingWords(initialWords);
+    
+    // Function to create and add a new word
+    const createNewWord = () => {
+      // Create a new word
+      const newWord = {
         id: generateId(),
         word: getRandomWord(language),
         x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
-        y: Math.random() * 10, // Start at slight different positions at the top
-        speed: 0.5 + (Math.random() * 0.5 * spawnRate), // Randomize speed a bit
+        y: 0, // Start at the top
+        speed: 0.5, // Fixed speed
         color: wordColors[Math.floor(Math.random() * wordColors.length)]
-      }));
+      };
       
-      setFallingWords(initialWords);
-    }
+      console.log('Creating new word:', newWord.word);
+      
+      // Create a shallow copy and add the new word
+      const updatedWords = [...fallingWords, newWord];
+      setFallingWords(updatedWords);
+    };
     
-    // Start spawning words
+    // Start spawning words with fixed interval
     wordSpawnerRef.current = setInterval(() => {
-      if (!isPaused && isPlaying) {
-        // Create a new word using the current language
-        const newWord: FallingWord = {
-          id: generateId(),
-          word: getRandomWord(language),
-          x: Math.random() * 80 + 10, // Position between 10% and 90% horizontally
-          y: 0, // Start at the top
-          speed: 0.5 + (Math.random() * 0.5 * spawnRate), // Randomize speed a bit
-          color: wordColors[Math.floor(Math.random() * wordColors.length)]
-        };
-        
-        console.log('Creating new word:', newWord.word, 'with speed:', newWord.speed);
-        
-        // Add the word to the falling words array (using callback form to ensure latest state)
-        setFallingWords((currentWords: FallingWord[]) => [...currentWords, newWord]);
+      if (isPlaying && !isPaused) {
+        createNewWord();
       }
     }, spawnInterval);
     
@@ -599,7 +609,7 @@ const SimplifiedSpeedTyper: React.FC = () => {
     };
   };
   
-  // Animate falling words
+  // Animate falling words - extremely simplified version
   const startFallingAnimation = () => {
     // Clear any existing animation
     if (animationRef.current) {
@@ -608,43 +618,34 @@ const SimplifiedSpeedTyper: React.FC = () => {
       animationRef.current = null;
     }
     
-    // Set animation frame rate
-    const frameRate = 16; // ms per frame (60fps)
+    console.log('Starting falling animation with simplified logic');
     
-    console.log('Starting falling animation with frame rate:', frameRate);
-    
-    // Start animation loop using requestAnimationFrame for smoother animations
+    // Animation function - will run outside of React state to avoid re-renders
     const animate = () => {
-      if (!isPaused && isPlaying) {
-        // Check if we have words to animate
-        if (fallingWords.length > 0) {
-          // Move each word down based on its speed
-          const updatedWords = fallingWords.map((word: FallingWord) => ({
-            ...word,
-            // Scale the movement by frame rate for consistent speed
-            y: word.y + (word.speed * 0.05)
-          }));
-          
-          // Remove words that have fallen off the bottom
-          const remainingWords = updatedWords.filter((word: FallingWord) => word.y < 100);
-          
-          // If a word was removed (reached the bottom), reduce score slightly
-          if (remainingWords.length < updatedWords.length) {
-            // Calculate new score (lose 5 points per missed word)
-            const lostWords = updatedWords.length - remainingWords.length;
-            const newScore = Math.max(0, score - (5 * lostWords));
-            console.log(`${lostWords} word(s) missed, reducing score to ${newScore}`);
-            setScore(newScore);
-          }
-          
-          // Update falling words
-          setFallingWords(remainingWords);
+      if (!isPaused && isPlaying && fallingWords.length > 0) {
+        // Create updated words with new positions
+        const updatedWords = fallingWords.map((word: FallingWord) => ({
+          ...word,
+          y: word.y + 0.5 // Fixed movement speed
+        }));
+        
+        // Remove words that have fallen off the bottom
+        const remainingWords = updatedWords.filter((word: FallingWord) => word.y < 100);
+        
+        // If words were removed, decrease score
+        if (remainingWords.length < updatedWords.length) {
+          const lostWords = updatedWords.length - remainingWords.length;
+          const newScore = Math.max(0, score - (5 * lostWords));
+          setScore(newScore);
         }
+        
+        // Update state with new positions
+        setFallingWords(remainingWords);
       }
     };
     
-    // Use interval instead of requestAnimationFrame for more consistent behavior
-    animationRef.current = setInterval(animate, frameRate);
+    // Start animation loop - using a larger interval for better performance
+    animationRef.current = setInterval(animate, 100);
     
     return () => {
       if (animationRef.current) {
