@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban } from 'lucide-react';
+import { Home, Trophy, Clock, PauseCircle, PlayCircle, AlertTriangle, Ban, Award, ArrowUp } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
+import { useLevelMode, levelThresholds } from '@/lib/stores/useLevelMode';
 
 // Define a type for falling words
 interface FallingWord {
@@ -274,7 +275,7 @@ const generateId = (): string => {
 // Word spawn rates as multipliers
 type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 type Language = 'english' | 'türkçe';
-type GameMode = 'falling' | 'linear';
+type GameMode = 'falling' | 'linear' | 'level';
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
@@ -299,6 +300,25 @@ const SimplifiedSpeedTyper: React.FC = () => {
   const [linearQueue, setLinearQueue] = useState<string[]>([]);
   const [currentLinearWord, setCurrentLinearWord] = useState<string>('');
   
+  // Level mode state
+  const {
+    currentLevel,
+    targetScore,
+    score: levelScore,
+    isLevelCompleted,
+    isLevelTransition,
+    isPlaying: isLevelPlaying,
+    setCurrentLevel,
+    setScore: setLevelScore,
+    incrementScore: incrementLevelScore,
+    setLevelCompleted,
+    setLevelTransition,
+    setPlaying: setLevelPlaying,
+    advanceToNextLevel,
+    resetLevel,
+    resetGame: resetLevelGame
+  } = useLevelMode();
+  
   // UI styles based on language
   const gameBackground = language === 'english' 
     ? 'bg-gradient-to-b from-blue-900/20 to-purple-900/20' 
@@ -309,33 +329,80 @@ const SimplifiedSpeedTyper: React.FC = () => {
 
   // Timer effect
   useEffect(() => {
+    console.log("Timer effect running, isPlaying:", isPlaying, "isPaused:", isPaused);
+    
     // Only run the timer when game is playing and not paused
     if (isPlaying && !isPaused) {
+      console.log("Starting new unified game loop");
+      
+      // Start time for level tracking
+      const startTime = Date.now();
+      console.log("Starting countdown - initial timeLeft:", timeLeft);
+      
+      // Clear existing timer if any
+      if (timerRef.current) {
+        console.log("Clearing existing timer");
+        clearInterval(timerRef.current);
+      }
+      
+      console.log("Setting up new timer with startTime:", startTime, "initialTimeLeft:", timeLeft);
+      
       timerRef.current = setInterval(() => {
-        setTimeLeft((time) => {
-          // Game over when time runs out
-          if (time <= 1) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
-            if (animationRef.current) clearInterval(animationRef.current);
-            setIsGameOver(true);
-            setIsPlaying(false);
-            playSuccess();
-            return 0;
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        console.log("Timer tick - elapsed:", elapsedSeconds, "new time left:", timeLeft - elapsedSeconds);
+        
+        setTimeLeft((prevTime) => {
+          const newTime = Math.max(0, timeLeft - elapsedSeconds);
+          
+          // When time runs out
+          if (newTime <= 0) {
+            if (gameMode === 'level') {
+              // In level mode, check if we reached the target score
+              if (score >= targetScore) {
+                // Level completed - advance to next level
+                setLevelCompleted(true);
+                setLevelTransition(true);
+                playSuccess();
+                
+                // Don't end the game yet, we'll handle this in a separate effect
+                return 0;
+              } else {
+                // Failed to reach target - game over
+                if (timerRef.current) clearInterval(timerRef.current);
+                if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+                if (animationRef.current) clearInterval(animationRef.current);
+                setIsGameOver(true);
+                setIsPlaying(false);
+                setLevelPlaying(false);
+                playSuccess();
+                return 0;
+              }
+            } else {
+              // Regular game modes - game over
+              if (timerRef.current) clearInterval(timerRef.current);
+              if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
+              if (animationRef.current) clearInterval(animationRef.current);
+              setIsGameOver(true);
+              setIsPlaying(false);
+              playSuccess();
+              return 0;
+            }
           }
-          return time - 1;
+          
+          return prevTime - 1;
         });
       }, 1000);
       
       // Clean up
       return () => {
         if (timerRef.current) {
+          console.log("Cleaning up timer interval");
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
       };
     }
-  }, [isPlaying, isPaused, playSuccess]);
+  }, [isPlaying, isPaused, gameMode, score, targetScore, timeLeft, playSuccess, setLevelCompleted, setLevelTransition, setLevelPlaying]);
 
   // Clean up function for all timers
   const cleanupTimers = () => {
@@ -403,9 +470,39 @@ const SimplifiedSpeedTyper: React.FC = () => {
     });
   };
   
+  // Effect to handle level transitions
+  useEffect(() => {
+    if (gameMode === 'level' && isLevelTransition) {
+      // Show level completion screen for a few seconds, then start next level
+      const transitionDelay = setTimeout(() => {
+        // Advance to next level
+        advanceToNextLevel();
+        
+        // Reset game state for next level
+        setTimeLeft(60);
+        setLinearQueue([]);
+        setCurrentLinearWord('');
+        setInputValue('');
+        
+        // Start the next level
+        initializeLinearMode();
+        setLevelTransition(false);
+        
+        // Focus input field
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+      }, 3000); // 3 second delay before starting next level
+      
+      return () => clearTimeout(transitionDelay);
+    }
+  }, [isLevelTransition, gameMode, advanceToNextLevel, setLevelTransition, initializeLinearMode]);
+  
   // Start the game
   const handleStartGame = () => {
-    // Reset state
+    console.log("Starting game with super simplified approach");
+    
+    // Reset standard game state
     setScore(0);
     setTimeLeft(60);
     setIsGameOver(false);
@@ -416,7 +513,15 @@ const SimplifiedSpeedTyper: React.FC = () => {
     setInputValue('');
     setIsPlaying(true);
     
-    if (gameMode === 'falling') {
+    // Handle level mode specific setup
+    if (gameMode === 'level') {
+      // Reset level state
+      resetLevelGame();
+      setLevelPlaying(true);
+      initializeLinearMode();
+    } 
+    // Standard modes
+    else if (gameMode === 'falling') {
       // Start spawning words
       startWordSpawner();
       
@@ -529,14 +634,15 @@ const SimplifiedSpeedTyper: React.FC = () => {
           const basePoints = matchedWord.word.length * 5;
           // Higher spawn rate gives more points
           const spawnRateMultiplier = Math.min(spawnRate * 1.2, 3);
+          const pointsToAdd = Math.floor(basePoints * spawnRateMultiplier);
           
-          setScore(s => s + Math.floor(basePoints * spawnRateMultiplier));
+          setScore(s => s + pointsToAdd);
           
           // Play hit sound
           playHit();
         }
       } else {
-        // Linear mode: check against the current word
+        // Linear/Level modes: check against the current word
         if (inputValue.toLowerCase() === currentLinearWord.toLowerCase()) {
           // Correct word typed
           
@@ -545,10 +651,20 @@ const SimplifiedSpeedTyper: React.FC = () => {
           
           // Add time bonus - add 1 second for each letter in the word
           const timeBonus = currentLinearWord.length;
-          setTimeLeft(time => time + timeBonus);
           
-          // Update score
-          setScore(s => s + basePoints);
+          // Directly update the time remaining (to fix the time bonus issue)
+          setTimeLeft(currentTime => {
+            return currentTime + timeBonus;
+          });
+          
+          // Update regular score
+          const pointsToAdd = basePoints;
+          setScore(s => s + pointsToAdd);
+          
+          // For level mode, also update the level score
+          if (gameMode === 'level') {
+            incrementLevelScore(pointsToAdd);
+          }
           
           // Play hit sound
           playHit();
@@ -773,6 +889,43 @@ const SimplifiedSpeedTyper: React.FC = () => {
                 </div>
               </div>
             )}
+            
+            {/* Level completion overlay */}
+            {isLevelCompleted && isLevelTransition && (
+              <div className="absolute inset-0 bg-gradient-to-b from-green-900/90 to-emerald-800/90 flex items-center justify-center z-20">
+                <div className="text-center bg-card/20 backdrop-blur-sm border-2 border-green-500/30 p-6 rounded-lg shadow-xl max-w-sm mx-auto">
+                  <div className="flex justify-center mb-4">
+                    <div className="relative">
+                      <Award className="h-16 w-16 text-yellow-500 animate-pulse" />
+                      <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-card">
+                        {currentLevel}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <h3 className="text-3xl font-bold mb-2 text-white">
+                    {language === 'english' ? 'Level Complete!' : 'Seviye Tamamlandı!'}
+                  </h3>
+                  
+                  <div className="bg-green-500/20 border border-green-500/30 rounded-md py-2 px-4 mb-4">
+                    <p className="text-lg font-medium text-white">
+                      {language === 'english' 
+                        ? `Score: ${score} / ${targetScore}` 
+                        : `Puan: ${score} / ${targetScore}`}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <ArrowUp className="h-5 w-5 text-green-300" />
+                    <p className="text-green-300 font-medium">
+                      {language === 'english' 
+                        ? `Advancing to Level ${currentLevel + 1}...` 
+                        : `Seviye ${currentLevel + 1}'e yükseltiliyor...`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -912,14 +1065,16 @@ const SimplifiedSpeedTyper: React.FC = () => {
           </span>
           
           <div className="flex items-center justify-center border rounded-md overflow-hidden h-9">
-            {(['falling', 'linear'] as const).map((mode) => (
+            {(['falling', 'linear', 'level'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => handleGameModeChange(mode)}
                 disabled={isPlaying && !isPaused}
                 className={`px-3 py-1 text-sm transition-colors ${
                   mode === gameMode
-                    ? 'bg-primary text-primary-foreground font-semibold'
+                    ? mode === 'level'
+                      ? 'bg-green-600 text-white font-semibold'
+                      : 'bg-primary text-primary-foreground font-semibold'
                     : 'bg-card hover:bg-muted'
                 } ${
                   (isPlaying && !isPaused)
@@ -928,13 +1083,57 @@ const SimplifiedSpeedTyper: React.FC = () => {
                 }`}
               >
                 {language === 'english'
-                  ? mode === 'falling' ? 'Falling Words' : 'Linear Train'
-                  : mode === 'falling' ? 'Düşen Kelimeler' : 'Sıralı Kelimeler'
+                  ? mode === 'falling' 
+                    ? 'Falling Words' 
+                    : mode === 'linear'
+                      ? 'Linear Train'
+                      : 'Level Mode'
+                  : mode === 'falling' 
+                    ? 'Düşen Kelimeler' 
+                    : mode === 'linear'
+                      ? 'Sıralı Kelimeler'
+                      : 'Seviye Modu'
                 }
               </button>
             ))}
           </div>
         </div>
+        
+        {/* Level progress display - only shown in level mode */}
+        {gameMode === 'level' && (
+          <div className="flex flex-col sm:flex-row justify-between gap-2 sm:items-center mt-2">
+            <span className="text-sm text-muted-foreground flex items-center">
+              {language === 'english' ? 'Current Level:' : 'Mevcut Seviye:'}
+              <span className="ml-1 font-semibold">{currentLevel}</span>
+            </span>
+            
+            <div className="flex items-center gap-2 bg-muted/30 border rounded-md px-3 py-1.5">
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1">
+                  <Trophy className="h-4 w-4 text-yellow-500" />
+                  <span className="text-xs font-medium">{language === 'english' ? 'Target:' : 'Hedef:'}</span>
+                  <span className="text-xs font-bold">{targetScore}</span>
+                </div>
+                
+                <div className="w-full bg-muted/40 rounded-full h-2 mt-0.5">
+                  <div 
+                    className="bg-green-500 rounded-full h-2 transition-all duration-300"
+                    style={{ width: `${Math.min(100, (score / targetScore) * 100)}%` }}
+                  ></div>
+                </div>
+              </div>
+              
+              <div className="flex items-center px-2 py-0.5 bg-green-500/10 rounded-full border border-green-500/30">
+                <span className="text-xs font-medium text-green-600">
+                  {language === 'english'
+                    ? `${Math.floor((score / targetScore) * 100)}% Complete`
+                    : `${Math.floor((score / targetScore) * 100)}% Tamamlandı`
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Bottom row with word spawn rate selector - only shown in falling mode */}
         {gameMode === 'falling' && (
