@@ -368,6 +368,28 @@ const SimplifiedSpeedTyper: React.FC = () => {
     }, 0);
   };
   
+  // Process the linear queue (move to next word)
+  const processLinearQueue = () => {
+    setLinearQueue(queue => {
+      const newQueue = [...queue];
+      newQueue.shift(); // Remove the first word
+      
+      // Check if we need to add more words
+      if (newQueue.length < 10) {
+        const additionalWords = Array.from(
+          { length: 10 }, 
+          () => getRandomWord(language)
+        );
+        newQueue.push(...additionalWords);
+      }
+      
+      // Set the new current word
+      setCurrentLinearWord(newQueue[0] || '');
+      
+      return newQueue;
+    });
+  };
+  
   // Add more words to linear queue when needed
   const addToLinearQueue = () => {
     setLinearQueue(currentQueue => {
@@ -522,7 +544,8 @@ const SimplifiedSpeedTyper: React.FC = () => {
           const basePoints = currentLinearWord.length * 5;
           
           // Add time bonus - add 1 second for each letter in the word
-          setTimeLeft(time => time + currentLinearWord.length);
+          const timeBonus = currentLinearWord.length;
+          setTimeLeft(time => time + timeBonus);
           
           // Update score
           setScore(s => s + basePoints);
@@ -530,25 +553,15 @@ const SimplifiedSpeedTyper: React.FC = () => {
           // Play hit sound
           playHit();
           
-          // Remove the first word from the queue and set the next word as current
-          setLinearQueue(queue => {
-            const newQueue = [...queue];
-            newQueue.shift(); // Remove the first word
-            
-            // Check if we need to add more words
-            if (newQueue.length < 10) {
-              const additionalWords = Array.from(
-                { length: 10 }, 
-                () => getRandomWord(language)
-              );
-              newQueue.push(...additionalWords);
-            }
-            
-            // Set the new current word
-            setCurrentLinearWord(newQueue[0] || '');
-            
-            return newQueue;
-          });
+          // Process the queue (move to next word)
+          processLinearQueue();
+        } else if (inputValue.trim() !== '') {
+          // Incorrect word typed (but not empty input) - skip to next word
+          // Play a softer hit sound (or could add a miss sound later)
+          playHit();
+          
+          // Process the queue (move to next word)
+          processLinearQueue();
         }
       }
       
