@@ -113,10 +113,24 @@ export const useSpeedTyper = create<SpeedTyperState>((set) => ({
   setFallingWords: (words) => set({ fallingWords: words }),
   
   setDifficulty: (difficulty) => set(() => {
+    // Adjust max game time based on difficulty
+    let maxGameTime = 60;
+    switch (difficulty) {
+      case 'easy':
+        maxGameTime = 90;
+        break;
+      case 'medium':
+        maxGameTime = 60;
+        break;
+      case 'hard':
+        maxGameTime = 45;
+        break;
+    }
+    
     return { 
       difficulty,
-      maxGameTime: 60,
-      timeLeft: 60
+      maxGameTime,
+      timeLeft: maxGameTime
     };
   }),
   
