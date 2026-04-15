@@ -12,19 +12,21 @@ interface GameAreaProps {
 }
 
 const GameArea = ({ game }: GameAreaProps) => {
-  const [isLoading, setIsLoading] = useState(true);
+  const isDedicatedGame = game.id === "speed-typer" || game.id === "barricade";
+  const [isLoading, setIsLoading] = useState(!isDedicatedGame);
   const [gameStarted, setGameStarted] = useState(false);
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
   
   useEffect(() => {
-    // Simulate loading time
+    if (isDedicatedGame) return;
+    // Simulate loading time for placeholder games only
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 800);
     
     return () => clearTimeout(timer);
-  }, []);
+  }, [isDedicatedGame]);
 
   // Get vibrant gradient based on game ID for visual consistency
   const getGameGradient = (id: string) => {
