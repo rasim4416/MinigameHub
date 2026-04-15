@@ -23,10 +23,10 @@ export const useMinigames = create<MinigamesState>(() => ({
       isAvailable: true
     },
     {
-      id: "memory-match",
-      title: "Memory Match",
-      icon: "🎴",
-      description: "Match pairs of cards before time runs out",
+      id: "barricade",
+      title: "Barricade",
+      icon: "🚧",
+      description: "Local 2-player battle — reach the other side before your opponent blocks you",
       isAvailable: true
     },
     {

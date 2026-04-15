@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Play, RotateCcw } from "lucide-react";
 import SimplifiedSpeedTyper from "./SpeedTyper/SimplifiedSpeedTyper";
+import BarricadeGame from "./Barricade/BarricadeGame";
 
 interface GameAreaProps {
   game: GameType;
@@ -81,6 +82,11 @@ const GameArea = ({ game }: GameAreaProps) => {
     // Speed Typer Game
     if (game.id === "speed-typer") {
       return <SimplifiedSpeedTyper />;
+    }
+
+    // Barricade Game
+    if (game.id === "barricade") {
+      return <BarricadeGame />;
     }
     
     // Default placeholder for other games
@@ -162,12 +168,15 @@ const GameArea = ({ game }: GameAreaProps) => {
   
   return (
     <Card className={cn(
-      "w-full h-[50vh] md:h-[65vh] flex items-center justify-center transition-all duration-500 relative overflow-hidden border-2",
+      "w-full h-[50vh] md:h-[65vh] transition-all duration-500 relative overflow-hidden border-2",
+      (game.id === "speed-typer" || game.id === "barricade")
+        ? "flex flex-col p-0"
+        : "flex items-center justify-center",
       isLoading ? "opacity-50" : "opacity-100",
-      game.id === "speed-typer" ? "" : (gameStarted ? "border-primary" : "border-muted")
+      (game.id === "speed-typer" || game.id === "barricade") ? "" : (gameStarted ? "border-primary" : "border-muted")
     )}>
-      {/* Background gradient for non-SpeedTyper games */}
-      {game.id !== "speed-typer" && (
+      {/* Background gradient for non-dedicated games */}
+      {game.id !== "speed-typer" && game.id !== "barricade" && (
         <div className={cn(
           "absolute inset-0 bg-gradient-to-br opacity-10",
           getGameGradient(game.id),
@@ -177,8 +186,8 @@ const GameArea = ({ game }: GameAreaProps) => {
 
       {renderGameContent()}
       
-      {/* Static decorative elements for non-SpeedTyper games */}
-      {game.id !== "speed-typer" && (
+      {/* Static decorative elements for non-dedicated games */}
+      {game.id !== "speed-typer" && game.id !== "barricade" && (
         <>
           <div className="absolute top-5 left-5 h-3 w-3 rounded-full bg-primary/20 animate-pulse"></div>
           <div className="absolute bottom-10 right-10 h-5 w-5 rounded-full bg-accent/20 animate-pulse"></div>
