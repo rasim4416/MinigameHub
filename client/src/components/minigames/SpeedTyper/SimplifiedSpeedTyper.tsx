@@ -2,7 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, Clock, PauseCircle, PlayCircle, Ban, Award, ChevronLeft, AlertTriangle, ArrowUp } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
-import { useLevelMode, levelThresholds } from '@/lib/stores/useLevelMode';
+import { useLevelMode } from '@/lib/stores/useLevelMode';
+import {
+  Language,
+  getRandomWord,
+  getWordOfLength,
+  getWordInRange,
+  getLetterCountForLevel,
+} from './wordBanks';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,12 +23,11 @@ interface FallingWord {
 }
 
 type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
-type Language = 'english' | 'türkçe';
 type GameMode = 'falling' | 'linear' | 'letter-level' | 'score-level';
 
-// ─── Word Banks ───────────────────────────────────────────────────────────────
+// ─── (Word banks moved to wordBanks.ts) ──────────────────────────────────────
 
-const wordBanks = {
+const _unused_wordBanks = {
   english: [
     "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
     "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
