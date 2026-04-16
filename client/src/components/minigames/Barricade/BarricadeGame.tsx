@@ -1,19 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 
 const G = 11;
-const CELL = 28;
-const GAP = 5;
 
 type Player = "red" | "blue";
 type Pos = { row: number; col: number };
 type WallSpec = { type: "H" | "V"; r: number; c: number };
 type Phase = "idle" | "playing" | "finished";
 type ActionMode = "move" | "wall";
-
-// hWalls[r][c] = wall segment between rows r and r+1 at col c
-// A 2x1 H-wall at (r,c) sets hWalls[r][c] AND hWalls[r][c+1]
-// vWalls[r][c] = wall segment between cols c and c+1 at row r
-// A 2x1 V-wall at (r,c) sets vWalls[r][c] AND vWalls[r+1][c]
 
 const mkHWalls = (): boolean[][] =>
   Array.from({ length: G - 1 }, () => Array(G).fill(false));
@@ -70,14 +63,12 @@ function getValidMoves(pos: Pos, opp: Pos, hW: boolean[][], vW: boolean[][]): Po
   for (const nb of orthNeighbors(pos)) {
     if (!canStep(pos, nb, hW, vW)) continue;
     if (nb.row === opp.row && nb.col === opp.col) {
-      // Occupied by opponent — try straight jump
       const dr = nb.row - pos.row;
       const dc = nb.col - pos.col;
       const straight = { row: nb.row + dr, col: nb.col + dc };
       if (inBounds(straight) && canStep(nb, straight, hW, vW)) {
         result.push(straight);
       } else {
-        // Sideways jumps
         for (const side of orthNeighbors(nb)) {
           if ((side.row === pos.row && side.col === pos.col)) continue;
           if (side.row === straight.row && side.col === straight.col) continue;
@@ -103,7 +94,6 @@ function canPlaceWall(
 
   if (type === "H") {
     if (hW[r][c] || hW[r][c + 1]) return false;
-    // No crossing with V wall at same (r,c)
     if (c < G - 1 && vW[r][c] && vW[r + 1][c]) return false;
     const nH = hW.map((row) => [...row]);
     nH[r][c] = true;
@@ -111,7 +101,6 @@ function canPlaceWall(
     return bfsCanReach(rP, G - 1, nH, vW) && bfsCanReach(bP, 0, nH, vW);
   } else {
     if (vW[r][c] || vW[r + 1][c]) return false;
-    // No crossing with H wall at same (r,c)
     if (r < G - 1 && hW[r][c] && hW[r][c + 1]) return false;
     const nV = vW.map((row) => [...row]);
     nV[r][c] = true;
@@ -120,7 +109,6 @@ function canPlaceWall(
   }
 }
 
-// Derive wall spec from interlaced hover position
 function wallFromInterlaced(ri: number, ci: number): WallSpec | null {
   const isHGap = ri % 2 === 1 && ci % 2 === 0;
   const isVGap = ri % 2 === 0 && ci % 2 === 1;
@@ -139,7 +127,6 @@ function wallFromInterlaced(ri: number, ci: number): WallSpec | null {
   return null;
 }
 
-// Check if a wall segment is occupied
 function isHWallAt(hW: boolean[][], r: number, c: number): boolean {
   return r >= 0 && r < G - 1 && c >= 0 && c < G && hW[r][c];
 }
@@ -147,7 +134,6 @@ function isVWallAt(vW: boolean[][], r: number, c: number): boolean {
   return r >= 0 && r < G && c >= 0 && c < G - 1 && vW[r][c];
 }
 
-// Interlaced cell info
 interface InterlacedCell {
   ri: number;
   ci: number;
@@ -172,11 +158,30 @@ function buildInterlaced(): InterlacedCell[] {
 }
 
 const INTERLACED = buildInterlaced();
-const COLS = G * 2 - 1;
 
 const posKey = (p: Pos) => `${p.row},${p.col}`;
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return width;
+}
+
 export default function BarricadeGame() {
+  const windowWidth = useWindowWidth();
+  const isMobile = windowWidth < 640;
+
+  // Responsive grid sizing: fit the grid within the available width
+  const availableWidth = Math.min(windowWidth - 16, 400);
+  const CELL = isMobile
+    ? Math.max(18, Math.floor(availableWidth / (G + (G - 1) * 0.4)))
+    : 28;
+  const GAP = isMobile ? Math.max(8, Math.floor(CELL * 0.35)) : 5;
+
   const [phase, setPhase] = useState<Phase>("idle");
   const [redPos, setRedPos] = useState<Pos>({ row: 0, col: 5 });
   const [bluePos, setBluePos] = useState<Pos>({ row: 10, col: 5 });
@@ -190,7 +195,6 @@ export default function BarricadeGame() {
   const [winner, setWinner] = useState<Player | null>(null);
   const [flashMsg, setFlashMsg] = useState<string>("");
 
-  // Refs for keyboard handler
   const stateRef = useRef({
     phase, redPos, bluePos, hWalls, vWalls, turn, actionMode
   });
@@ -236,6 +240,18 @@ export default function BarricadeGame() {
     setTurn(player === "red" ? "blue" : "red");
     setActionMode("move");
   }, []);
+
+  const moveCurrentPlayer = useCallback((dr: number, dc: number) => {
+    const { phase, turn, redPos, bluePos, hWalls, vWalls, actionMode } = stateRef.current;
+    if (phase !== "playing" || actionMode !== "move") return;
+    const pos = turn === "red" ? redPos : bluePos;
+    const opp = turn === "red" ? bluePos : redPos;
+    const target = { row: pos.row + dr, col: pos.col + dc };
+    const valid = getValidMoves(pos, opp, hWalls, vWalls);
+    if (valid.some(v => v.row === target.row && v.col === target.col)) {
+      doMove(turn, target);
+    }
+  }, [doMove]);
 
   // Keyboard movement
   useEffect(() => {
@@ -290,7 +306,6 @@ export default function BarricadeGame() {
       return;
     }
 
-    // Place the wall
     if (w.type === "H") {
       setHWalls(prev => {
         const n = prev.map(r => [...r]);
@@ -315,7 +330,6 @@ export default function BarricadeGame() {
     setActionMode("move");
   }, [redWallsLeft, blueWallsLeft, flash]);
 
-  // Determine which cells are valid moves for highlighting
   const validMovesSet = (() => {
     if (phase !== "playing" || actionMode !== "move") return new Set<string>();
     const pos = turn === "red" ? redPos : bluePos;
@@ -323,7 +337,6 @@ export default function BarricadeGame() {
     return new Set(getValidMoves(pos, opp, hWalls, vWalls).map(posKey));
   })();
 
-  // Check if a hover wall segment is active
   const isHoverSeg = (type: "H" | "V", r: number, c: number): boolean => {
     if (!hoverWall) return false;
     if (hoverWall.type !== type) return false;
@@ -340,7 +353,6 @@ export default function BarricadeGame() {
 
   const wallsLeft = turn === "red" ? redWallsLeft : blueWallsLeft;
 
-  // Cell background color
   const cellBg = (r: number, c: number): string => {
     if (redPos.row === r && redPos.col === c) return "bg-red-600";
     if (bluePos.row === r && bluePos.col === c) return "bg-blue-600";
@@ -348,21 +360,6 @@ export default function BarricadeGame() {
     if (r === 0) return "bg-blue-900/30";
     if (r === G - 1) return "bg-red-900/30";
     return "bg-gray-900";
-  };
-
-  // Gap background color
-  const hGapBg = (r: number, c: number): string => {
-    if (isHWallAt(hWalls, r, c)) return "bg-yellow-400";
-    if (isHoverSeg("H", r, c))
-      return isValidHoverWall ? "bg-yellow-400/60" : "bg-red-500/60";
-    return "bg-gray-700/30";
-  };
-
-  const vGapBg = (r: number, c: number): string => {
-    if (isVWallAt(vWalls, r, c)) return "bg-yellow-400";
-    if (isHoverSeg("V", r, c))
-      return isValidHoverWall ? "bg-yellow-400/60" : "bg-red-500/60";
-    return "bg-gray-700/30";
   };
 
   const toggleWallMode = () => {
@@ -373,32 +370,35 @@ export default function BarricadeGame() {
   };
 
   const gridWidth = G * CELL + (G - 1) * GAP;
+  const pieceSize = Math.max(10, Math.floor(CELL * 0.55));
 
   return (
     <div className="flex flex-col w-full h-full bg-gray-950 text-white select-none">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800 shrink-0">
-        <div className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-all ${
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-800 shrink-0">
+        <div className={`flex items-center gap-1 px-2 py-1 rounded border transition-all ${
           turn === "red" && phase === "playing"
             ? "border-red-500 bg-red-500/15" : "border-transparent"
         }`}>
           <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
-          <span className="text-xs font-semibold text-red-400">Red — WASD</span>
-          <span className="text-xs text-red-300 ml-1">({redWallsLeft}🧱)</span>
+          <span className="text-xs font-semibold text-red-400">Red</span>
+          <span className="text-xs text-red-300">({redWallsLeft}🧱)</span>
+          {!isMobile && <span className="text-[10px] text-red-300/60 ml-0.5">WASD</span>}
           {turn === "red" && phase === "playing" && (
-            <span className="text-[10px] font-bold text-red-300 animate-pulse ml-1">▶ YOUR TURN</span>
+            <span className="text-[10px] font-bold text-red-300 animate-pulse ml-1">▶ TURN</span>
           )}
         </div>
 
-        <div className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-all ${
+        <div className={`flex items-center gap-1 px-2 py-1 rounded border transition-all ${
           turn === "blue" && phase === "playing"
             ? "border-blue-500 bg-blue-500/15" : "border-transparent"
         }`}>
           {turn === "blue" && phase === "playing" && (
-            <span className="text-[10px] font-bold text-blue-300 animate-pulse mr-1">YOUR TURN ◀</span>
+            <span className="text-[10px] font-bold text-blue-300 animate-pulse mr-1">TURN ◀</span>
           )}
-          <span className="text-xs text-blue-300 mr-1">({blueWallsLeft}🧱)</span>
-          <span className="text-xs font-semibold text-blue-400">Blue — ↑↓←→</span>
+          <span className="text-xs text-blue-300">({blueWallsLeft}🧱)</span>
+          {!isMobile && <span className="text-[10px] text-blue-300/60 mr-0.5">↑↓←→</span>}
+          <span className="text-xs font-semibold text-blue-400">Blue</span>
           <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
         </div>
       </div>
@@ -409,7 +409,7 @@ export default function BarricadeGame() {
       </div>
 
       {/* Grid */}
-      <div className="flex items-center justify-center flex-1 min-h-0">
+      <div className="flex items-center justify-center flex-1 min-h-0 overflow-hidden">
         <div
           style={{
             display: "grid",
@@ -442,9 +442,10 @@ export default function BarricadeGame() {
                   }}
                 >
                   {(isRed || isBlue) && (
-                    <div className={`w-4 h-4 rounded-full shadow-lg ${
-                      isRed ? "bg-red-200" : "bg-blue-200"
-                    }`} />
+                    <div
+                      className={`rounded-full shadow-lg ${isRed ? "bg-red-200" : "bg-blue-200"}`}
+                      style={{ width: pieceSize, height: pieceSize }}
+                    />
                   )}
                 </div>
               );
@@ -458,7 +459,7 @@ export default function BarricadeGame() {
                   className={`transition-colors duration-75 ${
                     placed ? "bg-yellow-400" : hovered
                       ? (isValidHoverWall ? "bg-yellow-300/70" : "bg-red-500/60")
-                      : actionMode === "wall" ? "bg-gray-600/40 hover:bg-yellow-300/30 cursor-pointer" : "bg-gray-700/20"
+                      : actionMode === "wall" ? "bg-gray-600/40 cursor-pointer" : "bg-gray-700/20"
                   }`}
                   onMouseEnter={() => handleGapHover(ri, ci)}
                   onClick={() => handleGapClick(ri, ci)}
@@ -474,20 +475,14 @@ export default function BarricadeGame() {
                   className={`transition-colors duration-75 ${
                     placed ? "bg-yellow-400" : hovered
                       ? (isValidHoverWall ? "bg-yellow-300/70" : "bg-red-500/60")
-                      : actionMode === "wall" ? "bg-gray-600/40 hover:bg-yellow-300/30 cursor-pointer" : "bg-gray-700/20"
+                      : actionMode === "wall" ? "bg-gray-600/40 cursor-pointer" : "bg-gray-700/20"
                   }`}
                   onMouseEnter={() => handleGapHover(ri, ci)}
                   onClick={() => handleGapClick(ri, ci)}
                 />
               );
             }
-            // Corner
-            return (
-              <div
-                key={key}
-                className="bg-gray-700/30"
-              />
-            );
+            return <div key={key} className="bg-gray-700/30" />;
           })}
         </div>
       </div>
@@ -498,15 +493,15 @@ export default function BarricadeGame() {
       </div>
 
       {/* Bottom panel */}
-      <div className="shrink-0 flex flex-col items-center gap-1.5 px-4 py-2 border-t border-gray-800">
+      <div className="shrink-0 flex flex-col items-center gap-2 px-4 py-2 border-t border-gray-800">
         {phase === "idle" && (
           <>
             <p className="text-xs text-gray-400 text-center">
-              Reach the opposite goal. Place walls to slow down your opponent, but never fully block them!
+              Reach the opposite goal. Place walls to slow your opponent — but never fully block them!
             </p>
             <button
               onClick={startGame}
-              className="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-all shadow"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-all shadow"
             >
               Start Game
             </button>
@@ -514,37 +509,82 @@ export default function BarricadeGame() {
         )}
 
         {phase === "playing" && (
-          <div className="flex items-center gap-3 w-full justify-center">
-            <button
-              onClick={toggleWallMode}
-              disabled={wallsLeft <= 0}
-              className={`px-3 py-1 text-xs font-semibold rounded border transition-all ${
-                actionMode === "wall"
-                  ? "bg-yellow-500 text-black border-yellow-400"
-                  : "bg-gray-800 text-gray-300 border-gray-600 hover:border-yellow-500/50"
-              } ${wallsLeft <= 0 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              {actionMode === "wall" ? "🧱 Placing Wall — click a gap" : "🧱 Place Wall"}
-            </button>
-
-            {actionMode === "wall" && (
+          <div className="flex flex-col items-center gap-2 w-full">
+            {/* Action row */}
+            <div className="flex items-center gap-3 justify-center">
               <button
-                onClick={() => { setActionMode("move"); setHoverWall(null); }}
-                className="px-3 py-1 text-xs font-semibold rounded border border-gray-600 bg-gray-800 text-gray-300 hover:border-gray-400 cursor-pointer"
+                onClick={toggleWallMode}
+                disabled={wallsLeft <= 0}
+                className={`px-3 py-1.5 text-xs font-semibold rounded border transition-all active:scale-95 ${
+                  actionMode === "wall"
+                    ? "bg-yellow-500 text-black border-yellow-400"
+                    : "bg-gray-800 text-gray-300 border-gray-600"
+                } ${wallsLeft <= 0 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
               >
-                Cancel
+                {actionMode === "wall" ? "🧱 Tap a gap" : "🧱 Place Wall"}
               </button>
+
+              {actionMode === "wall" && (
+                <button
+                  onClick={() => { setActionMode("move"); setHoverWall(null); }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded border border-gray-600 bg-gray-800 text-gray-300 active:scale-95 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+
+              {flashMsg && (
+                <span className="text-xs text-red-400 font-medium animate-pulse">{flashMsg}</span>
+              )}
+            </div>
+
+            {/* Mobile D-pad */}
+            {isMobile && actionMode === "move" && (
+              <div className="flex flex-col items-center gap-1 mt-1">
+                <p className="text-[10px] text-gray-500 mb-0.5">
+                  {turn === "red" ? "🔴 Red — tap to move" : "🔵 Blue — tap to move"}
+                </p>
+                <div className="flex flex-col items-center gap-1">
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); moveCurrentPlayer(-1, 0); }}
+                    onClick={() => moveCurrentPlayer(-1, 0)}
+                    className={`w-12 h-12 rounded-lg text-lg font-bold flex items-center justify-center active:scale-90 transition-transform shadow ${
+                      turn === "red" ? "bg-red-700/80 text-red-100" : "bg-blue-700/80 text-blue-100"
+                    }`}
+                  >▲</button>
+                  <div className="flex gap-1">
+                    <button
+                      onTouchStart={(e) => { e.preventDefault(); moveCurrentPlayer(0, -1); }}
+                      onClick={() => moveCurrentPlayer(0, -1)}
+                      className={`w-12 h-12 rounded-lg text-lg font-bold flex items-center justify-center active:scale-90 transition-transform shadow ${
+                        turn === "red" ? "bg-red-700/80 text-red-100" : "bg-blue-700/80 text-blue-100"
+                      }`}
+                    >◀</button>
+                    <div className="w-12 h-12" />
+                    <button
+                      onTouchStart={(e) => { e.preventDefault(); moveCurrentPlayer(0, 1); }}
+                      onClick={() => moveCurrentPlayer(0, 1)}
+                      className={`w-12 h-12 rounded-lg text-lg font-bold flex items-center justify-center active:scale-90 transition-transform shadow ${
+                        turn === "red" ? "bg-red-700/80 text-red-100" : "bg-blue-700/80 text-blue-100"
+                      }`}
+                    >▶</button>
+                  </div>
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); moveCurrentPlayer(1, 0); }}
+                    onClick={() => moveCurrentPlayer(1, 0)}
+                    className={`w-12 h-12 rounded-lg text-lg font-bold flex items-center justify-center active:scale-90 transition-transform shadow ${
+                      turn === "red" ? "bg-red-700/80 text-red-100" : "bg-blue-700/80 text-blue-100"
+                    }`}
+                  >▼</button>
+                </div>
+              </div>
             )}
 
-            {flashMsg && (
-              <span className="text-xs text-red-400 font-medium animate-pulse">{flashMsg}</span>
-            )}
-
-            {actionMode === "move" && !flashMsg && (
+            {!isMobile && actionMode === "move" && !flashMsg && (
               <span className="text-xs text-gray-500">
                 {turn === "red"
-                  ? "Red: WASD to move or place a wall"
-                  : "Blue: ↑↓←→ to move or place a wall"}
+                  ? "Red: WASD to move or click a valid cell"
+                  : "Blue: ↑↓←→ to move or click a valid cell"}
               </span>
             )}
           </div>
@@ -557,7 +597,7 @@ export default function BarricadeGame() {
             </div>
             <button
               onClick={startGame}
-              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-all"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-all"
             >
               Play Again
             </button>
