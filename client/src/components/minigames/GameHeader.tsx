@@ -1,9 +1,7 @@
-import { Button } from '@/components/ui/button';
-import { Home, ChevronLeft, Volume2, VolumeX } from 'lucide-react';
+import { ChevronLeft, Volume2, VolumeX } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAudio } from '@/lib/stores/useAudio';
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
 
 interface GameHeaderProps {
   title?: string;
@@ -14,28 +12,25 @@ const GameHeader = ({ title = "Minigame Collection", showHomeButton = false }: G
   const navigate = useNavigate();
   const { isMuted, toggleMute, playSuccess } = useAudio();
   const [audioLoaded, setAudioLoaded] = useState(false);
-  
-  // Setup audio elements
+
   useEffect(() => {
     if (!audioLoaded) {
-      // Create and configure audio elements
       const bgMusic = new Audio('/sounds/background.mp3');
       bgMusic.loop = true;
       bgMusic.volume = 0.3;
-      
+
       const hitSound = new Audio('/sounds/hit.mp3');
       hitSound.volume = 0.5;
-      
+
       const successSound = new Audio('/sounds/success.mp3');
       successSound.volume = 0.5;
-      
-      // Set the audio elements in the store
-      useAudio.setState({ 
+
+      useAudio.setState({
         backgroundMusic: bgMusic,
         hitSound: hitSound,
         successSound: successSound
       });
-      
+
       setAudioLoaded(true);
     }
   }, [audioLoaded]);
@@ -46,53 +41,40 @@ const GameHeader = ({ title = "Minigame Collection", showHomeButton = false }: G
   };
 
   return (
-    <header className="w-full bg-gradient-to-r from-primary/10 to-accent/10 p-4 shadow-md border-b border-primary/20">
+    <header className="w-full bg-gray-950 border-b border-gray-800 px-4 py-3 shrink-0">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           {showHomeButton && (
-            <Button 
-              variant="outline" 
-              size="icon"
+            <button
               onClick={goHome}
               aria-label="Return to Menu"
-              className="border-primary/40 hover:bg-primary/20 hover:text-primary transition-all duration-300"
+              className="w-8 h-8 flex items-center justify-center rounded border border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white transition-all"
             >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
+              <ChevronLeft className="h-4 w-4" />
+            </button>
           )}
-          <h1 className={cn(
-            "text-2xl font-bold text-foreground bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent",
-            showHomeButton ? "ml-0" : "ml-1"
-          )}>
+          <h1 className="text-lg font-bold text-white tracking-wide">
             {title}
           </h1>
         </div>
-        
-        <div className="flex gap-3">
-          <Button 
-            variant="outline" 
-            size="icon" 
+
+        <div className="flex gap-2">
+          <button
             onClick={toggleMute}
             aria-label={isMuted ? "Unmute" : "Mute"}
-            className="border-primary/40 hover:bg-primary/20 hover:text-primary transition-all duration-300"
+            className="w-8 h-8 flex items-center justify-center rounded border border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white transition-all"
           >
-            {isMuted ? (
-              <VolumeX className="h-5 w-5" />
-            ) : (
-              <Volume2 className="h-5 w-5" />
-            )}
-          </Button>
-          
+            {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+
           {!showHomeButton && (
-            <Button 
-              variant="default" 
-              size="sm"
+            <button
               onClick={() => window.open('https://github.com/your-username/minigame-collection', '_blank')}
-              aria-label="View on GitHub"
-              className="font-medium text-xs"
+              aria-label="View Project"
+              className="px-3 py-1 text-xs font-semibold rounded border border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white transition-all"
             >
               View Project
-            </Button>
+            </button>
           )}
         </div>
       </div>

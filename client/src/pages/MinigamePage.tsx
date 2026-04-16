@@ -10,29 +10,23 @@ const MinigamePage = () => {
   const { id } = useParams<{ id: string }>();
   const { games } = useMinigames();
   const { backgroundMusic } = useAudio();
-  
+
   const game = games.find(g => g.id === id);
-  
-  // Pause background music on game page
+
   useEffect(() => {
-    if (backgroundMusic) {
-      backgroundMusic.pause();
-    }
-    
+    if (backgroundMusic) backgroundMusic.pause();
     return () => {
-      if (backgroundMusic) {
-        backgroundMusic.pause();
-      }
+      if (backgroundMusic) backgroundMusic.pause();
     };
   }, [backgroundMusic]);
-  
+
   return (
-    <div className="flex flex-col min-h-screen">
-      <GameHeader 
-        title={game?.title || "Game"} 
-        showHomeButton={true} 
+    <div className="flex flex-col min-h-screen bg-gray-950 text-white">
+      <GameHeader
+        title={game?.title || "Game"}
+        showHomeButton={true}
       />
-      
+
       <main className="flex-1 flex flex-col items-center justify-start p-4 md:p-8">
         {game && game.isAvailable ? (
           <GameArea game={game} />
@@ -40,9 +34,9 @@ const MinigamePage = () => {
           <PlaceholderGame />
         )}
       </main>
-      
-      <footer className="py-4 text-center text-sm text-muted-foreground">
-        <p>© {new Date().getFullYear()} Minigame Collection</p>
+
+      <footer className="py-3 text-center border-t border-gray-800">
+        <p className="text-xs text-gray-600">© {new Date().getFullYear()} Minigame Collection</p>
       </footer>
     </div>
   );
