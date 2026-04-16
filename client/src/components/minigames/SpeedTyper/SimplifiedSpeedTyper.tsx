@@ -184,33 +184,6 @@ const _unused_wordBanks = {
   ]
 };
 
-// ─── Word Helpers ──────────────────────────────────────────────────────────────
-
-const getRandomWord = (lang: Language): string => {
-  const words = wordBanks[lang];
-  return words[Math.floor(Math.random() * words.length)];
-};
-
-const getWordOfLength = (lang: Language, length: number): string => {
-  const words = wordBanks[lang].filter(w => w.length === length);
-  if (words.length === 0) {
-    // nearest available length
-    const sorted = [...wordBanks[lang]].sort(
-      (a, b) => Math.abs(a.length - length) - Math.abs(b.length - length)
-    );
-    return sorted[Math.floor(Math.random() * Math.min(10, sorted.length))];
-  }
-  return words[Math.floor(Math.random() * words.length)];
-};
-
-const getWordInRange = (lang: Language, min: number, max: number): string => {
-  const words = wordBanks[lang].filter(w => w.length >= min && w.length <= max);
-  if (words.length === 0) return getRandomWord(lang);
-  return words[Math.floor(Math.random() * words.length)];
-};
-
-const getLetterCountForLevel = (level: number): number => Math.min(level + 2, 9);
-
 const generateId = (): string => Math.random().toString(36).substring(2, 9);
 
 const wordColors = [
