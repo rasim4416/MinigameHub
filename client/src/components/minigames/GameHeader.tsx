@@ -67,15 +67,6 @@ const GameHeader = ({ title = "Minigame Collection", showHomeButton = false }: G
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </button>
 
-          {!showHomeButton && (
-            <button
-              onClick={() => window.open('https://github.com/your-username/minigame-collection', '_blank')}
-              aria-label="View Project"
-              className="px-3 py-1 text-xs font-semibold rounded border border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:text-white transition-all"
-            >
-              View Project
-            </button>
-          )}
         </div>
       </div>
     </header>

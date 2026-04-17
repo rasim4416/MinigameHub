@@ -2,12 +2,14 @@ import { useNavigate } from "react-router-dom";
 import GameHeader from "./GameHeader";
 import GameGrid from "./GameGrid";
 import { useAudio } from "@/lib/stores/useAudio";
+import { useChips, CHIP_DENOMINATIONS } from "@/lib/stores/useChips";
 import { useEffect } from "react";
 import { Gamepad2 } from "lucide-react";
 
 const GameMenu = () => {
   const navigate = useNavigate();
   const { backgroundMusic, isMuted } = useAudio();
+  const { chips } = useChips();
 
   useEffect(() => {
     if (backgroundMusic && !isMuted) {
@@ -39,8 +41,26 @@ const GameMenu = () => {
             <Gamepad2 className="h-6 w-6 text-indigo-400" />
           </div>
           <p className="text-sm text-gray-500">
-            Select any game from our growing collection of minigames
+            Hemen tıkla oynamaya başla!
           </p>
+
+          {/* Chip counter */}
+          <div className="flex items-center justify-center mt-4">
+            <div className="flex items-center gap-3 bg-gray-900 border border-yellow-700/40 rounded-2xl px-5 py-2.5 shadow-lg">
+              <div className="flex -space-x-1">
+                {[10000, 1000, 100].map(v => {
+                  const chip = CHIP_DENOMINATIONS.find(c => c.value === v)!;
+                  return (
+                    <div key={v} className={`w-6 h-6 rounded-full ${chip.color} border ${chip.border} flex items-center justify-center text-[9px] font-bold ${chip.text} shadow`}>
+                      {chip.label}
+                    </div>
+                  );
+                })}
+              </div>
+              <span className="text-yellow-400 font-bold text-xl tracking-wide">{chips.toLocaleString()}</span>
+              <span className="text-gray-500 text-xs font-semibold uppercase tracking-wider">chips</span>
+            </div>
+          </div>
         </div>
 
         <div className="w-full">

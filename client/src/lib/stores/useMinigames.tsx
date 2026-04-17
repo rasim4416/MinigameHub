@@ -30,10 +30,10 @@ export const useMinigames = create<MinigamesState>(() => ({
       isAvailable: true
     },
     {
-      id: "quick-math",
-      title: "Quick Math",
-      icon: "🔢",
-      description: "Solve math problems as fast as you can",
+      id: "blackjack",
+      title: "Blackjack",
+      icon: "🃏",
+      description: "Classic casino blackjack — wager your chips and beat the dealer",
       isAvailable: true
     },
     {

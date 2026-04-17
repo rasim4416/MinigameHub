@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Trophy, Clock, PauseCircle, PlayCircle, Ban, Award, ChevronLeft, AlertTriangle, ArrowUp } from 'lucide-react';
 import { useAudio } from '@/lib/stores/useAudio';
 import { useLevelMode } from '@/lib/stores/useLevelMode';
+import { useChips } from '@/lib/stores/useChips';
 import {
   Language,
   getRandomWord,
@@ -249,8 +250,18 @@ const SimplifiedSpeedTyper: React.FC = () => {
   } = useLevelMode();
 
   const { playHit, playSuccess } = useAudio();
+  const { addChips } = useChips();
 
   const isLevelMode = gameMode === 'letter-level' || gameMode === 'score-level';
+
+  // Award chips equal to score when game ends
+  const prevGameOverRef = useRef(false);
+  useEffect(() => {
+    if (isGameOver && !prevGameOverRef.current && score > 0) {
+      addChips(score);
+    }
+    prevGameOverRef.current = isGameOver;
+  }, [isGameOver, score, addChips]);
 
   // ── Refs to avoid stale closures ──
   const gameModeRef        = useRef(gameMode);
@@ -756,6 +767,11 @@ const SimplifiedSpeedTyper: React.FC = () => {
                   <p className="text-gray-400 mb-1">
                     {language === 'english' ? 'Final Score' : 'Son Puan'}: <span className="text-yellow-300 font-bold">{score}</span>
                   </p>
+                  {score > 0 && (
+                    <p className="text-green-400 text-sm font-semibold mb-1">
+                      +{score} {language === 'english' ? 'chips earned!' : 'chip kazandınız!'}
+                    </p>
+                  )}
                   {isLevelMode && (
                     <p className="text-gray-500 text-sm mb-4">
                       {language === 'english'
