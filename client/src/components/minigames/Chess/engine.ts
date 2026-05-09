@@ -33,6 +33,8 @@ export interface ChessState {
   enPassantTarget: [number, number] | null; // square the capturing pawn lands on
   capturedByWhite: PieceType[];
   capturedByBlack: PieceType[];
+  goldWhite: number;
+  goldBlack: number;
   status: GameStatus;
   lastMove: MoveRecord | null;
   halfMoveClock: number;
@@ -324,6 +326,18 @@ export function makeMove(
     piece.color === "white" ? cbw.push("P") : cbb.push("P");
   }
 
+  // Award gold for captures
+  let goldWhite = state.goldWhite;
+  let goldBlack = state.goldBlack;
+  if (captured) {
+    const gain = PIECE_VALUE[captured.type];
+    piece.color === "white" ? (goldWhite += gain) : (goldBlack += gain);
+  }
+  if (isEP) {
+    // En passant always captures a pawn (1 gold)
+    piece.color === "white" ? (goldWhite += 1) : (goldBlack += 1);
+  }
+
   const record: MoveRecord = {
     from, to, piece: { ...piece }, captured,
     promotion, enPassant: isEP || undefined,
@@ -338,6 +352,8 @@ export function makeMove(
     enPassantTarget: newEP,
     capturedByWhite: cbw,
     capturedByBlack: cbb,
+    goldWhite,
+    goldBlack,
     status: "playing",
     lastMove: record,
     halfMoveClock: (piece.type === "P" || !!captured || isEP) ? 0 : state.halfMoveClock + 1,
@@ -376,6 +392,8 @@ export function createInitialState(): ChessState {
     enPassantTarget: null,
     capturedByWhite: [],
     capturedByBlack: [],
+    goldWhite: 0,
+    goldBlack: 0,
     status: "playing",
     lastMove: null,
     halfMoveClock: 0,

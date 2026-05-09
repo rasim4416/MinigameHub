@@ -185,6 +185,42 @@ function PromotionDialog({ color, onChoose }: { color: Color; onChoose: (t: Piec
   );
 }
 
+function GoldBadge({ gold, active }: { gold: number; active: boolean }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 5,
+      background: gold > 0
+        ? "linear-gradient(135deg, #1c1500, #2d2000)"
+        : "rgba(255,255,255,0.04)",
+      border: `1px solid ${gold > 0 ? "rgba(234,179,8,0.35)" : "rgba(255,255,255,0.08)"}`,
+      borderRadius: 20,
+      padding: "2px 8px 2px 5px",
+      transition: "all 0.3s",
+      boxShadow: gold > 0 && active
+        ? "0 0 8px rgba(234,179,8,0.25)"
+        : "none",
+    }}>
+      {/* Coin icon */}
+      <div style={{
+        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+        background: "radial-gradient(ellipse at 35% 30%, #fde047, #eab308 55%, #a16207)",
+        boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.25), 0 1px 3px rgba(0,0,0,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 900, color: "#422006", lineHeight: 1 }}>G</span>
+      </div>
+      <span style={{
+        fontSize: 13, fontWeight: 800,
+        color: gold > 0 ? "#facc15" : "#4b5563",
+        lineHeight: 1,
+        minWidth: 14, textAlign: "right",
+      }}>
+        {gold}
+      </span>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ChessGame() {
@@ -295,25 +331,28 @@ export default function ChessGame() {
     }}>
       {/* ── Black's info bar ── */}
       <div style={{
-        flexShrink: 0, height: 44,
+        flexShrink: 0, height: 48,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 12px",
         background: "#0a0f1a",
         borderBottom: "1px solid #1f2937",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
             width: 10, height: 10, borderRadius: "50%",
             background: "#1a0f00",
             border: "2px solid #6b7280",
             boxShadow: game.turn === "black" && !isOver ? "0 0 0 2px #6366f1" : "none",
+            flexShrink: 0,
           }} />
           <span style={{
-            fontSize: 13, fontWeight: 700,
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
             color: game.turn === "black" && !isOver ? "#e2e8f0" : "#6b7280",
           }}>
             BLACK
           </span>
+          {/* Gold pocket */}
+          <GoldBadge gold={game.goldBlack} active={game.turn === "black" && !isOver} />
           <CapturedRow
             pieces={game.capturedByBlack}
             byColor="white"
@@ -424,25 +463,28 @@ export default function ChessGame() {
 
       {/* ── White's info bar ── */}
       <div style={{
-        flexShrink: 0, height: 44,
+        flexShrink: 0, height: 48,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 12px",
         background: "#0a0f1a",
         borderTop: "1px solid #1f2937",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
             width: 10, height: 10, borderRadius: "50%",
             background: "#ffffff",
             border: "2px solid #6b7280",
             boxShadow: game.turn === "white" && !isOver ? "0 0 0 2px #6366f1" : "none",
+            flexShrink: 0,
           }} />
           <span style={{
-            fontSize: 13, fontWeight: 700,
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
             color: game.turn === "white" && !isOver ? "#e2e8f0" : "#6b7280",
           }}>
             WHITE
           </span>
+          {/* Gold pocket */}
+          <GoldBadge gold={game.goldWhite} active={game.turn === "white" && !isOver} />
           <CapturedRow
             pieces={game.capturedByWhite}
             byColor="black"
