@@ -2,9 +2,15 @@ import { useNavigate } from "react-router-dom";
 import GameHeader from "./GameHeader";
 import GameGrid from "./GameGrid";
 import { useAudio } from "@/lib/stores/useAudio";
-import { useChips, CHIP_DENOMINATIONS } from "@/lib/stores/useChips";
+import { useChips } from "@/lib/stores/useChips";
 import { useEffect } from "react";
 import { Gamepad2 } from "lucide-react";
+
+const MENU_CHIPS = [
+  { value: 10000, bg: "#eab308", light: "#fde047", dark: "#a16207", text: "#422006" },
+  { value: 1000,  bg: "#06b6d4", light: "#67e8f9", dark: "#0e7490", text: "#083344" },
+  { value: 100,   bg: "#1e293b", light: "#475569", dark: "#0f172a", text: "#e2e8f0" },
+];
 
 const GameMenu = () => {
   const navigate = useNavigate();
@@ -46,19 +52,36 @@ const GameMenu = () => {
 
           {/* Chip counter */}
           <div className="flex items-center justify-center mt-4">
-            <div className="flex items-center gap-3 bg-gray-900 border border-yellow-700/40 rounded-2xl px-5 py-2.5 shadow-lg">
-              <div className="flex -space-x-1">
-                {[10000, 1000, 100].map(v => {
-                  const chip = CHIP_DENOMINATIONS.find(c => c.value === v)!;
-                  return (
-                    <div key={v} className={`w-6 h-6 rounded-full ${chip.color} border ${chip.border} flex items-center justify-center text-[9px] font-bold ${chip.text} shadow`}>
-                      {chip.label}
-                    </div>
-                  );
-                })}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 14,
+              background: "linear-gradient(135deg,#0f172a,#111827)",
+              border: "1px solid rgba(234,179,8,0.25)",
+              borderRadius: 20, padding: "10px 22px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
+            }}>
+              {/* Stacked chips */}
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {MENU_CHIPS.map((c, i) => (
+                  <div key={c.value} style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: `radial-gradient(ellipse at 35% 30%, ${c.light}, ${c.bg} 55%, ${c.dark})`,
+                    boxShadow: `0 3px 8px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.25), inset 0 0 0 5px ${c.bg}, inset 0 0 0 6px rgba(0,0,0,0.15)`,
+                    marginLeft: i === 0 ? 0 : -10,
+                    zIndex: 3 - i,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <span style={{ fontSize: 8, fontWeight: 900, color: c.text, userSelect: "none" }}>
+                      {c.value >= 10000 ? "10K" : c.value >= 1000 ? "1K" : "100"}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <span className="text-yellow-400 font-bold text-xl tracking-wide">{chips.toLocaleString()}</span>
-              <span className="text-gray-500 text-xs font-semibold uppercase tracking-wider">chips</span>
+              <span style={{ fontSize: 22, fontWeight: 900, color: "#facc15", letterSpacing: "-0.02em", lineHeight: 1 }}>
+                {chips.toLocaleString()}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                chips
+              </span>
             </div>
           </div>
         </div>
