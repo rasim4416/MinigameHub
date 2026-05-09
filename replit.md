@@ -28,6 +28,16 @@ A React-based minigame hub with a 4x4 grid menu. Each game is a self-contained c
 - Stores: `useSimplifiedGame`, `useLevelMode`
 - Component: `client/src/components/minigames/SpeedTyper/SimplifiedSpeedTyper.tsx`
 
+### Chess (`chess`) — COMPLETE (base game; roguelike augments planned for Phase 2)
+- Full 2-player local chess engine (pure TypeScript, no libraries)
+- All piece moves: King, Queen, Rook, Bishop, Knight, Pawn
+- Special moves: castling (both sides), en passant, pawn promotion (dialog)
+- Check / checkmate / stalemate detection
+- Visual: classic chess.com-style board (#f0d9b5 / #b58863), Unicode pieces, selected/last-move/check highlights
+- Captured pieces shown per player; material advantage indicator
+- Engine file (`engine.ts`) is pure logic — ready for roguelike augment hooks in Phase 2
+- Files: `client/src/components/minigames/Chess/ChessGame.tsx`, `client/src/components/minigames/Chess/engine.ts`
+
 ### Barricade (`barricade`) — IN PROGRESS
 - Local 2-player game on an 11×11 grid
 - Red player (top-center, WASD) vs Blue player (bottom-center, Arrow keys)

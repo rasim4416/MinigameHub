@@ -37,11 +37,18 @@ export const useMinigames = create<MinigamesState>(() => ({
       isAvailable: true
     },
     {
+      id: "chess",
+      title: "Chess",
+      icon: "♟️",
+      description: "Classic 2-player chess — roguelike augments coming soon",
+      isAvailable: true
+    },
+    {
       id: "word-scramble",
       title: "Word Scramble",
       icon: "📝",
       description: "Unscramble words against the clock",
-      isAvailable: true
+      isAvailable: false
     },
     {
       id: "reaction-test",

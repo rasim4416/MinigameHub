@@ -7,13 +7,14 @@ import { Play, RotateCcw } from "lucide-react";
 import SimplifiedSpeedTyper from "./SpeedTyper/SimplifiedSpeedTyper";
 import BarricadeGame from "./Barricade/BarricadeGame";
 import BlackjackGame from "./Blackjack/BlackjackGame";
+import ChessGame from "./Chess/ChessGame";
 
 interface GameAreaProps {
   game: GameType;
 }
 
 const GameArea = ({ game }: GameAreaProps) => {
-  const isDedicatedGame = game.id === "speed-typer" || game.id === "barricade" || game.id === "blackjack";
+  const isDedicatedGame = game.id === "speed-typer" || game.id === "barricade" || game.id === "blackjack" || game.id === "chess";
   const [isLoading, setIsLoading] = useState(!isDedicatedGame);
   const [gameStarted, setGameStarted] = useState(false);
   const [score, setScore] = useState(0);
@@ -96,7 +97,12 @@ const GameArea = ({ game }: GameAreaProps) => {
     if (game.id === "blackjack") {
       return <BlackjackGame />;
     }
-    
+
+    // Chess Game
+    if (game.id === "chess") {
+      return <ChessGame />;
+    }
+
     // Default placeholder for other games
     return (
       <div className="flex flex-col items-center justify-center w-full h-full p-6 z-10">
