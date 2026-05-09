@@ -3,21 +3,27 @@ import {
   ChessState, PieceType, Color,
   PIECE_UNICODE, PIECE_VALUE,
   createInitialState, getLegalMoves, makeMove,
-  isInCheck, materialAdvantage, opp,
+  materialAdvantage, opp,
 } from "./engine";
+import { Augment, rollAugments, RARITY_META } from "./augments";
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const LIGHT_SQ = "#f0d9b5";
-const DARK_SQ  = "#b58863";
-const SEL_LIGHT  = "#f6f669";
-const SEL_DARK   = "#baca2b";
+type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
+
+// ─── Board square constants ───────────────────────────────────────────────────
+
+const LIGHT_SQ  = "#f0d9b5";
+const DARK_SQ   = "#b58863";
+const SEL_LIGHT = "#f6f669";
+const SEL_DARK  = "#baca2b";
 const LAST_LIGHT = "#cdd16f";
 const LAST_DARK  = "#aaa23a";
 
+// ─── SquareEl ─────────────────────────────────────────────────────────────────
+
 function SquareEl({
-  row, col, size, piece, isSelected, isValidMove, isLastMove, isCheckKing,
-  onClick,
+  row, col, size, piece, isSelected, isValidMove, isLastMove, isCheckKing, onClick,
 }: {
   row: number; col: number; size: number;
   piece: { type: PieceType; color: Color } | null;
@@ -26,80 +32,51 @@ function SquareEl({
 }) {
   const light = (row + col) % 2 === 0;
   let bg = light ? LIGHT_SQ : DARK_SQ;
-  if (isCheckKing) bg = "#c82020";
+  if (isCheckKing)  bg = "#c82020";
   else if (isSelected) bg = light ? SEL_LIGHT : SEL_DARK;
   else if (isLastMove) bg = light ? LAST_LIGHT : LAST_DARK;
 
-  const dotSize = size * 0.3;
-  const ringPad = size * 0.07;
+  const dot = size * 0.3;
+  const ring = size * 0.07;
 
   return (
-    <div
-      onClick={onClick}
-      style={{
-        width: size, height: size,
-        backgroundColor: bg,
-        position: "relative",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer",
-        transition: "background-color 0.1s",
-      }}
-    >
-      {/* Rank label — left edge, col 0 */}
+    <div onClick={onClick} style={{
+      width: size, height: size, backgroundColor: bg,
+      position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+      cursor: "pointer", transition: "background-color 0.1s",
+    }}>
       {col === 0 && (
         <span style={{
           position: "absolute", top: 2, left: 3,
           fontSize: Math.max(9, size * 0.18), fontWeight: 700,
-          color: light ? DARK_SQ : LIGHT_SQ,
-          userSelect: "none", lineHeight: 1,
-        }}>
-          {8 - row}
-        </span>
+          color: light ? DARK_SQ : LIGHT_SQ, userSelect: "none", lineHeight: 1,
+        }}>{8 - row}</span>
       )}
-      {/* File label — bottom edge, row 7 */}
       {row === 7 && (
         <span style={{
           position: "absolute", bottom: 2, right: 3,
           fontSize: Math.max(9, size * 0.18), fontWeight: 700,
-          color: light ? DARK_SQ : LIGHT_SQ,
-          userSelect: "none", lineHeight: 1,
-        }}>
-          {String.fromCharCode(97 + col)}
-        </span>
+          color: light ? DARK_SQ : LIGHT_SQ, userSelect: "none", lineHeight: 1,
+        }}>{String.fromCharCode(97 + col)}</span>
       )}
-      {/* Valid-move dot (empty square) */}
       {isValidMove && !piece && (
-        <div style={{
-          width: dotSize, height: dotSize,
-          borderRadius: "50%",
-          backgroundColor: "rgba(0,0,0,0.22)",
-          pointerEvents: "none",
-        }} />
+        <div style={{ width: dot, height: dot, borderRadius: "50%", backgroundColor: "rgba(0,0,0,0.22)", pointerEvents: "none" }} />
       )}
-      {/* Valid-move ring (capture square) */}
       {isValidMove && piece && (
         <div style={{
-          position: "absolute",
-          inset: ringPad,
-          borderRadius: "50%",
-          border: `${Math.max(3, size * 0.07)}px solid rgba(0,0,0,0.28)`,
-          pointerEvents: "none",
+          position: "absolute", inset: ring, borderRadius: "50%",
+          border: `${Math.max(3, size * 0.07)}px solid rgba(0,0,0,0.28)`, pointerEvents: "none",
         }} />
       )}
-      {/* Piece */}
       {piece && (
-        <span
-          style={{
-            fontSize: size * 0.72,
-            lineHeight: 1,
-            color: piece.color === "white" ? "#ffffff" : "#1a0f00",
-            textShadow: piece.color === "white"
-              ? "0 0 3px #000, 0 0 6px #000, 1px 1px 0 #222"
-              : "0 0 3px rgba(255,255,255,0.7), 1px 1px 0 rgba(255,255,255,0.5)",
-            userSelect: "none",
-            pointerEvents: "none",
-          }}
-        >
+        <span style={{
+          fontSize: size * 0.72, lineHeight: 1,
+          color: piece.color === "white" ? "#ffffff" : "#1a0f00",
+          textShadow: piece.color === "white"
+            ? "0 0 3px #000, 0 0 6px #000, 1px 1px 0 #222"
+            : "0 0 3px rgba(255,255,255,0.7), 1px 1px 0 rgba(255,255,255,0.5)",
+          userSelect: "none", pointerEvents: "none",
+        }}>
           {PIECE_UNICODE[piece.color][piece.type]}
         </span>
       )}
@@ -107,10 +84,11 @@ function SquareEl({
   );
 }
 
+// ─── CapturedRow ──────────────────────────────────────────────────────────────
+
 function CapturedRow({ pieces, byColor, advantage }: {
   pieces: PieceType[]; byColor: Color; advantage: number;
 }) {
-  // Sort by value descending for display
   const sorted = [...pieces].sort((a, b) => PIECE_VALUE[b] - PIECE_VALUE[a]);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
@@ -121,18 +99,16 @@ function CapturedRow({ pieces, byColor, advantage }: {
           textShadow: byColor === "white"
             ? "0 0 2px #000, 0 0 4px #000"
             : "0 0 2px rgba(255,255,255,0.6)",
-        }}>
-          {PIECE_UNICODE[byColor][t]}
-        </span>
+        }}>{PIECE_UNICODE[byColor][t]}</span>
       ))}
       {advantage > 0 && (
-        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, marginLeft: 2 }}>
-          +{advantage}
-        </span>
+        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, marginLeft: 2 }}>+{advantage}</span>
       )}
     </div>
   );
 }
+
+// ─── PromotionDialog ──────────────────────────────────────────────────────────
 
 function PromotionDialog({ color, onChoose }: { color: Color; onChoose: (t: PieceType) => void }) {
   const pieces: PieceType[] = ["Q", "R", "B", "N"];
@@ -143,38 +119,24 @@ function PromotionDialog({ color, onChoose }: { color: Color; onChoose: (t: Piec
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       <div style={{
-        background: "#1f2937", border: "1px solid #374151",
-        borderRadius: 14, padding: "18px 24px",
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
-        boxShadow: "0 8px 40px rgba(0,0,0,0.7)",
+        background: "#1f2937", border: "1px solid #374151", borderRadius: 14,
+        padding: "18px 24px", display: "flex", flexDirection: "column",
+        alignItems: "center", gap: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.7)",
       }}>
-        <p style={{ color: "#e5e7eb", fontWeight: 700, fontSize: 14, margin: 0 }}>
-          Promote Pawn
-        </p>
+        <p style={{ color: "#e5e7eb", fontWeight: 700, fontSize: 14, margin: 0 }}>Promote Pawn</p>
         <div style={{ display: "flex", gap: 10 }}>
           {pieces.map(t => (
-            <button
-              key={t}
-              onClick={() => onChoose(t)}
-              style={{
-                width: 56, height: 56, borderRadius: 10,
-                background: "#111827", border: "2px solid #4b5563",
-                cursor: "pointer", fontSize: 32, lineHeight: 1,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: color === "white" ? "#ffffff" : "#1a0f00",
-                textShadow: color === "white"
-                  ? "0 0 3px #000, 0 0 6px #000"
-                  : "0 0 3px rgba(255,255,255,0.7)",
-                transition: "border-color 0.15s, background 0.15s",
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = "#6366f1";
-                (e.currentTarget as HTMLButtonElement).style.background = "#1e1b4b";
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = "#4b5563";
-                (e.currentTarget as HTMLButtonElement).style.background = "#111827";
-              }}
+            <button key={t} onClick={() => onChoose(t)} style={{
+              width: 56, height: 56, borderRadius: 10,
+              background: "#111827", border: "2px solid #4b5563",
+              cursor: "pointer", fontSize: 32, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: color === "white" ? "#ffffff" : "#1a0f00",
+              textShadow: color === "white" ? "0 0 3px #000, 0 0 6px #000" : "0 0 3px rgba(255,255,255,0.7)",
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#6366f1"; (e.currentTarget as HTMLElement).style.background = "#1e1b4b"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#4b5563"; (e.currentTarget as HTMLElement).style.background = "#111827"; }}
             >
               {PIECE_UNICODE[color][t]}
             </button>
@@ -185,38 +147,210 @@ function PromotionDialog({ color, onChoose }: { color: Color; onChoose: (t: Piec
   );
 }
 
+// ─── GoldBadge ────────────────────────────────────────────────────────────────
+
 function GoldBadge({ gold, active }: { gold: number; active: boolean }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 5,
-      background: gold > 0
-        ? "linear-gradient(135deg, #1c1500, #2d2000)"
-        : "rgba(255,255,255,0.04)",
+      background: gold > 0 ? "linear-gradient(135deg,#1c1500,#2d2000)" : "rgba(255,255,255,0.04)",
       border: `1px solid ${gold > 0 ? "rgba(234,179,8,0.35)" : "rgba(255,255,255,0.08)"}`,
-      borderRadius: 20,
-      padding: "2px 8px 2px 5px",
-      transition: "all 0.3s",
-      boxShadow: gold > 0 && active
-        ? "0 0 8px rgba(234,179,8,0.25)"
-        : "none",
+      borderRadius: 20, padding: "2px 8px 2px 5px", transition: "all 0.3s",
+      boxShadow: gold > 0 && active ? "0 0 8px rgba(234,179,8,0.25)" : "none",
     }}>
-      {/* Coin icon */}
       <div style={{
         width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
-        background: "radial-gradient(ellipse at 35% 30%, #fde047, #eab308 55%, #a16207)",
+        background: "radial-gradient(ellipse at 35% 30%,#fde047,#eab308 55%,#a16207)",
         boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.25), 0 1px 3px rgba(0,0,0,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         <span style={{ fontSize: 8, fontWeight: 900, color: "#422006", lineHeight: 1 }}>G</span>
       </div>
-      <span style={{
-        fontSize: 13, fontWeight: 800,
-        color: gold > 0 ? "#facc15" : "#4b5563",
-        lineHeight: 1,
-        minWidth: 14, textAlign: "right",
-      }}>
+      <span style={{ fontSize: 13, fontWeight: 800, color: gold > 0 ? "#facc15" : "#4b5563", lineHeight: 1, minWidth: 14, textAlign: "right" }}>
         {gold}
       </span>
+    </div>
+  );
+}
+
+// ─── AugmentChip (shown in player bar during game) ────────────────────────────
+
+function AugmentChip({ augment }: { augment: Augment }) {
+  const m = RARITY_META[augment.rarity];
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 4,
+      background: "#0f172a",
+      border: `1px solid ${m.border}`,
+      borderRadius: 20, padding: "1px 8px 1px 4px",
+      boxShadow: `0 0 6px ${m.glow}`,
+    }}>
+      <span style={{ fontSize: 12, lineHeight: 1 }}>{augment.icon}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color: m.text, letterSpacing: "0.02em" }}>
+        {augment.name}
+      </span>
+    </div>
+  );
+}
+
+// ─── AugmentCard ─────────────────────────────────────────────────────────────
+
+function AugmentCard({ augment, onSelect }: { augment: Augment; onSelect: () => void }) {
+  const [hov, setHov] = useState(false);
+  const m = RARITY_META[augment.rarity];
+  return (
+    <div
+      onClick={onSelect}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        width: 155, padding: "18px 14px 14px",
+        borderRadius: 14,
+        border: `2px solid ${hov ? m.border : "rgba(255,255,255,0.07)"}`,
+        background: hov ? "#0b1120" : "#080e1a",
+        cursor: "pointer",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+        boxShadow: hov ? `0 0 22px ${m.glow}, 0 4px 16px rgba(0,0,0,0.5)` : "0 2px 8px rgba(0,0,0,0.4)",
+        transform: hov ? "translateY(-5px) scale(1.02)" : "translateY(0) scale(1)",
+        transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+        userSelect: "none",
+      }}
+    >
+      {/* Rarity bar at top */}
+      <div style={{
+        position: "absolute", top: 0, left: 14, right: 14, height: 3,
+        borderRadius: "0 0 3px 3px",
+        background: `linear-gradient(90deg, transparent, ${m.border}, transparent)`,
+        opacity: hov ? 1 : 0.4, transition: "opacity 0.2s",
+      }} />
+      <span style={{ fontSize: 36, lineHeight: 1, filter: hov ? "drop-shadow(0 0 8px rgba(255,255,255,0.3))" : "none", transition: "filter 0.2s" }}>
+        {augment.icon}
+      </span>
+      <div style={{ textAlign: "center" }}>
+        <p style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", margin: "0 0 5px", letterSpacing: "0.01em" }}>
+          {augment.name}
+        </p>
+        <p style={{ fontSize: 10.5, color: "#64748b", margin: 0, lineHeight: 1.45 }}>
+          {augment.description}
+        </p>
+      </div>
+      <div style={{
+        fontSize: 9, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase",
+        padding: "2px 10px", borderRadius: 20,
+        background: m.badge, color: m.text, border: `1px solid ${m.border}`,
+      }}>
+        {m.label}
+      </div>
+    </div>
+  );
+}
+
+// ─── AugmentSelector ─────────────────────────────────────────────────────────
+
+function AugmentSelector({ playerColor, offered, onSelect }: {
+  playerColor: Color; offered: Augment[]; onSelect: (aug: Augment) => void;
+}) {
+  const isWhite = playerColor === "white";
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 80,
+      background: "linear-gradient(160deg, #030712 0%, #080e1f 100%)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      gap: 20, padding: "16px 12px",
+    }}>
+      {/* Header */}
+      <div style={{ textAlign: "center" }}>
+        <p style={{
+          fontSize: 10, letterSpacing: "0.2em", fontWeight: 700,
+          color: "#475569", margin: "0 0 6px", textTransform: "uppercase",
+        }}>
+          Choose your augment
+        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <div style={{
+            width: 12, height: 12, borderRadius: "50%",
+            background: isWhite ? "#ffffff" : "#1a0f00",
+            border: `2px solid ${isWhite ? "#94a3b8" : "#6b7280"}`,
+            boxShadow: `0 0 10px ${isWhite ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}`,
+          }} />
+          <h2 style={{
+            fontSize: 20, fontWeight: 900, margin: 0, letterSpacing: "0.08em",
+            color: isWhite ? "#f1f5f9" : "#cbd5e1",
+          }}>
+            {playerColor.toUpperCase()}
+          </h2>
+        </div>
+      </div>
+
+      {/* Cards row */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+        {offered.map(aug => (
+          <AugmentCard key={aug.id} augment={aug} onSelect={() => onSelect(aug)} />
+        ))}
+      </div>
+
+      <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>
+        Click a card to select it
+      </p>
+    </div>
+  );
+}
+
+// ─── StartScreen ─────────────────────────────────────────────────────────────
+
+function StartScreen({ onStart }: { onStart: () => void }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 80,
+      background: "linear-gradient(160deg, #030712 0%, #080e1f 100%)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      gap: 18,
+    }}>
+      {/* Chess board mini-decoration */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,10px)", gap: 1, opacity: 0.15, marginBottom: 4 }}>
+        {Array.from({ length: 16 }, (_, i) => (
+          <div key={i} style={{
+            width: 10, height: 10,
+            background: (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863",
+          }} />
+        ))}
+      </div>
+
+      <span style={{ fontSize: 48, lineHeight: 1, filter: "drop-shadow(0 4px 16px rgba(99,102,241,0.4))" }}>♟️</span>
+
+      <div style={{ textAlign: "center" }}>
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: "#f1f5f9", margin: "0 0 6px", letterSpacing: "0.04em" }}>
+          Chess Roguelike
+        </h2>
+        <p style={{ fontSize: 12, color: "#475569", margin: 0, lineHeight: 1.6 }}>
+          Classic chess · Each player picks an augment<br />before the game begins
+        </p>
+      </div>
+
+      <button
+        onClick={onStart}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          padding: "11px 44px", fontSize: 14, fontWeight: 800,
+          letterSpacing: "0.1em", textTransform: "uppercase",
+          borderRadius: 12, border: "none", cursor: "pointer",
+          background: hov
+            ? "linear-gradient(135deg,#4338ca,#6366f1)"
+            : "linear-gradient(135deg,#4f46e5,#818cf8)",
+          color: "#fff",
+          boxShadow: hov
+            ? "0 6px 28px rgba(99,102,241,0.65)"
+            : "0 4px 18px rgba(99,102,241,0.45)",
+          transform: hov ? "translateY(-2px)" : "none",
+          transition: "all 0.18s",
+        }}
+      >
+        Start Game
+      </button>
     </div>
   );
 }
@@ -227,12 +361,20 @@ export default function ChessGame() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardPx, setBoardPx] = useState(320);
 
+  // Chess state
   const [game, setGame] = useState<ChessState>(createInitialState);
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [promotionPending, setPromotionPending] = useState<{
     from: [number, number]; to: [number, number];
   } | null>(null);
+
+  // Roguelike phase + augment state
+  const [phase, setPhase] = useState<GamePhase>("start");
+  const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
+  const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
+  const [whiteAugment, setWhiteAugment] = useState<Augment | null>(null);
+  const [blackAugment, setBlackAugment] = useState<Augment | null>(null);
 
   // Responsive board size
   useEffect(() => {
@@ -246,13 +388,35 @@ export default function ChessGame() {
 
   const sqSize = boardPx / 8;
 
+  // ── Phase handlers ──────────────────────────────────────────────────────────
+
+  const handleStart = () => {
+    const offered = rollAugments(3);
+    setOfferedToWhite(offered);
+    setPhase("white-augment");
+  };
+
+  const handleWhitePick = (aug: Augment) => {
+    setWhiteAugment(aug);
+    const offered = rollAugments(3, [aug.id]);
+    setOfferedToBlack(offered);
+    setPhase("black-augment");
+  };
+
+  const handleBlackPick = (aug: Augment) => {
+    setBlackAugment(aug);
+    setPhase("playing");
+  };
+
+  // ── Chess handlers ──────────────────────────────────────────────────────────
+
   const handleSquareClick = useCallback((r: number, c: number) => {
+    if (phase !== "playing") return;
     if (game.status === "checkmate" || game.status === "stalemate") return;
     if (promotionPending) return;
 
     const piece = game.board[r][c];
 
-    // If a piece is selected, try to move
     if (selected) {
       const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
       if (isValid) {
@@ -261,7 +425,6 @@ export default function ChessGame() {
           movingPiece.type === "P" &&
           ((movingPiece.color === "white" && r === 0) ||
            (movingPiece.color === "black" && r === 7));
-
         if (isPromotion) {
           setPromotionPending({ from: selected, to: [r, c] });
         } else {
@@ -271,26 +434,21 @@ export default function ChessGame() {
         }
         return;
       }
-
-      // Clicking own piece — re-select
       if (piece && piece.color === game.turn) {
         setSelected([r, c]);
         setValidMoves(getLegalMoves(game, r, c));
         return;
       }
-
-      // Clicking elsewhere — deselect
       setSelected(null);
       setValidMoves([]);
       return;
     }
 
-    // Nothing selected yet — select a piece
     if (piece && piece.color === game.turn) {
       setSelected([r, c]);
       setValidMoves(getLegalMoves(game, r, c));
     }
-  }, [game, selected, validMoves, promotionPending]);
+  }, [phase, game, selected, validMoves, promotionPending]);
 
   const handlePromotion = useCallback((type: PieceType) => {
     if (!promotionPending) return;
@@ -305,16 +463,21 @@ export default function ChessGame() {
     setSelected(null);
     setValidMoves([]);
     setPromotionPending(null);
+    setPhase("start");
+    setWhiteAugment(null);
+    setBlackAugment(null);
+    setOfferedToWhite([]);
+    setOfferedToBlack([]);
   };
 
-  const adv = materialAdvantage(game);
+  // ── Derived state ───────────────────────────────────────────────────────────
 
-  // Status text
+  const adv = materialAdvantage(game);
+  const isOver = game.status === "checkmate" || game.status === "stalemate";
+
   const statusText = (() => {
-    if (game.status === "checkmate") {
-      const winner = opp(game.turn);
-      return { label: `${winner.toUpperCase()} WINS  ·  Checkmate`, color: "#4ade80" };
-    }
+    if (game.status === "checkmate")
+      return { label: `${opp(game.turn).toUpperCase()} WINS  ·  Checkmate`, color: "#4ade80" };
     if (game.status === "stalemate")
       return { label: "DRAW  ·  Stalemate", color: "#94a3b8" };
     if (game.status === "check")
@@ -322,72 +485,56 @@ export default function ChessGame() {
     return { label: `${game.turn.toUpperCase()}'S TURN`, color: "#e2e8f0" };
   })();
 
-  const isOver = game.status === "checkmate" || game.status === "stalemate";
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div style={{
       display: "flex", flexDirection: "column", width: "100%", height: "100%",
       background: "#030712", color: "#fff", userSelect: "none", overflow: "hidden",
+      position: "relative",  // so phase overlays can cover the full card
     }}>
+
       {/* ── Black's info bar ── */}
       <div style={{
         flexShrink: 0, height: 48,
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 12px",
-        background: "#0a0f1a",
-        borderBottom: "1px solid #1f2937",
+        padding: "0 12px", background: "#0a0f1a", borderBottom: "1px solid #1f2937",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
-            width: 10, height: 10, borderRadius: "50%",
-            background: "#1a0f00",
-            border: "2px solid #6b7280",
-            boxShadow: game.turn === "black" && !isOver ? "0 0 0 2px #6366f1" : "none",
-            flexShrink: 0,
+            width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+            background: "#1a0f00", border: "2px solid #6b7280",
+            boxShadow: game.turn === "black" && !isOver && phase === "playing" ? "0 0 0 2px #6366f1" : "none",
           }} />
           <span style={{
             fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
-            color: game.turn === "black" && !isOver ? "#e2e8f0" : "#6b7280",
-          }}>
-            BLACK
-          </span>
-          {/* Gold pocket */}
-          <GoldBadge gold={game.goldBlack} active={game.turn === "black" && !isOver} />
-          <CapturedRow
-            pieces={game.capturedByBlack}
-            byColor="white"
-            advantage={adv.black > 0 ? adv.black : 0}
-          />
+            color: game.turn === "black" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
+          }}>BLACK</span>
+          {blackAugment && <AugmentChip augment={blackAugment} />}
+          <GoldBadge gold={game.goldBlack} active={game.turn === "black" && !isOver && phase === "playing"} />
+          <CapturedRow pieces={game.capturedByBlack} byColor="white" advantage={adv.black > 0 ? adv.black : 0} />
         </div>
-        <button
-          onClick={resetGame}
-          style={{
-            padding: "4px 12px", fontSize: 11, fontWeight: 700,
-            borderRadius: 6, border: "1px solid #374151",
-            background: "#111827", color: "#9ca3af", cursor: "pointer",
-          }}
-        >
+        <button onClick={resetGame} style={{
+          padding: "4px 12px", fontSize: 11, fontWeight: 700,
+          borderRadius: 6, border: "1px solid #374151",
+          background: "#111827", color: "#9ca3af", cursor: "pointer",
+        }}>
           New Game
         </button>
       </div>
 
       {/* ── Board area ── */}
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          padding: 6, minHeight: 0, position: "relative",
-          background: "#030712",
-        }}
-      >
-        {/* Board */}
+      <div ref={containerRef} style={{
+        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 6, minHeight: 0, position: "relative", background: "#030712",
+      }}>
+        {/* Board grid */}
         <div style={{
           width: boardPx, height: boardPx,
           display: "grid",
           gridTemplateColumns: `repeat(8, ${sqSize}px)`,
           gridTemplateRows: `repeat(8, ${sqSize}px)`,
-          border: "3px solid #5c3d1e",
-          borderRadius: 2,
+          border: "3px solid #5c3d1e", borderRadius: 2,
           boxShadow: "0 8px 40px rgba(0,0,0,0.8), 0 2px 8px rgba(0,0,0,0.5)",
           flexShrink: 0,
         }}>
@@ -399,18 +546,12 @@ export default function ChessGame() {
               const isLM  = !!(game.lastMove &&
                 ((game.lastMove.from[0] === r && game.lastMove.from[1] === c) ||
                  (game.lastMove.to[0]   === r && game.lastMove.to[1]   === c)));
-              const isCK  = !!(piece?.type === "K" &&
-                piece.color === game.turn &&
+              const isCK  = !!(piece?.type === "K" && piece.color === game.turn &&
                 (game.status === "check" || game.status === "checkmate"));
               return (
-                <SquareEl
-                  key={`${r}-${c}`}
-                  row={r} col={c} size={sqSize}
-                  piece={piece}
-                  isSelected={isSel}
-                  isValidMove={isVM}
-                  isLastMove={isLM}
-                  isCheckKing={isCK}
+                <SquareEl key={`${r}-${c}`}
+                  row={r} col={c} size={sqSize} piece={piece}
+                  isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK}
                   onClick={() => handleSquareClick(r, c)}
                 />
               );
@@ -420,29 +561,20 @@ export default function ChessGame() {
 
         {/* Promotion overlay */}
         {promotionPending && (
-          <PromotionDialog
-            color={game.turn}
-            onChoose={handlePromotion}
-          />
+          <PromotionDialog color={game.turn} onChoose={handlePromotion} />
         )}
 
         {/* Game-over overlay */}
         {isOver && (
           <div style={{
-            position: "absolute", inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            pointerEvents: "none",
+            position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none",
           }}>
             <div style={{
-              background: "#111827",
-              border: "1px solid #374151",
-              borderRadius: 14,
-              padding: "20px 36px",
-              display: "flex", flexDirection: "column",
+              background: "#111827", border: "1px solid #374151", borderRadius: 14,
+              padding: "20px 36px", display: "flex", flexDirection: "column",
               alignItems: "center", gap: 10,
-              boxShadow: "0 8px 40px rgba(0,0,0,0.7)",
-              pointerEvents: "auto",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.7)", pointerEvents: "auto",
             }}>
               <span style={{ fontSize: 22, fontWeight: 900, color: statusText.color, letterSpacing: "0.04em" }}>
                 {statusText.label}
@@ -450,8 +582,7 @@ export default function ChessGame() {
               <button onClick={resetGame} style={{
                 padding: "8px 28px", fontSize: 14, fontWeight: 700,
                 borderRadius: 10, border: "none", cursor: "pointer",
-                background: "linear-gradient(135deg,#4f46e5,#6366f1)",
-                color: "#fff",
+                background: "linear-gradient(135deg,#4f46e5,#6366f1)", color: "#fff",
                 boxShadow: "0 3px 12px rgba(99,102,241,0.5)",
               }}>
                 Play Again
@@ -465,34 +596,23 @@ export default function ChessGame() {
       <div style={{
         flexShrink: 0, height: 48,
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 12px",
-        background: "#0a0f1a",
-        borderTop: "1px solid #1f2937",
+        padding: "0 12px", background: "#0a0f1a", borderTop: "1px solid #1f2937",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
-            width: 10, height: 10, borderRadius: "50%",
-            background: "#ffffff",
-            border: "2px solid #6b7280",
-            boxShadow: game.turn === "white" && !isOver ? "0 0 0 2px #6366f1" : "none",
-            flexShrink: 0,
+            width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+            background: "#ffffff", border: "2px solid #6b7280",
+            boxShadow: game.turn === "white" && !isOver && phase === "playing" ? "0 0 0 2px #6366f1" : "none",
           }} />
           <span style={{
             fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
-            color: game.turn === "white" && !isOver ? "#e2e8f0" : "#6b7280",
-          }}>
-            WHITE
-          </span>
-          {/* Gold pocket */}
-          <GoldBadge gold={game.goldWhite} active={game.turn === "white" && !isOver} />
-          <CapturedRow
-            pieces={game.capturedByWhite}
-            byColor="black"
-            advantage={adv.white > 0 ? adv.white : 0}
-          />
+            color: game.turn === "white" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
+          }}>WHITE</span>
+          {whiteAugment && <AugmentChip augment={whiteAugment} />}
+          <GoldBadge gold={game.goldWhite} active={game.turn === "white" && !isOver && phase === "playing"} />
+          <CapturedRow pieces={game.capturedByWhite} byColor="black" advantage={adv.white > 0 ? adv.white : 0} />
         </div>
-        {/* Status pill */}
-        {!isOver && (
+        {phase === "playing" && !isOver && (
           <div style={{
             fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
             color: statusText.color,
@@ -505,6 +625,28 @@ export default function ChessGame() {
           </div>
         )}
       </div>
+
+      {/* ══ Phase overlays (cover the full card via position:absolute on outer div) ══ */}
+
+      {phase === "start" && (
+        <StartScreen onStart={handleStart} />
+      )}
+
+      {phase === "white-augment" && (
+        <AugmentSelector
+          playerColor="white"
+          offered={offeredToWhite}
+          onSelect={handleWhitePick}
+        />
+      )}
+
+      {phase === "black-augment" && (
+        <AugmentSelector
+          playerColor="black"
+          offered={offeredToBlack}
+          onSelect={handleBlackPick}
+        />
+      )}
     </div>
   );
 }
