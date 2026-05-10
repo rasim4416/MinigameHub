@@ -10,17 +10,17 @@ import { Augment, rollAugments, RARITY_META } from "./augments";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
-
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
-
 const EMPTY_MILESTONES: Milestones = { knight: false, bishop: false, rook: false };
 
-/** Returns the piece type that just triggered a new milestone, or null. */
+// Center squares for King of the Hill: d4(4,3) d5(3,3) e4(4,4) e5(3,4)
+const CENTER_SQUARES = new Set(["4,3", "3,3", "4,4", "3,4"]);
+
 function checkNewMilestone(captured: PieceType | null, ms: Milestones): PieceType | null {
   if (!captured) return null;
   if (captured === "N" && !ms.knight) return "N";
   if (captured === "B" && !ms.bishop) return "B";
-  if (captured === "R" && !ms.rook) return "R";
+  if (captured === "R" && !ms.rook)   return "R";
   return null;
 }
 
@@ -29,6 +29,37 @@ function applyMilestone(type: PieceType, ms: Milestones): Milestones {
     knight: type === "N" ? true : ms.knight,
     bishop: type === "B" ? true : ms.bishop,
     rook:   type === "R" ? true : ms.rook,
+  };
+}
+
+/**
+ * Apply end-of-turn passive augment effects (Miner, King of the Hill).
+ * Called AFTER makeMove, so the board already reflects the move.
+ */
+function applyEndOfTurnEffects(
+  g: ChessState,
+  movingColor: Color,
+  augments: Augment[],
+  turnCount: number, // this player's turn count including the current move
+): ChessState {
+  let delta = 0;
+  for (const aug of augments) {
+    // Miner: +1 gold every 2 turns
+    if (aug.id === "miner" && turnCount % 2 === 0) delta += 1;
+
+    // King of the Hill: +1 gold per own piece on center squares
+    if (aug.id === "king-of-the-hill") {
+      for (const key of CENTER_SQUARES) {
+        const [r, c] = key.split(",").map(Number);
+        if (g.board[r][c]?.color === movingColor) delta += 1;
+      }
+    }
+  }
+  if (delta === 0) return g;
+  return {
+    ...g,
+    goldWhite: movingColor === "white" ? g.goldWhite + delta : g.goldWhite,
+    goldBlack: movingColor === "black" ? g.goldBlack + delta : g.goldBlack,
   };
 }
 
@@ -44,11 +75,13 @@ const LAST_DARK  = "#aaa23a";
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
 function SquareEl({
-  row, col, size, piece, isSelected, isValidMove, isLastMove, isCheckKing, onClick,
+  row, col, size, piece, isSelected, isValidMove, isLastMove, isCheckKing,
+  isCenter, onClick,
 }: {
   row: number; col: number; size: number;
   piece: { type: PieceType; color: Color } | null;
-  isSelected: boolean; isValidMove: boolean; isLastMove: boolean; isCheckKing: boolean;
+  isSelected: boolean; isValidMove: boolean; isLastMove: boolean;
+  isCheckKing: boolean; isCenter: boolean;
   onClick: () => void;
 }) {
   const light = (row + col) % 2 === 0;
@@ -79,6 +112,17 @@ function SquareEl({
           fontSize: Math.max(9, size * 0.18), fontWeight: 700,
           color: light ? DARK_SQ : LIGHT_SQ, userSelect: "none", lineHeight: 1,
         }}>{String.fromCharCode(97 + col)}</span>
+      )}
+      {/* King of the Hill center marker */}
+      {isCenter && (
+        <div style={{
+          position: "absolute", top: 3, right: 3,
+          width: 5, height: 5,
+          background: "rgba(234,179,8,0.6)",
+          borderRadius: "50%",
+          pointerEvents: "none",
+          boxShadow: "0 0 3px rgba(234,179,8,0.8)",
+        }} />
       )}
       {isValidMove && !piece && (
         <div style={{ width: dot, height: dot, borderRadius: "50%", backgroundColor: "rgba(0,0,0,0.22)", pointerEvents: "none" }} />
@@ -194,21 +238,44 @@ function GoldBadge({ gold, active }: { gold: number; active: boolean }) {
   );
 }
 
-// ─── AugmentIconChip (compact, for player bar) ────────────────────────────────
+// ─── AugmentIconChip ─────────────────────────────────────────────────────────
 
 function AugmentIconChip({ augment }: { augment: Augment }) {
   const m = RARITY_META[augment.rarity];
   return (
     <div title={`${augment.name} — ${augment.description}`} style={{
       width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
-      border: `1.5px solid ${m.border}`,
-      background: "#0f172a",
+      border: `1.5px solid ${m.border}`, background: "#0f172a",
       display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: `0 0 5px ${m.glow}`,
-      cursor: "default",
+      boxShadow: `0 0 5px ${m.glow}`, cursor: "default",
     }}>
       <span style={{ fontSize: 12, lineHeight: 1 }}>{augment.icon}</span>
     </div>
+  );
+}
+
+// ─── UndoButton ──────────────────────────────────────────────────────────────
+
+function UndoButton({ onUndo }: { onUndo: () => void }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onUndo}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      title="Use your Oops! undo"
+      style={{
+        display: "flex", alignItems: "center", gap: 4,
+        padding: "2px 8px", fontSize: 10, fontWeight: 800,
+        borderRadius: 6, border: `1px solid ${hov ? "#6366f1" : "#374151"}`,
+        background: hov ? "#1e1b4b" : "#111827",
+        color: hov ? "#a5b4fc" : "#9ca3af",
+        cursor: "pointer", transition: "all 0.15s", flexShrink: 0,
+        letterSpacing: "0.04em",
+      }}
+    >
+      <span style={{ fontSize: 11 }}>↩</span> UNDO
+    </button>
   );
 }
 
@@ -346,9 +413,7 @@ function StartScreen({ onStart }: { onStart: () => void }) {
           <div key={i} style={{ width: 10, height: 10, background: (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863" }} />
         ))}
       </div>
-
       <span style={{ fontSize: 48, lineHeight: 1, filter: "drop-shadow(0 4px 16px rgba(99,102,241,0.4))" }}>♟️</span>
-
       <div style={{ textAlign: "center" }}>
         <h2 style={{ fontSize: 22, fontWeight: 900, color: "#f1f5f9", margin: "0 0 6px", letterSpacing: "0.04em" }}>
           Chess Roguelike
@@ -357,7 +422,6 @@ function StartScreen({ onStart }: { onStart: () => void }) {
           Classic chess · Each player picks an augment<br />before the game begins
         </p>
       </div>
-
       <button
         onClick={onStart}
         onMouseEnter={() => setHov(true)}
@@ -369,8 +433,7 @@ function StartScreen({ onStart }: { onStart: () => void }) {
           background: hov ? "linear-gradient(135deg,#4338ca,#6366f1)" : "linear-gradient(135deg,#4f46e5,#818cf8)",
           color: "#fff",
           boxShadow: hov ? "0 6px 28px rgba(99,102,241,0.65)" : "0 4px 18px rgba(99,102,241,0.45)",
-          transform: hov ? "translateY(-2px)" : "none",
-          transition: "all 0.18s",
+          transform: hov ? "translateY(-2px)" : "none", transition: "all 0.18s",
         }}
       >
         Start Game
@@ -387,7 +450,7 @@ export default function ChessGame() {
 
   // Chess engine state
   const [game, setGame] = useState<ChessState>(createInitialState);
-  const [selected, setSelected] = useState<[number, number] | null>(null);
+  const [selected, setSelected]   = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [promotionPending, setPromotionPending] = useState<{
     from: [number, number]; to: [number, number];
@@ -400,13 +463,24 @@ export default function ChessGame() {
   const [whiteAugments, setWhiteAugments] = useState<Augment[]>([]);
   const [blackAugments, setBlackAugments] = useState<Augment[]>([]);
 
-  // Roguelike: mid-game milestone augment picks
+  // Roguelike: mid-game milestone picks
   const [whiteMilestones, setWhiteMilestones] = useState<Milestones>(EMPTY_MILESTONES);
   const [blackMilestones, setBlackMilestones] = useState<Milestones>(EMPTY_MILESTONES);
-  // pendingAugmentFor: which player needs to pick right now (mid-game)
-  const [pendingAugmentFor, setPendingAugmentFor] = useState<Color | null>(null);
+  const [pendingAugmentFor, setPendingAugmentFor]   = useState<Color | null>(null);
   const [pendingMilestoneType, setPendingMilestoneType] = useState<PieceType | null>(null);
   const [midGameOffered, setMidGameOffered] = useState<Augment[]>([]);
+
+  // Augment effect state
+  const [whiteTurnCount, setWhiteTurnCount] = useState(0); // for Miner
+  const [blackTurnCount, setBlackTurnCount] = useState(0);
+  const [gameHistory, setGameHistory]       = useState<ChessState[]>([]); // for Oops
+  const [whiteUndosLeft, setWhiteUndosLeft] = useState(0);
+  const [blackUndosLeft, setBlackUndosLeft] = useState(0);
+
+  // Whether either player has King of the Hill (show center markers)
+  const showCenterMarkers =
+    phase === "playing" &&
+    ([...whiteAugments, ...blackAugments].some(a => a.id === "king-of-the-hill"));
 
   // Responsive board size
   useEffect(() => {
@@ -422,71 +496,134 @@ export default function ChessGame() {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  /** Returns all augment IDs already held by either player. */
-  const allHeldIds = useCallback(() =>
-    [...whiteAugments, ...blackAugments].map(a => a.id),
-    [whiteAugments, blackAugments]
-  );
-
-  /** After a move, check if a milestone was triggered and queue an augment pick. */
   const maybeTriggerMilestone = useCallback((
     movingColor: Color,
     capturedType: PieceType | null,
-    wMs: Milestones,
-    bMs: Milestones,
+    wMs: Milestones, bMs: Milestones,
     heldIds: string[],
   ) => {
     const ms = movingColor === "white" ? wMs : bMs;
     const triggered = checkNewMilestone(capturedType, ms);
     if (!triggered) return { wMs, bMs };
 
-    // Update milestones
-    const newMs = applyMilestone(triggered, ms);
+    const newMs  = applyMilestone(triggered, ms);
     const newWMs = movingColor === "white" ? newMs : wMs;
     const newBMs = movingColor === "black" ? newMs : bMs;
 
-    // Roll 3 new augments (exclude everything already held)
-    const offered = rollAugments(3, heldIds);
-
     setPendingAugmentFor(movingColor);
     setPendingMilestoneType(triggered);
-    setMidGameOffered(offered);
+    setMidGameOffered(rollAugments(3, heldIds));
 
     return { wMs: newWMs, bMs: newBMs };
   }, []);
 
-  // ── Pre-game phase handlers ─────────────────────────────────────────────────
+  // ── Pre-game pick handlers ───────────────────────────────────────────────────
+
+  const grantOopsIfNeeded = (aug: Augment, color: Color) => {
+    if (aug.id !== "oops") return;
+    if (color === "white") setWhiteUndosLeft(u => u + 1);
+    else setBlackUndosLeft(u => u + 1);
+  };
 
   const handleStart = () => {
-    const offered = rollAugments(3);
-    setOfferedToWhite(offered);
+    setOfferedToWhite(rollAugments(3));
     setPhase("white-augment");
   };
 
   const handleWhitePick = (aug: Augment) => {
     setWhiteAugments([aug]);
-    const offered = rollAugments(3, [aug.id]);
-    setOfferedToBlack(offered);
+    grantOopsIfNeeded(aug, "white");
+    setOfferedToBlack(rollAugments(3, [aug.id]));
     setPhase("black-augment");
   };
 
   const handleBlackPick = (aug: Augment) => {
     setBlackAugments([aug]);
+    grantOopsIfNeeded(aug, "black");
     setPhase("playing");
   };
 
-  // ── Mid-game augment pick ────────────────────────────────────────────────────
+  // ── Mid-game milestone pick ──────────────────────────────────────────────────
 
   const handleMidGamePick = (aug: Augment) => {
     if (pendingAugmentFor === "white") {
       setWhiteAugments(prev => [...prev, aug]);
-    } else {
+      grantOopsIfNeeded(aug, "white");
+    } else if (pendingAugmentFor === "black") {
       setBlackAugments(prev => [...prev, aug]);
+      grantOopsIfNeeded(aug, "black");
     }
     setPendingAugmentFor(null);
     setPendingMilestoneType(null);
     setMidGameOffered([]);
   };
+
+  // ── Core move executor ───────────────────────────────────────────────────────
+
+  /**
+   * Execute a legal move, apply augment effects, push to history, check milestones.
+   * capturedType: the type of the piece on the target square (or null).
+   */
+  const executeMove = useCallback((
+    from: [number, number],
+    to:   [number, number],
+    promotion?: PieceType,
+    capturedType?: PieceType | null,
+  ) => {
+    const movingColor = game.turn;
+
+    // Push state to history BEFORE the move (for Oops undo)
+    setGameHistory(h => [...h, game]);
+
+    // Make the move
+    let newGame = makeMove(game, from, to, promotion);
+
+    // Update turn count for Miner
+    const newTurnCount = (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
+    if (movingColor === "white") setWhiteTurnCount(newTurnCount);
+    else setBlackTurnCount(newTurnCount);
+
+    // Apply passive augment effects (Miner, KotH)
+    const playerAugs = movingColor === "white" ? whiteAugments : blackAugments;
+    newGame = applyEndOfTurnEffects(newGame, movingColor, playerAugs, newTurnCount);
+
+    setGame(newGame);
+
+    // Check milestone (N/B/R capture)
+    if (capturedType) {
+      const held = [...whiteAugments, ...blackAugments].map(a => a.id);
+      const curWMs = whiteMilestones;
+      const curBMs = blackMilestones;
+      const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedType, curWMs, curBMs, held);
+      setWhiteMilestones(wMs);
+      setBlackMilestones(bMs);
+    }
+  }, [game, whiteTurnCount, blackTurnCount, whiteAugments, blackAugments,
+      whiteMilestones, blackMilestones, maybeTriggerMilestone]);
+
+  // ── Undo (Oops augment) ──────────────────────────────────────────────────────
+
+  const handleUndo = useCallback(() => {
+    if (gameHistory.length < 2) return;
+    // Restore the state from 2 half-moves ago
+    const restored = gameHistory[gameHistory.length - 2];
+    setGame(restored);
+    setGameHistory(h => h.slice(0, -2));
+    setSelected(null);
+    setValidMoves([]);
+
+    // Decrement undo usage
+    if (game.turn === "white") {
+      setWhiteUndosLeft(u => u - 1);
+      setWhiteTurnCount(c => Math.max(0, c - 1));
+    } else {
+      setBlackUndosLeft(u => u - 1);
+      setBlackTurnCount(c => Math.max(0, c - 1));
+    }
+    // Also roll back the other player's turn count
+    if (game.turn === "white") setBlackTurnCount(c => Math.max(0, c - 1));
+    else setWhiteTurnCount(c => Math.max(0, c - 1));
+  }, [game, gameHistory]);
 
   // ── Chess handlers ──────────────────────────────────────────────────────────
 
@@ -510,23 +647,10 @@ export default function ChessGame() {
         if (isPromotion) {
           setPromotionPending({ from: selected, to: [r, c] });
         } else {
-          // Detect capture BEFORE making the move
-          const capturedPiece = game.board[r][c];
-          const movingColor = game.turn;
-          const curWMs = whiteMilestones;
-          const curBMs = blackMilestones;
-
-          setGame(g => makeMove(g, selected, [r, c]));
+          const captured = game.board[r][c];
+          executeMove(selected, [r, c], undefined, captured?.type ?? null);
           setSelected(null);
           setValidMoves([]);
-
-          // Check milestone
-          if (capturedPiece) {
-            const held = [...whiteAugments, ...blackAugments].map(a => a.id);
-            const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedPiece.type, curWMs, curBMs, held);
-            setWhiteMilestones(wMs);
-            setBlackMilestones(bMs);
-          }
         }
         return;
       }
@@ -544,28 +668,16 @@ export default function ChessGame() {
       setSelected([r, c]);
       setValidMoves(getLegalMoves(game, r, c));
     }
-  }, [phase, pendingAugmentFor, game, selected, validMoves, promotionPending,
-      whiteMilestones, blackMilestones, whiteAugments, blackAugments, maybeTriggerMilestone]);
+  }, [phase, pendingAugmentFor, game, selected, validMoves, promotionPending, executeMove]);
 
   const handlePromotion = useCallback((type: PieceType) => {
     if (!promotionPending) return;
-    const capturedPiece = game.board[promotionPending.to[0]][promotionPending.to[1]];
-    const movingColor = game.turn;
-    const curWMs = whiteMilestones;
-    const curBMs = blackMilestones;
-
-    setGame(g => makeMove(g, promotionPending.from, promotionPending.to, type));
+    const captured = game.board[promotionPending.to[0]][promotionPending.to[1]];
+    executeMove(promotionPending.from, promotionPending.to, type, captured?.type ?? null);
     setPromotionPending(null);
     setSelected(null);
     setValidMoves([]);
-
-    if (capturedPiece) {
-      const held = [...whiteAugments, ...blackAugments].map(a => a.id);
-      const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedPiece.type, curWMs, curBMs, held);
-      setWhiteMilestones(wMs);
-      setBlackMilestones(bMs);
-    }
-  }, [promotionPending, game, whiteMilestones, blackMilestones, whiteAugments, blackAugments, maybeTriggerMilestone]);
+  }, [promotionPending, game, executeMove]);
 
   const resetGame = () => {
     setGame(createInitialState());
@@ -582,6 +694,11 @@ export default function ChessGame() {
     setPendingAugmentFor(null);
     setPendingMilestoneType(null);
     setMidGameOffered([]);
+    setWhiteTurnCount(0);
+    setBlackTurnCount(0);
+    setGameHistory([]);
+    setWhiteUndosLeft(0);
+    setBlackUndosLeft(0);
   };
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -598,6 +715,11 @@ export default function ChessGame() {
       return { label: `${game.turn.toUpperCase()}  ·  CHECK!`, color: "#f87171" };
     return { label: `${game.turn.toUpperCase()}'S TURN`, color: "#e2e8f0" };
   })();
+
+  const canWhiteUndo = phase === "playing" && !isOver && game.turn === "white"
+    && whiteUndosLeft > 0 && gameHistory.length >= 2;
+  const canBlackUndo = phase === "playing" && !isOver && game.turn === "black"
+    && blackUndosLeft > 0 && gameHistory.length >= 2;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -624,12 +746,12 @@ export default function ChessGame() {
             fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", flexShrink: 0,
             color: game.turn === "black" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
           }}>BLACK</span>
-          {/* Augment icons */}
           {blackAugments.length > 0 && (
             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
               {blackAugments.map(a => <AugmentIconChip key={a.id} augment={a} />)}
             </div>
           )}
+          {canBlackUndo && <UndoButton onUndo={handleUndo} />}
           <GoldBadge gold={game.goldBlack} active={game.turn === "black" && !isOver && phase === "playing"} />
           <CapturedRow pieces={game.capturedByBlack} byColor="white" advantage={adv.black > 0 ? adv.black : 0} />
         </div>
@@ -658,18 +780,20 @@ export default function ChessGame() {
         }}>
           {Array.from({ length: 8 }, (_, r) =>
             Array.from({ length: 8 }, (_, c) => {
-              const piece = game.board[r][c];
-              const isSel = selected?.[0] === r && selected?.[1] === c;
-              const isVM  = validMoves.some(([vr, vc]) => vr === r && vc === c);
-              const isLM  = !!(game.lastMove &&
+              const piece  = game.board[r][c];
+              const isSel  = selected?.[0] === r && selected?.[1] === c;
+              const isVM   = validMoves.some(([vr, vc]) => vr === r && vc === c);
+              const isLM   = !!(game.lastMove &&
                 ((game.lastMove.from[0] === r && game.lastMove.from[1] === c) ||
                  (game.lastMove.to[0]   === r && game.lastMove.to[1]   === c)));
-              const isCK  = !!(piece?.type === "K" && piece.color === game.turn &&
+              const isCK   = !!(piece?.type === "K" && piece.color === game.turn &&
                 (game.status === "check" || game.status === "checkmate"));
+              const isCenter = showCenterMarkers && CENTER_SQUARES.has(`${r},${c}`);
               return (
                 <SquareEl key={`${r}-${c}`}
                   row={r} col={c} size={sqSize} piece={piece}
-                  isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK}
+                  isSelected={isSel} isValidMove={isVM} isLastMove={isLM}
+                  isCheckKing={isCK} isCenter={isCenter}
                   onClick={() => handleSquareClick(r, c)}
                 />
               );
@@ -724,12 +848,12 @@ export default function ChessGame() {
             fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", flexShrink: 0,
             color: game.turn === "white" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
           }}>WHITE</span>
-          {/* Augment icons */}
           {whiteAugments.length > 0 && (
             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
               {whiteAugments.map(a => <AugmentIconChip key={a.id} augment={a} />)}
             </div>
           )}
+          {canWhiteUndo && <UndoButton onUndo={handleUndo} />}
           <GoldBadge gold={game.goldWhite} active={game.turn === "white" && !isOver && phase === "playing"} />
           <CapturedRow pieces={game.capturedByWhite} byColor="black" advantage={adv.white > 0 ? adv.white : 0} />
         </div>
@@ -749,27 +873,16 @@ export default function ChessGame() {
 
       {/* ══ Phase overlays ══ */}
 
-      {phase === "start" && (
-        <StartScreen onStart={handleStart} />
-      )}
+      {phase === "start" && <StartScreen onStart={handleStart} />}
 
       {phase === "white-augment" && (
-        <AugmentSelector
-          playerColor="white"
-          offered={offeredToWhite}
-          onSelect={handleWhitePick}
-        />
+        <AugmentSelector playerColor="white" offered={offeredToWhite} onSelect={handleWhitePick} />
       )}
 
       {phase === "black-augment" && (
-        <AugmentSelector
-          playerColor="black"
-          offered={offeredToBlack}
-          onSelect={handleBlackPick}
-        />
+        <AugmentSelector playerColor="black" offered={offeredToBlack} onSelect={handleBlackPick} />
       )}
 
-      {/* Mid-game milestone augment pick */}
       {phase === "playing" && pendingAugmentFor !== null && (
         <AugmentSelector
           playerColor={pendingAugmentFor}

@@ -39,6 +39,28 @@ export const RARITY_META: Record<Rarity, {
 };
 
 export const AUGMENT_POOL: Augment[] = [
+  // ── Common (implemented) ──────────────────────────────────────────────────
+  {
+    id: "miner",
+    name: "Miner",
+    description: "Earn 1 gold every 2 turns.",
+    rarity: "common",
+    icon: "⛏️",
+  },
+  {
+    id: "king-of-the-hill",
+    name: "King of the Hill",
+    description: "Each of your pieces standing on a center square (d4/d5/e4/e5) earns 1 gold per turn.",
+    rarity: "common",
+    icon: "⛰️",
+  },
+  {
+    id: "oops",
+    name: "Oops",
+    description: "Gain 1 undo. You may undo your last move once per game.",
+    rarity: "common",
+    icon: "↩️",
+  },
   // ── Common ────────────────────────────────────────────────────────────────
   {
     id: "iron-pawns",
