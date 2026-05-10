@@ -46,6 +46,14 @@ A React-based minigame hub with a 4x4 grid menu. Each game is a self-contained c
 - Win condition: reach the opposite end row OR opponent has no valid moves
 - Component: `client/src/components/minigames/Barricade/BarricadeGame.tsx`
 
+### Online Multiplayer Chess (`chess` — online mode)
+- Room-based WebSocket multiplayer at `/chess-ws`
+- Server: `server/ws.ts` — room creation, join, relay, heartbeat
+- Client entry: `client/src/components/minigames/Chess/ChessHub.tsx` — mode select (Local / Online)
+- Lobby: `client/src/components/minigames/Chess/MultiplayerChess.tsx` — create/join room, augment selection
+- Sync: full state snapshot sent after every turn-ending action via `onSnapshot` → WebSocket relay → `applySnapshot` on opponent
+- `MpConfig` interface exported from `ChessGame.tsx`; includes `myColor`, initial augments, `onSnapshot`, `incomingSnapshot`, `opponentLeft`
+
 ## Adding a New Game
 
 1. Update `useMinigames.tsx` — set `isAvailable: true` and update the description

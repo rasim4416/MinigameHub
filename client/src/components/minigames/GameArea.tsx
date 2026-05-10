@@ -7,7 +7,7 @@ import { Play, RotateCcw } from "lucide-react";
 import SimplifiedSpeedTyper from "./SpeedTyper/SimplifiedSpeedTyper";
 import BarricadeGame from "./Barricade/BarricadeGame";
 import BlackjackGame from "./Blackjack/BlackjackGame";
-import ChessGame from "./Chess/ChessGame";
+import ChessHub from "./Chess/ChessHub";
 
 interface GameAreaProps {
   game: GameType;
@@ -100,7 +100,7 @@ const GameArea = ({ game }: GameAreaProps) => {
 
     // Chess Game
     if (game.id === "chess") {
-      return <ChessGame />;
+      return <ChessHub />;
     }
 
     // Default placeholder for other games

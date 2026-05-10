@@ -477,7 +477,8 @@ function StartScreen({onStart}:{onStart:()=>void}) {
       </div>
       <span style={{fontSize:48,lineHeight:1,filter:"drop-shadow(0 4px 16px rgba(99,102,241,0.4))"}}>♟️</span>
       <div style={{textAlign:"center"}}>
-        <h2 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:"0 0 6px",letterSpacing:"0.04em"}}>Chess Roguelike</h2>
+        <h2 style={{fontSize:22,fontWeight:900,color:"#f1f5f9",margin:"0 0 6px",letterSpacing:"0.04em"}}>Chess Augmented
+      </h2>
         <p style={{fontSize:12,color:"#475569",margin:0,lineHeight:1.6}}>Classic chess · Each player picks an augment<br/>before the game begins</p>
       </div>
       <button onClick={onStart} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} style={{padding:"11px 44px",fontSize:14,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",borderRadius:12,border:"none",cursor:"pointer",background:hov?"linear-gradient(135deg,#4338ca,#6366f1)":"linear-gradient(135deg,#4f46e5,#818cf8)",color:"#fff",boxShadow:hov?"0 6px 28px rgba(99,102,241,0.65)":"0 4px 18px rgba(99,102,241,0.45)",transform:hov?"translateY(-2px)":"none",transition:"all 0.18s"}}>Start Game</button>
@@ -558,7 +559,16 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ChessGame() {
+export interface MpConfig {
+  myColor: Color;
+  initialWhiteAugment: Augment;
+  initialBlackAugment: Augment;
+  onSnapshot: (snap: Record<string, unknown>) => void;
+  incomingSnapshot: Record<string, unknown> | null;
+  opponentLeft: boolean;
+}
+
+export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const containerRef=useRef<HTMLDivElement>(null);
   const [boardPx,setBoardPx]=useState(320);
 
@@ -567,11 +577,12 @@ export default function ChessGame() {
   const [validMoves,setValidMoves]=useState<[number,number][]>([]);
   const [promotionPending,setPromotionPending]=useState<{from:[number,number];to:[number,number]}|null>(null);
 
-  const [phase,setPhase]=useState<GamePhase>("start");
+  const [phase,setPhase]=useState<GamePhase>(mpConfig?"playing":"start");
   const [offeredToWhite,setOfferedToWhite]=useState<Augment[]>([]);
   const [offeredToBlack,setOfferedToBlack]=useState<Augment[]>([]);
-  const [whiteAugments,setWhiteAugments]=useState<Augment[]>([]);
-  const [blackAugments,setBlackAugments]=useState<Augment[]>([]);
+  const [whiteAugments,setWhiteAugments]=useState<Augment[]>(mpConfig?[mpConfig.initialWhiteAugment]:[]);
+  const [blackAugments,setBlackAugments]=useState<Augment[]>(mpConfig?[mpConfig.initialBlackAugment]:[]);
+  const [mpReady,setMpReady]=useState(!mpConfig);
 
   const [augmentQueue,setAugmentQueue]=useState<AugmentTrigger[]>([]);
   const [currentTrigger,setCurrentTrigger]=useState<AugmentTrigger|null>(null);
@@ -722,6 +733,133 @@ export default function ChessGame() {
     if (aug.id==="what")           { if(color==="white")setWhiteWhatUsed(false);else setBlackWhatUsed(false); }
   },[]);
 
+  // ── MP: snapshot infrastructure ──────────────────────────────────────────
+
+  const snapshotRef=useRef(false);
+  const requestSnapshot=useCallback(()=>{ snapshotRef.current=true; },[]);
+
+  // Build a plain-JSON snapshot of all game state
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const buildSnapshot=()=>({
+    game,whiteTurnCount,blackTurnCount,
+    whiteAugments,blackAugments,
+    whiteMilestones,blackMilestones,
+    whiteFreezeCharges,blackFreezeCharges,frozenSquare,frozenExpireAfter,
+    whiteNecroCharges,blackNecroCharges,whiteLostPawnCols,blackLostPawnCols,
+    whiteCaptureCount,blackCaptureCount,whiteBloodlustNext,blackBloodlustNext,
+    whiteIcUsed,blackIcUsed,
+    whiteRoyalEdUsed,blackRoyalEdUsed,
+    whiteWhatUsed,blackWhatUsed,
+    whiteSakoUsed,blackSakoUsed,
+    whiteRoyalHouseholdUsed,blackRoyalHouseholdUsed,
+    whiteDNUsed,blackDNUsed,deathNoteTargets,
+    boardExpanded,whiteDomainUsed,blackDomainUsed,
+    nextEventTurn,pendingEvent,peaceTreatyMovesLeft,activeNuke,
+    eventInterval,
+    wallSquares,wallMovesLeft,
+    whitePuppetUsed,blackPuppetUsed,activePuppetSquare,activePuppetColor,
+    blessedSquares,
+    coldWindsSquares,coldWindsMovesLeft,
+    whiteContractTarget,blackContractTarget,
+    whiteBlessedWaterCharges,blackBlessedWaterCharges,
+    whiteTierBought,blackTierBought,
+    augmentQueue,currentTrigger,midGameOffered,
+  });
+
+  // Apply a snapshot received from the opponent
+  const applySnapshot=(s:Record<string,unknown>)=>{
+    const g=s as ReturnType<typeof buildSnapshot>;
+    setGame(g.game as ChessState);
+    setWhiteTurnCount(g.whiteTurnCount as number);
+    setBlackTurnCount(g.blackTurnCount as number);
+    setWhiteAugments(g.whiteAugments as Augment[]);
+    setBlackAugments(g.blackAugments as Augment[]);
+    setWhiteMilestones(g.whiteMilestones as Milestones);
+    setBlackMilestones(g.blackMilestones as Milestones);
+    setWhiteFreezeCharges(g.whiteFreezeCharges as number);
+    setBlackFreezeCharges(g.blackFreezeCharges as number);
+    setFrozenSquare(g.frozenSquare as [number,number]|null);
+    setFrozenExpireAfter(g.frozenExpireAfter as Color|null);
+    setWhiteNecroCharges(g.whiteNecroCharges as number);
+    setBlackNecroCharges(g.blackNecroCharges as number);
+    setWhiteLostPawnCols(g.whiteLostPawnCols as number[]);
+    setBlackLostPawnCols(g.blackLostPawnCols as number[]);
+    setWhiteCaptureCount(g.whiteCaptureCount as number);
+    setBlackCaptureCount(g.blackCaptureCount as number);
+    setWhiteBloodlustNext(g.whiteBloodlustNext as number);
+    setBlackBloodlustNext(g.blackBloodlustNext as number);
+    setWhiteIcUsed(g.whiteIcUsed as boolean);
+    setBlackIcUsed(g.blackIcUsed as boolean);
+    setWhiteRoyalEdUsed(g.whiteRoyalEdUsed as boolean);
+    setBlackRoyalEdUsed(g.blackRoyalEdUsed as boolean);
+    setWhiteWhatUsed(g.whiteWhatUsed as boolean);
+    setBlackWhatUsed(g.blackWhatUsed as boolean);
+    setWhiteSakoUsed(g.whiteSakoUsed as boolean);
+    setBlackSakoUsed(g.blackSakoUsed as boolean);
+    setWhiteRoyalHouseholdUsed(g.whiteRoyalHouseholdUsed as boolean);
+    setBlackRoyalHouseholdUsed(g.blackRoyalHouseholdUsed as boolean);
+    setWhiteDNUsed(g.whiteDNUsed as boolean);
+    setBlackDNUsed(g.blackDNUsed as boolean);
+    setDeathNoteTargets(g.deathNoteTargets as DeathNoteTarget[]);
+    setBoardExpanded(g.boardExpanded as boolean);
+    setWhiteDomainUsed(g.whiteDomainUsed as boolean);
+    setBlackDomainUsed(g.blackDomainUsed as boolean);
+    setNextEventTurn(g.nextEventTurn as number);
+    setPendingEvent(g.pendingEvent as GameEvent|null);
+    setPeaceTreatyMovesLeft(g.peaceTreatyMovesLeft as number);
+    setActiveNuke(g.activeNuke as {topRow:number;leftCol:number;movesLeft:number}|null);
+    setEventInterval(g.eventInterval as number);
+    setWallSquares(g.wallSquares as {row:number;col:number}[]);
+    setWallMovesLeft(g.wallMovesLeft as number);
+    setWhitePuppetUsed(g.whitePuppetUsed as boolean);
+    setBlackPuppetUsed(g.blackPuppetUsed as boolean);
+    setActivePuppetSquare(g.activePuppetSquare as [number,number]|null);
+    setActivePuppetColor(g.activePuppetColor as Color|null);
+    setBlessedSquares(g.blessedSquares as {row:number;col:number;movesLeft:number}[]);
+    setColdWindsSquares(g.coldWindsSquares as [number,number][]);
+    setColdWindsMovesLeft(g.coldWindsMovesLeft as number);
+    setWhiteContractTarget(g.whiteContractTarget as [number,number]|null);
+    setBlackContractTarget(g.blackContractTarget as [number,number]|null);
+    setWhiteBlessedWaterCharges(g.whiteBlessedWaterCharges as number);
+    setBlackBlessedWaterCharges(g.blackBlessedWaterCharges as number);
+    setWhiteTierBought(g.whiteTierBought as TierBought);
+    setBlackTierBought(g.blackTierBought as TierBought);
+    setAugmentQueue(g.augmentQueue as AugmentTrigger[]);
+    setCurrentTrigger(g.currentTrigger as AugmentTrigger|null);
+    setMidGameOffered(g.midGameOffered as Augment[]);
+    // Clear any active interaction mode on opponent's turn
+    setSelected(null); setValidMoves([]);
+    setFreezeMode(false); setNecroMode(false); setRoyalHouseholdMode(false);
+    setSakoMode(false); setSakoSelected(null);
+    setDeathNoteMode(false); setRoyalEdMode(false);
+    setContractMode(false); setBlessedWaterMode(false);
+    setPuppetMode(false); setWhatMode(false); setWhatSelected(null);
+    setMonolithMode(null); setShopOpen(false);
+  };
+
+  // MP: initialize augment effects on mount
+  useEffect(()=>{
+    if (!mpConfig) return;
+    grantPickedEffects(mpConfig.initialWhiteAugment,"white");
+    grantPickedEffects(mpConfig.initialBlackAugment,"black");
+    setMpReady(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // MP: apply incoming snapshot from opponent
+  useEffect(()=>{
+    if (mpConfig?.incomingSnapshot) applySnapshot(mpConfig.incomingSnapshot);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[mpConfig?.incomingSnapshot]);
+
+  // MP: dep-less effect — fires after every render; sends snapshot when flagged
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if (!snapshotRef.current||!mpConfig) return;
+    snapshotRef.current=false;
+    mpConfig.onSnapshot(buildSnapshot());
+  });
+
   // ── Pre-game picks ───────────────────────────────────────────────────────
 
   const handleStart=()=>{ setOfferedToWhite(rollAugments(3)); setPhase("white-augment"); };
@@ -746,7 +884,8 @@ export default function ChessGame() {
     if (augmentQueue.length>0){
       const [next,...rest]=augmentQueue; setAugmentQueue(rest); showTrigger(next,newWAugs,newBAugs);
     } else { setCurrentTrigger(null); setMidGameOffered([]); }
-  },[currentTrigger,whiteAugments,blackAugments,augmentQueue,grantPickedEffects,showTrigger]);
+    requestSnapshot();
+  },[currentTrigger,whiteAugments,blackAugments,augmentQueue,grantPickedEffects,showTrigger,requestSnapshot]);
 
   // ── Shop buy ─────────────────────────────────────────────────────────────
 
@@ -774,7 +913,8 @@ export default function ChessGame() {
     // Increment tier bought counter
     const setter=color==="white"?setWhiteTierBought:setBlackTierBought;
     setter(prev=>({...prev,[aug.rarity]:prev[aug.rarity]+1}));
-  },[game,whiteTierBought,blackTierBought,grantPickedEffects]);
+    requestSnapshot();
+  },[game,whiteTierBought,blackTierBought,grantPickedEffects,requestSnapshot]);
 
   // ── Core move executor ───────────────────────────────────────────────────
 
@@ -1018,13 +1158,14 @@ export default function ChessGame() {
       setMidGameOffered(rollAugments(3,getExcludeForPlayer(movingColor==="white"?wAugs:bAugs),getWeightsForPlayer(movingColor==="white"?wAugs:bAugs)));
       if (rest.length>0) setAugmentQueue(prev=>[...prev,...rest]);
     }
+    requestSnapshot();
   },[
     game,frozenSquare,frozenExpireAfter,whiteTurnCount,blackTurnCount,
     whiteAugments,blackAugments,whiteMilestones,blackMilestones,
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
     peaceTreatyMovesLeft,nextEventTurn,activeNuke,coldWindsMovesLeft,whiteContractTarget,blackContractTarget,
-    wallMovesLeft,activePuppetColor,activePuppetSquare,eventInterval,
+    wallMovesLeft,activePuppetColor,activePuppetSquare,eventInterval,requestSnapshot,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -1107,8 +1248,11 @@ export default function ChessGame() {
 
   // ── Square click ─────────────────────────────────────────────────────────
 
+  const isMyTurn=!mpConfig||game.turn===mpConfig.myColor;
+
   const handleSquareClick=useCallback((r:number,c:number)=>{
     if (phase!=="playing"||currentTrigger!==null) return;
+    if (!isMyTurn) return;
     if (game.status==="checkmate"||game.status==="stalemate") return;
     if (promotionPending) return;
     const piece=game.board[r][c];
@@ -1194,6 +1338,7 @@ export default function ChessGame() {
           setBlackNecroCharges(n=>n-1);
         }
       }
+      requestSnapshot();
       setNecroMode(false); setSelected(null); setValidMoves([]); return;
     }
 
@@ -1224,6 +1369,7 @@ export default function ChessGame() {
         const newGame=recomputeStatus({...game,board:nb,enPassantTarget:null});
         setGame(newGame);
         if (game.turn==="white") setWhiteSakoUsed(true); else setBlackSakoUsed(true);
+        requestSnapshot();
       } else if (piece&&piece.color===game.turn&&!(r===sakoSelected[0]&&c===sakoSelected[1])){
         const dests=getSakoMoves(game,[r,c],game.turn);
         if (dests.length>0){setSakoSelected([r,c]);setSelected([r,c]);setValidMoves(dests);return;}
@@ -1263,6 +1409,7 @@ export default function ChessGame() {
         if (enemyKingInPath) newGame={...newGame,status:"checkmate"};
         setGame(newGame);
         if (movingColor==="white") setWhiteRoyalHouseholdUsed(true); else setBlackRoyalHouseholdUsed(true);
+        requestSnapshot();
       }
       setRoyalHouseholdMode(false);setSelected(null);setValidMoves([]); return;
     }
@@ -1343,7 +1490,7 @@ export default function ChessGame() {
     }
     if (piece&&piece.color===game.turn&&piece.type!=="M"&&!isFrozenPiece){setSelected([r,c]);setValidMoves(computeMoves(r,c));}
   },[
-    phase,currentTrigger,game,selected,validMoves,promotionPending,
+    phase,currentTrigger,game,selected,validMoves,promotionPending,isMyTurn,
     freezeMode,necroMode,royalEdMode,whatMode,whatSelected,frozenSquare,
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
     deathNoteMode,monolithMode,contractMode,blessedWaterMode,puppetMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
@@ -1397,73 +1544,75 @@ export default function ChessGame() {
     return {label:`${game.turn.toUpperCase()}'S TURN`,color:"#e2e8f0"};
   })();
 
-  const canWhiteUndo=phase==="playing"&&!isOver&&game.turn==="white"&&whiteUndosLeft>0&&gameHistory.length>=2;
-  const canBlackUndo=phase==="playing"&&!isOver&&game.turn==="black"&&blackUndosLeft>0&&gameHistory.length>=2;
+  const canWhiteUndo=phase==="playing"&&!isOver&&game.turn==="white"&&whiteUndosLeft>0&&gameHistory.length>=2&&!mpConfig;
+  const canBlackUndo=phase==="playing"&&!isOver&&game.turn==="black"&&blackUndosLeft>0&&gameHistory.length>=2&&!mpConfig;
   const necroOff=(boardSize-8)/2;
   const whiteNecroRow=6+necroOff, blackNecroRow=1+necroOff;
   const whiteHasNecroTargets=whiteLostPawnCols.some(col=>game.board[whiteNecroRow]&&!game.board[whiteNecroRow][col]);
   const blackHasNecroTargets=blackLostPawnCols.some(col=>game.board[blackNecroRow]&&!game.board[blackNecroRow][col]);
 
+  const spellGuard=(fn:()=>void)=>()=>{ if(!isMyTurn&&mpConfig) return; fn(); };
+
   const makeSpells=(color:Color):SpellState=>({
     freezeCharges:  color==="white"?whiteFreezeCharges:blackFreezeCharges,
     freezeActive:   freezeMode&&game.turn===color,
-    onFreeze:       handleToggleFreeze,
+    onFreeze:       spellGuard(handleToggleFreeze),
     necroCharges:   color==="white"?whiteNecroCharges:blackNecroCharges,
     necroActive:    necroMode&&game.turn===color,
     hasNecroTargets:color==="white"?whiteHasNecroTargets:blackHasNecroTargets,
-    onNecro:        handleToggleNecro,
+    onNecro:        spellGuard(handleToggleNecro),
     royalEdAvailable:color==="white"?(!whiteRoyalEdUsed&&whiteAugments.some(a=>a.id==="royal-education")):(!blackRoyalEdUsed&&blackAugments.some(a=>a.id==="royal-education")),
     royalEdActive:  royalEdMode&&game.turn===color,
-    onRoyalEd:      handleToggleRoyalEd,
+    onRoyalEd:      spellGuard(handleToggleRoyalEd),
     whatAvailable:  color==="white"?(!whiteWhatUsed&&whiteAugments.some(a=>a.id==="what")):(!blackWhatUsed&&blackAugments.some(a=>a.id==="what")),
     whatActive:     whatMode&&game.turn===color,
-    onWhat:         handleToggleWhat,
+    onWhat:         spellGuard(handleToggleWhat),
     sakoAvailable:  color==="white"?(!whiteSakoUsed&&whiteAugments.some(a=>a.id==="sako-bosphorus")):(!blackSakoUsed&&blackAugments.some(a=>a.id==="sako-bosphorus")),
     sakoActive:     sakoMode&&game.turn===color,
-    onSako:         handleToggleSako,
+    onSako:         spellGuard(handleToggleSako),
     royalHouseholdAvailable: color==="white"
       ?(!whiteRoyalHouseholdUsed&&whiteAugments.some(a=>a.id==="royal-household")&&game.status==="check"&&game.turn==="white")
       :(!blackRoyalHouseholdUsed&&blackAugments.some(a=>a.id==="royal-household")&&game.status==="check"&&game.turn==="black"),
     royalHouseholdActive: royalHouseholdMode&&game.turn===color,
-    onRoyalHousehold: handleToggleRoyalHousehold,
+    onRoyalHousehold: spellGuard(handleToggleRoyalHousehold),
     deathNoteAvailable: color==="white"
       ?(!whiteDNUsed&&whiteAugments.some(a=>a.id==="death-note"))
       :(!blackDNUsed&&blackAugments.some(a=>a.id==="death-note")),
     deathNoteActive: deathNoteMode&&game.turn===color,
-    onDeathNote: handleToggleDeathNote,
+    onDeathNote: spellGuard(handleToggleDeathNote),
     domainAvailable: color==="white"
       ?(!whiteDomainUsed&&!boardExpanded&&whiteAugments.some(a=>a.id==="domain-expansion"))
       :(!blackDomainUsed&&!boardExpanded&&blackAugments.some(a=>a.id==="domain-expansion")),
-    onDomain: handleDomainExpansion,
+    onDomain: spellGuard(handleDomainExpansion),
     monolithPlaceAvailable: color==="white"
       ?(whiteAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white")))
       :(blackAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black"))),
     monolithPlaceActive: monolithMode==="place"&&game.turn===color,
-    onMonolithPlace: handleToggleMonolithPlace,
+    onMonolithPlace: spellGuard(handleToggleMonolithPlace),
     monolithRemoveAvailable: color==="white"
       ?game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white"))
       :game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black")),
-    onMonolithRemove: handleToggleMonolithRemove,
+    onMonolithRemove: spellGuard(handleToggleMonolithRemove),
     contractAvailable: color==="white"
       ?(whiteAugments.some(a=>a.id==="contract-killer")&&whiteContractTarget===null)
       :(blackAugments.some(a=>a.id==="contract-killer")&&blackContractTarget===null),
     contractActive: contractMode&&game.turn===color,
-    onContract: handleToggleContract,
+    onContract: spellGuard(handleToggleContract),
     contractTarget: color==="white"?whiteContractTarget:blackContractTarget,
     blessedWaterCharges: color==="white"?whiteBlessedWaterCharges:blackBlessedWaterCharges,
     blessedWaterActive: blessedWaterMode&&game.turn===color,
-    onBlessedWater: handleToggleBlessedWater,
+    onBlessedWater: spellGuard(handleToggleBlessedWater),
     puppetAvailable: color==="white"
       ?(!whitePuppetUsed&&whiteAugments.some(a=>a.id==="puppet"))
       :(!blackPuppetUsed&&blackAugments.some(a=>a.id==="puppet")),
     puppetActive: puppetMode&&game.turn===color,
-    onPuppet: handleTogglePuppet,
+    onPuppet: spellGuard(handleTogglePuppet),
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
     hasBloodlust:   color==="white"?whiteAugments.some(a=>a.id==="bloodlust"):blackAugments.some(a=>a.id==="bloodlust"),
     shopOpen:       shopOpen&&game.turn===color,
-    onToggleShop:   handleToggleShop,
+    onToggleShop:   spellGuard(handleToggleShop),
   });
 
   const modeBanner=(()=>{
@@ -1489,6 +1638,14 @@ export default function ChessGame() {
   const activeTierBought=game.turn==="white"?whiteTierBought:blackTierBought;
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (mpConfig && !mpReady) {
+    return (
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:"100%",height:"100%",background:"#030712",color:"#fff"}}>
+        <div style={{fontSize:14,color:"#9ca3af"}}>Setting up game…</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{display:"flex",flexDirection:"column",width:"100%",height:"100%",background:"#030712",color:"#fff",userSelect:"none",overflow:"hidden",position:"relative"}}>
@@ -1535,6 +1692,24 @@ export default function ChessGame() {
         {modeBanner&&(
           <div style={{position:"absolute",top:10,left:"50%",transform:"translateX(-50%)",zIndex:20,pointerEvents:"none",background:"rgba(0,0,0,0.82)",color:modeBanner.color,fontSize:11,fontWeight:800,letterSpacing:"0.08em",padding:"5px 18px",borderRadius:20,textTransform:"uppercase",boxShadow:`0 2px 12px rgba(0,0,0,0.5),0 0 0 1px ${modeBanner.color}40`,whiteSpace:"nowrap"}}>
             {modeBanner.text}
+          </div>
+        )}
+
+        {/* MP: waiting-for-turn overlay */}
+        {mpConfig&&!isMyTurn&&!isOver&&(
+          <div style={{position:"absolute",bottom:10,left:"50%",transform:"translateX(-50%)",zIndex:20,pointerEvents:"none",background:"rgba(0,0,0,0.75)",color:"#94a3b8",fontSize:11,fontWeight:700,padding:"4px 16px",borderRadius:20,letterSpacing:"0.06em",whiteSpace:"nowrap"}}>
+            ⏳ Opponent&apos;s turn…
+          </div>
+        )}
+
+        {/* MP: opponent disconnected overlay */}
+        {mpConfig?.opponentLeft&&(
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}}>
+            <div style={{background:"#111827",border:"1px solid #374151",borderRadius:14,padding:"24px 36px",textAlign:"center",boxShadow:"0 8px 40px rgba(0,0,0,0.8)"}}>
+              <div style={{fontSize:32,marginBottom:10}}>🔌</div>
+              <div style={{fontWeight:700,fontSize:16,marginBottom:6}}>Opponent disconnected</div>
+              <div style={{color:"#9ca3af",fontSize:13}}>The game has ended.</div>
+            </div>
           </div>
         )}
       </div>
