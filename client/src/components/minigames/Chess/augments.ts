@@ -71,6 +71,25 @@ export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
   return DEFAULT_WEIGHTS;
 }
 
+// ─── Max stack per augment (how many times a player can hold it) ──────────────
+
+/** 1 = cannot be bought/held twice; 2 = can stack once (up to 2 total). */
+export const MAX_STACK: Record<string, number> = {
+  "miner":               2,
+  "alternative":         1,
+  "mastermind":          1,
+  "king-of-the-hill":    1,
+  "oops":                2,
+  "jew":                 2,
+  "mastermind-plus":     1,
+  "frost":               2,
+  "what":                1,
+  "necromancer":         2,
+  "bloodlust":           1,
+  "internal-combustion": 1,
+  "royal-education":     1,
+};
+
 // ─── Augment pool ─────────────────────────────────────────────────────────────
 
 export const AUGMENT_POOL: Augment[] = [

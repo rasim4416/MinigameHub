@@ -8,8 +8,15 @@ import {
 } from "./engine";
 import {
   Augment, AUGMENT_POOL, rollAugments, RARITY_META,
-  RarityWeights, getWeightsForPlayer, BASE_COST, getShopCost,
+  RarityWeights, getWeightsForPlayer, BASE_COST, getShopCost, MAX_STACK,
 } from "./augments";
+
+/** Augments the player already holds at their max stack count — exclude from future rolls. */
+function getExcludeForPlayer(augments: Augment[]): string[] {
+  const counts: Record<string, number> = {};
+  for (const a of augments) counts[a.id] = (counts[a.id] || 0) + 1;
+  return Object.keys(counts).filter(id => counts[id] >= (MAX_STACK[id] ?? 1));
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,9 +163,21 @@ function GoldBadge({gold,active}:{gold:number;active:boolean}) {
 
 // ─── AugmentIconChip ─────────────────────────────────────────────────────────
 
-function AugmentIconChip({augment}:{augment:Augment}) {
+function AugmentIconChip({augment, stacked}:{augment:Augment; stacked?:boolean}) {
   const m=RARITY_META[augment.rarity];
-  return <div title={`${augment.name} — ${augment.description}`} style={{width:24,height:24,borderRadius:"50%",flexShrink:0,border:`1.5px solid ${m.border}`,background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 5px ${m.glow}`,cursor:"default"}}><span style={{fontSize:10,lineHeight:1}}>{augment.icon}</span></div>;
+  return (
+    <div title={`${augment.name}${stacked?" ★ (×2)":""} — ${augment.description}`}
+      style={{position:"relative",width:24,height:24,flexShrink:0,cursor:"default"}}>
+      <div style={{width:24,height:24,borderRadius:"50%",border:`1.5px solid ${m.border}`,background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 5px ${m.glow}`}}>
+        <span style={{fontSize:10,lineHeight:1}}>{augment.icon}</span>
+      </div>
+      {stacked&&(
+        <div style={{position:"absolute",top:-4,right:-4,width:12,height:12,borderRadius:"50%",background:"linear-gradient(135deg,#eab308,#fde047)",border:"1px solid #422006",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 4px rgba(234,179,8,0.7)"}}>
+          <span style={{fontSize:7,fontWeight:900,color:"#422006",lineHeight:1}}>★</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── SpellButton ─────────────────────────────────────────────────────────────
@@ -198,8 +217,8 @@ function AugmentCard({augment,onSelect}:{augment:Augment;onSelect:()=>void}) {
 
 // ─── Shop Panel ───────────────────────────────────────────────────────────────
 
-function ShopPanel({playerColor,gold,tierBought,onBuy,onClose}:{
-  playerColor:Color; gold:number; tierBought:TierBought;
+function ShopPanel({playerColor,gold,tierBought,playerAugments,onBuy,onClose}:{
+  playerColor:Color; gold:number; tierBought:TierBought; playerAugments:Augment[];
   onBuy:(aug:Augment)=>void; onClose:()=>void;
 }) {
   const RARITY_ORDER: Array<Augment["rarity"]> = ["common","uncommon","rare","epic","legendary"];
@@ -244,7 +263,10 @@ function ShopPanel({playerColor,gold,tierBought,onBuy,onClose}:{
                 {augments.map(aug=>{
                   const cost=getShopCost(aug.rarity,bought);
                   const canAfford=gold>=cost;
-                  return <ShopRow key={aug.id} augment={aug} cost={cost} canAfford={canAfford} onBuy={()=>onBuy(aug)}/>;
+                  const ownedCount=playerAugments.filter((a:Augment)=>a.id===aug.id).length;
+                  const maxStack=MAX_STACK[aug.id]??1;
+                  const isMaxed=ownedCount>=maxStack;
+                  return <ShopRow key={aug.id} augment={aug} cost={cost} canAfford={canAfford} isMaxed={isMaxed} onBuy={()=>onBuy(aug)}/>;
                 })}
               </div>
             </div>
@@ -255,39 +277,40 @@ function ShopPanel({playerColor,gold,tierBought,onBuy,onClose}:{
   );
 }
 
-function ShopRow({augment,cost,canAfford,onBuy}:{augment:Augment;cost:number;canAfford:boolean;onBuy:()=>void}) {
+function ShopRow({augment,cost,canAfford,isMaxed,onBuy}:{augment:Augment;cost:number;canAfford:boolean;isMaxed:boolean;onBuy:()=>void}) {
   const [hov,setHov]=useState(false);
   const m=RARITY_META[augment.rarity];
+  const canClick=canAfford&&!isMaxed;
   return (
-    <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",borderRadius:8,background:hov?"#0f1929":"#0b111e",border:`1px solid ${hov?m.border+"66":"#1f293766"}`,transition:"all 0.15s",cursor:"default"}}>
+    <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",borderRadius:8,background:hov&&!isMaxed?"#0f1929":"#0b111e",border:`1px solid ${hov&&!isMaxed?m.border+"66":"#1f293766"}`,transition:"all 0.15s",cursor:"default",opacity:isMaxed?0.55:1}}>
       {/* Icon */}
       <div style={{width:28,height:28,borderRadius:8,background:"#0f172a",border:`1px solid ${m.border}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
         <span style={{fontSize:15,lineHeight:1}}>{augment.icon}</span>
       </div>
       {/* Name + desc */}
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:11,fontWeight:800,color:m.text,lineHeight:1.2,letterSpacing:"0.02em"}}>{augment.name}</div>
+        <div style={{fontSize:11,fontWeight:800,color:m.text,lineHeight:1.2,letterSpacing:"0.02em"}}>{augment.name}{isMaxed&&<span style={{marginLeft:5,fontSize:9,fontWeight:700,color:"#eab308",letterSpacing:"0.1em"}}>MAX</span>}</div>
         <div style={{fontSize:9.5,color:"#475569",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:260}}>{augment.description}</div>
       </div>
       {/* Cost */}
-      <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+      {!isMaxed&&<div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
         <span style={{fontSize:12,fontWeight:900,color:canAfford?"#facc15":"#4b5563",lineHeight:1}}>{cost}</span>
         <div style={{width:12,height:12,borderRadius:"50%",background:"radial-gradient(ellipse at 35% 30%,#fde047,#eab308 55%,#a16207)",flexShrink:0}}/>
-      </div>
+      </div>}
       {/* Buy button */}
       <button
-        onClick={canAfford?onBuy:undefined}
-        disabled={!canAfford}
+        onClick={canClick?onBuy:undefined}
+        disabled={!canClick}
         style={{
           padding:"3px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.06em",
-          borderRadius:6,border:"none",cursor:canAfford?"pointer":"not-allowed",
-          background:canAfford?(hov?"linear-gradient(135deg,#166534,#16a34a)":"linear-gradient(135deg,#14532d,#15803d)"):"#1f2937",
-          color:canAfford?"#bbf7d0":"#374151",
-          boxShadow:canAfford&&hov?"0 2px 8px rgba(22,163,74,0.4)":"none",
+          borderRadius:6,border:"none",cursor:canClick?"pointer":"not-allowed",
+          background:isMaxed?"#1c1500":canClick?(hov?"linear-gradient(135deg,#166534,#16a34a)":"linear-gradient(135deg,#14532d,#15803d)"):"#1f2937",
+          color:isMaxed?"#eab30888":canClick?"#bbf7d0":"#374151",
+          boxShadow:canClick&&hov?"0 2px 8px rgba(22,163,74,0.4)":"none",
           transition:"all 0.15s",flexShrink:0,
         }}
       >
-        {canAfford?"BUY":"—"}
+        {isMaxed?"★ MAX":canClick?"BUY":"—"}
       </button>
     </div>
   );
@@ -365,7 +388,12 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
       <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0,overflow:"hidden",flexWrap:"nowrap"}}>
         <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,background:color==="white"?"#ffffff":"#1a0f00",border:`2px solid ${color==="white"?"#94a3b8":"#6b7280"}`,boxShadow:canAct?"0 0 0 2px #6366f1":"none"}}/>
         <span style={{fontSize:13,fontWeight:700,letterSpacing:"0.05em",flexShrink:0,color:canAct?"#e2e8f0":"#6b7280"}}>{color.toUpperCase()}</span>
-        {augments.length>0&&<div style={{display:"flex",gap:3,alignItems:"center"}}>{augments.map(a=><AugmentIconChip key={a.id+Math.random()} augment={a}/>)}</div>}
+        {augments.length>0&&(()=>{
+          const counts:Record<string,number>={};
+          const ordered:Augment[]=[];
+          for(const a of augments){if(!counts[a.id]){ordered.push(a);counts[a.id]=0;}counts[a.id]++;}
+          return <div style={{display:"flex",gap:4,alignItems:"center"}}>{ordered.map(a=><AugmentIconChip key={a.id} augment={a} stacked={counts[a.id]>=2}/>)}</div>;
+        })()}
         {spells.canUndo&&<UndoButton onUndo={spells.onUndo}/>}
         {canAct&&spells.freezeCharges>0&&<SpellButton icon="❄️" label="FREEZE" active={spells.freezeActive} count={spells.freezeCharges} onClick={spells.onFreeze} title="Freeze an enemy piece for 1 opponent turn"/>}
         {canAct&&spells.necroCharges>0&&spells.hasNecroTargets&&<SpellButton icon="💀" label="REVIVE" active={spells.necroActive} onClick={spells.onNecro} title="Resurrect a captured pawn at its home square"/>}
@@ -492,8 +520,7 @@ export default function ChessGame() {
   const showTrigger=useCallback((trigger:AugmentTrigger,wAugs:Augment[],bAugs:Augment[])=>{
     setCurrentTrigger(trigger);
     const playerAugs=trigger.color==="white"?wAugs:bAugs;
-    const held=[...wAugs,...bAugs].map(a=>a.id);
-    setMidGameOffered(rollAugments(3,held,getWeightsForPlayer(playerAugs)));
+    setMidGameOffered(rollAugments(3,getExcludeForPlayer(playerAugs),getWeightsForPlayer(playerAugs)));
   },[]);
 
   const handleMidGamePick=useCallback((aug:Augment)=>{
@@ -512,6 +539,9 @@ export default function ChessGame() {
 
   const handleBuy=useCallback((aug:Augment)=>{
     const color=game.turn;
+    const playerAugs=color==="white"?whiteAugments:blackAugments;
+    const ownedCount=playerAugs.filter(a=>a.id===aug.id).length;
+    if (ownedCount>=(MAX_STACK[aug.id]??1)) return;
     const tierBought=color==="white"?whiteTierBought:blackTierBought;
     const cost=getShopCost(aug.rarity,tierBought[aug.rarity]);
     const currentGold=color==="white"?game.goldWhite:game.goldBlack;
@@ -582,7 +612,6 @@ export default function ChessGame() {
     setGame(newGame);
 
     // Triggers
-    const held=[...whiteAugments,...blackAugments].map(a=>a.id);
     const newTriggers:AugmentTrigger[]=[];
 
     if (capturedType){
@@ -612,7 +641,7 @@ export default function ChessGame() {
       const wAugs=movingColor==="white"?[...whiteAugments]:whiteAugments;
       const bAugs=movingColor==="black"?[...blackAugments]:blackAugments;
       setCurrentTrigger(first);
-      setMidGameOffered(rollAugments(3,held,getWeightsForPlayer(movingColor==="white"?wAugs:bAugs)));
+      setMidGameOffered(rollAugments(3,getExcludeForPlayer(movingColor==="white"?wAugs:bAugs),getWeightsForPlayer(movingColor==="white"?wAugs:bAugs)));
       if (rest.length>0) setAugmentQueue(prev=>[...prev,...rest]);
     }
   },[
@@ -883,6 +912,7 @@ export default function ChessGame() {
           playerColor={game.turn}
           gold={activePlayerGold}
           tierBought={activeTierBought}
+          playerAugments={game.turn==="white"?whiteAugments:blackAugments}
           onBuy={handleBuy}
           onClose={()=>setShopOpen(false)}
         />
