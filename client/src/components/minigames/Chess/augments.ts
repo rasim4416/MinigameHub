@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Augment system — 5-tier rarity, weighted rolls, effect data
+// Augment system — 5-tier rarity, weighted rolls, shop pricing
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
@@ -41,28 +41,27 @@ export const RARITY_META: Record<Rarity, {
   },
 };
 
+// ─── Shop pricing ─────────────────────────────────────────────────────────────
+
+/** Base gold cost per rarity tier. */
+export const BASE_COST: Record<Rarity, number> = {
+  common: 5, uncommon: 10, rare: 20, epic: 40, legendary: 100,
+};
+
+/** Actual cost = baseCost * (number already bought of that tier + 1). */
+export function getShopCost(rarity: Rarity, tierBought: number): number {
+  return BASE_COST[rarity] * (tierBought + 1);
+}
+
 // ─── Roll weight presets ──────────────────────────────────────────────────────
 
 export type RarityWeights = Record<Rarity, number>;
 
-/** Default (no Mastermind). */
-export const DEFAULT_WEIGHTS: RarityWeights = {
-  common: 50, uncommon: 30, rare: 15, epic: 5, legendary: 0,
-};
-/** Mastermind (Common) only. */
-export const MASTERMIND_WEIGHTS: RarityWeights = {
-  common: 35, uncommon: 30, rare: 20, epic: 15, legendary: 0,
-};
-/** Mastermind+ (Uncommon) only. */
-export const MASTERMIND_PLUS_WEIGHTS: RarityWeights = {
-  common: 30, uncommon: 20, rare: 30, epic: 20, legendary: 0,
-};
-/** Both Mastermind and Mastermind+ held at the same time. */
-export const MASTERMIND_BOTH_WEIGHTS: RarityWeights = {
-  common: 15, uncommon: 20, rare: 40, epic: 20, legendary: 5,
-};
+export const DEFAULT_WEIGHTS: RarityWeights     = { common:50, uncommon:30, rare:15, epic:5,  legendary:0 };
+export const MASTERMIND_WEIGHTS: RarityWeights  = { common:35, uncommon:30, rare:20, epic:15, legendary:0 };
+export const MASTERMIND_PLUS_WEIGHTS: RarityWeights = { common:30, uncommon:20, rare:30, epic:20, legendary:0 };
+export const MASTERMIND_BOTH_WEIGHTS: RarityWeights = { common:15, uncommon:20, rare:40, epic:20, legendary:5 };
 
-/** Pick the correct weight table for a player based on which Mastermind augments they hold. */
 export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
   const hasMM  = augments.some(a => a.id === "mastermind");
   const hasMMP = augments.some(a => a.id === "mastermind-plus");
@@ -72,65 +71,26 @@ export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
   return DEFAULT_WEIGHTS;
 }
 
-// ─── Augment pool (fully implemented only) ────────────────────────────────────
+// ─── Augment pool ─────────────────────────────────────────────────────────────
 
 export const AUGMENT_POOL: Augment[] = [
   // ── Common ────────────────────────────────────────────────────────────────
-  {
-    id: "miner", name: "Miner", rarity: "common", icon: "⛏️",
-    description: "Earn 1 gold every 2 turns.",
-  },
-  {
-    id: "alternative", name: "Alternative", rarity: "common", icon: "🛤️",
-    description: "Your rook-file pawns (a & h columns) may advance 3 squares on their first move.",
-  },
-  {
-    id: "mastermind", name: "Mastermind", rarity: "common", icon: "🧠",
-    description: "Improves your augment roll chances (Common↓ Uncommon↑ Rare↑ Epic↑).",
-  },
+  { id:"miner",        name:"Miner",        rarity:"common",   icon:"⛏️",   description:"Earn 1 gold every 2 turns." },
+  { id:"alternative",  name:"Alternative",  rarity:"common",   icon:"🛤️",   description:"Your rook-file pawns (a & h) may advance 3 squares on their first move." },
+  { id:"mastermind",   name:"Mastermind",   rarity:"common",   icon:"🧠",   description:"Improves your augment roll chances (Common↓ Rare↑ Epic↑)." },
   // ── Uncommon ──────────────────────────────────────────────────────────────
-  {
-    id: "king-of-the-hill", name: "King of the Hill", rarity: "uncommon", icon: "⛰️",
-    description: "Each of your pieces on d4/d5/e4/e5 earns 1 gold per turn.",
-  },
-  {
-    id: "oops", name: "Oops", rarity: "uncommon", icon: "↩️",
-    description: "Gain 1 undo. Roll back the last 2 half-moves once per game.",
-  },
-  {
-    id: "jew", name: "Jew", rarity: "uncommon", icon: "💎",
-    description: "When the enemy captures your pawns, you gain 1 gold per captured pawn.",
-  },
-  {
-    id: "mastermind-plus", name: "Mastermind+", rarity: "uncommon", icon: "🧠+",
-    description: "Further boosts roll chances (Common↓↓ Rare↑↑ Epic↑↑). Stacks with Mastermind.",
-  },
+  { id:"king-of-the-hill", name:"King of the Hill", rarity:"uncommon", icon:"⛰️", description:"Each of your pieces on d4/d5/e4/e5 earns 1 gold per turn." },
+  { id:"oops",         name:"Oops",         rarity:"uncommon", icon:"↩️",   description:"Gain 1 undo. Roll back the last 2 half-moves once per game." },
+  { id:"jew",          name:"Jew",          rarity:"uncommon", icon:"💎",   description:"When the enemy captures your pawns, you gain 1 gold per captured pawn." },
+  { id:"mastermind-plus", name:"Mastermind+", rarity:"uncommon", icon:"🧠✨", description:"Further boosts roll chances (Rare↑↑ Epic↑↑). Stacks with Mastermind." },
   // ── Rare ──────────────────────────────────────────────────────────────────
-  {
-    id: "frost", name: "Frost", rarity: "rare", icon: "❄️",
-    description: "Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn.",
-  },
-  {
-    id: "what", name: "What?", rarity: "rare", icon: "↔️",
-    description: "Once, one of your pawns may move one square sideways to an empty square.",
-  },
+  { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn." },
+  { id:"what",         name:"What?",        rarity:"rare",     icon:"↔️",   description:"Once, one of your pawns may move one square sideways to an empty square." },
   // ── Epic ──────────────────────────────────────────────────────────────────
-  {
-    id: "necromancer", name: "Necromancer", rarity: "epic", icon: "💀",
-    description: "Bring one lost pawn back to its home square on the starting rank.",
-  },
-  {
-    id: "bloodlust", name: "Bloodlust", rarity: "epic", icon: "🩸",
-    description: "Every 4 enemy pieces you capture, gain 1 bonus augment pick.",
-  },
-  {
-    id: "internal-combustion", name: "Internal Combustion", rarity: "epic", icon: "💥",
-    description: "The first enemy piece that checks your king explodes — removed, granting no gold.",
-  },
-  {
-    id: "royal-education", name: "Royal Education", rarity: "epic", icon: "♞👑",
-    description: "Once, your king may move like a knight.",
-  },
+  { id:"necromancer",  name:"Necromancer",  rarity:"epic",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
+  { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
+  { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
+  { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight." },
 ];
 
 // ─── Weighted random roll ─────────────────────────────────────────────────────
@@ -143,7 +103,6 @@ export function rollAugments(
   const pool = AUGMENT_POOL.filter(a => !exclude.includes(a.id) && weights[a.rarity] > 0);
   const result: Augment[] = [];
   const used = new Set<string>();
-
   for (let i = 0; i < count; i++) {
     const available = pool.filter(a => !used.has(a.id));
     if (available.length === 0) break;
