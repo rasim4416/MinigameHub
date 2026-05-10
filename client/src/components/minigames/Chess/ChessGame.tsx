@@ -195,11 +195,11 @@ const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
-function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft,isBlessed,isColdWind,contractMark}:{
+function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft,isBlessed,isColdWind,contractMark,isWall,isPuppet}:{
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
   onClick:()=>void;boardSize:number;deathNoteCount?:number;isNuke?:boolean;nukeMovesLeft?:number;
-  isBlessed?:boolean;isColdWind?:boolean;contractMark?:boolean;
+  isBlessed?:boolean;isColdWind?:boolean;contractMark?:boolean;isWall?:boolean;isPuppet?:boolean;
 }) {
   const light=(row+col)%2===0;
   let bg=light?LIGHT_SQ:DARK_SQ;
@@ -217,6 +217,8 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
       {isBlessed&&<div style={{position:"absolute",inset:0,background:"rgba(250,204,21,0.20)",border:"2px solid rgba(250,204,21,0.80)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 8px rgba(250,204,21,0.45)"}}/>}
       {isColdWind&&<div style={{position:"absolute",inset:0,background:"rgba(147,210,255,0.22)",border:"2px solid rgba(147,210,255,0.80)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 8px rgba(147,210,255,0.45)"}}/>}
       {contractMark&&<div style={{position:"absolute",top:1,right:2,fontSize:10,lineHeight:1,pointerEvents:"none",zIndex:5}}>🎯</div>}
+      {isPuppet&&<div style={{position:"absolute",top:1,left:2,fontSize:10,lineHeight:1,pointerEvents:"none",zIndex:5}}>🪆</div>}
+      {isWall&&<div style={{position:"absolute",inset:0,background:"#3d2b1f",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:6,borderRadius:1}}><span style={{fontSize:Math.max(10,size*0.55),lineHeight:1,userSelect:"none"}}>🧱</span></div>}
       {deathNoteCount!==undefined&&<div style={{position:"absolute",top:2,right:2,width:14,height:14,borderRadius:"50%",background:"#dc2626",border:"1px solid #fca5a5",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{deathNoteCount}</span></div>}
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
       {isValidMove&&piece&&!isMonolith&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
@@ -498,6 +500,7 @@ type SpellState={
   monolithRemoveAvailable:boolean;onMonolithRemove:()=>void;
   contractAvailable:boolean;contractActive:boolean;onContract:()=>void;contractTarget:[number,number]|null;
   blessedWaterCharges:number;blessedWaterActive:boolean;onBlessedWater:()=>void;
+  puppetAvailable:boolean;puppetActive:boolean;onPuppet:()=>void;
   canUndo:boolean;onUndo:()=>void;
   captureCount:number;hasBloodlust:boolean;
   shopOpen:boolean;onToggleShop:()=>void;
@@ -536,6 +539,7 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.monolithRemoveAvailable&&<SpellButton icon="🗑️" label="REMOVE" active={spells.monolithPlaceActive} onClick={spells.onMonolithRemove} title="Remove your monolith (free action)"/>}
         {canAct&&spells.contractAvailable&&<SpellButton icon="🎯" label="CONTRACT" active={spells.contractActive} onClick={spells.onContract} title="Mark an enemy piece (not king/pawn) — capture it for 4× its value"/>}
         {canAct&&spells.blessedWaterCharges>0&&<SpellButton icon="💧" label="BLESS" count={spells.blessedWaterCharges} active={spells.blessedWaterActive} onClick={spells.onBlessedWater} title="Bless a square — piece cannot be captured for 2 rounds"/>}
+        {canAct&&spells.puppetAvailable&&<SpellButton icon="🪆" label="PUPPET" active={spells.puppetActive} onClick={spells.onPuppet} title="Force the opponent to move a specific piece on their next turn"/>}
         {canAct&&<SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop"/>}
         <GoldBadge gold={gold} active={canAct}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
@@ -645,6 +649,20 @@ export default function ChessGame() {
   const [pendingEvent,setPendingEvent]=useState<GameEvent|null>(null);
   const [peaceTreatyMovesLeft,setPeaceTreatyMovesLeft]=useState(0);
   const [activeNuke,setActiveNuke]=useState<{topRow:number;leftCol:number;movesLeft:number}|null>(null);
+
+  // Event interval (can be shortened by Just Chaos)
+  const [eventInterval,setEventInterval]=useState(30);
+
+  // Great Wall of Hatay (event)
+  const [wallSquares,setWallSquares]=useState<{row:number;col:number}[]>([]);
+  const [wallMovesLeft,setWallMovesLeft]=useState(0);
+
+  // Puppet (augment)
+  const [puppetMode,setPuppetMode]=useState(false);
+  const [whitePuppetUsed,setWhitePuppetUsed]=useState(false);
+  const [blackPuppetUsed,setBlackPuppetUsed]=useState(false);
+  const [activePuppetSquare,setActivePuppetSquare]=useState<[number,number]|null>(null);
+  const [activePuppetColor,setActivePuppetColor]=useState<Color|null>(null);
 
   // Blessed squares (Blessed Waters event + Blessed Water Spell augment)
   const [blessedSquares,setBlessedSquares]=useState<{row:number;col:number;movesLeft:number}[]>([]);
@@ -867,6 +885,23 @@ export default function ChessGame() {
         for (const [r,c] of wPawns.slice(0,2)) nb[r][c]=null;
         for (const [r,c] of bPawns.slice(0,2)) nb[r][c]=null;
         newGame = recomputeStatus({...newGame, board:nb});
+      } else if (event.id === "just-chaos") {
+        setEventInterval(10);
+      } else if (event.id === "great-wall-of-hatay") {
+        const bsW = newGame.board.length;
+        const wallOptions: {row:number;col:number}[][] = [];
+        for (let row=0;row<bsW;row++) for (let c=0;c<=bsW-3;c++) {
+          if (!newGame.board[row][c]&&!newGame.board[row][c+1]&&!newGame.board[row][c+2])
+            wallOptions.push([{row,col:c},{row,col:c+1},{row,col:c+2}]);
+        }
+        for (let col=0;col<bsW;col++) for (let rr=0;rr<=bsW-3;rr++) {
+          if (!newGame.board[rr][col]&&!newGame.board[rr+1][col]&&!newGame.board[rr+2][col])
+            wallOptions.push([{row:rr,col},{row:rr+1,col},{row:rr+2,col}]);
+        }
+        if (wallOptions.length>0) {
+          const chosen=wallOptions[Math.floor(Math.random()*wallOptions.length)];
+          setWallSquares(chosen); setWallMovesLeft(4);
+        }
       } else if (event.id === "blessed-waters") {
         const bs2 = newGame.board.length;
         const off2 = (bs2 - 8) / 2;
@@ -887,7 +922,8 @@ export default function ChessGame() {
         setColdWindsMovesLeft(2);
       }
       setPendingEvent(event);
-      setNextEventTurn(totalMoves + nextEventInterval());
+      const nextEvInterval = event.id==="just-chaos" ? 10 : eventInterval;
+      setNextEventTurn(totalMoves + nextEvInterval);
     }
 
     // Death Note: track piece movement, decrement timers, kill expired
@@ -936,6 +972,17 @@ export default function ChessGame() {
       else setColdWindsMovesLeft(n=>n-1);
     }
 
+    // Great Wall decrement
+    if (wallMovesLeft>0) {
+      if (wallMovesLeft<=1){setWallSquares([]);setWallMovesLeft(0);}
+      else setWallMovesLeft(n=>n-1);
+    }
+
+    // Puppet: clear forced state after the puppet player moves
+    if (activePuppetColor===movingColor) {
+      setActivePuppetSquare(null); setActivePuppetColor(null);
+    }
+
     setGame(newGame);
 
     // Triggers
@@ -977,6 +1024,7 @@ export default function ChessGame() {
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
     peaceTreatyMovesLeft,nextEventTurn,activeNuke,coldWindsMovesLeft,whiteContractTarget,blackContractTarget,
+    wallMovesLeft,activePuppetColor,activePuppetSquare,eventInterval,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -997,7 +1045,7 @@ export default function ChessGame() {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setPuppetMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -1031,6 +1079,7 @@ export default function ChessGame() {
   const handleToggleMonolithRemove=useCallback(()=>{ const e=monolithMode!=="remove"; clearModes(); if(e) setMonolithMode("remove"); },[monolithMode]);
   const handleToggleContract=useCallback(()=>{ const e=!contractMode; clearModes(); setContractMode(e); },[contractMode]);
   const handleToggleBlessedWater=useCallback(()=>{ const e=!blessedWaterMode; clearModes(); setBlessedWaterMode(e); },[blessedWaterMode]);
+  const handleTogglePuppet=useCallback(()=>{ const e=!puppetMode; clearModes(); setPuppetMode(e); },[puppetMode]);
   const handleDomainExpansion=useCallback(()=>{
     if (boardExpanded) return;
     setBoardSize(10);
@@ -1043,8 +1092,10 @@ export default function ChessGame() {
     setActiveNuke(prev=>prev?{...prev,topRow:prev.topRow+1,leftCol:prev.leftCol+1}:null);
     setBlessedSquares(prev=>prev.map(b=>({...b,row:b.row+1,col:b.col+1})));
     setColdWindsSquares(prev=>prev.map(([r2,c2])=>[r2+1,c2+1] as [number,number]));
+    setWallSquares(prev=>prev.map(w=>({row:w.row+1,col:w.col+1})));
     if (whiteContractTarget) setWhiteContractTarget([whiteContractTarget[0]+1,whiteContractTarget[1]+1]);
     if (blackContractTarget) setBlackContractTarget([blackContractTarget[0]+1,blackContractTarget[1]+1]);
+    if (activePuppetSquare) setActivePuppetSquare([activePuppetSquare[0]+1,activePuppetSquare[1]+1]);
     setWhiteLostPawnCols(prev=>prev.map(c=>c+1));
     setBlackLostPawnCols(prev=>prev.map(c=>c+1));
     if (selected) setSelected([selected[0]+1,selected[1]+1]);
@@ -1099,6 +1150,15 @@ export default function ChessGame() {
       setBlessedSquares(prev=>[...prev,{row:r,col:c,movesLeft:4}]);
       if (game.turn==="white") setWhiteBlessedWaterCharges(n=>n-1); else setBlackBlessedWaterCharges(n=>n-1);
       setBlessedWaterMode(false); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (puppetMode){
+      if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="M"){
+        setActivePuppetSquare([r,c]);
+        setActivePuppetColor(opp(game.turn));
+        if (game.turn==="white") setWhitePuppetUsed(true); else setBlackPuppetUsed(true);
+      }
+      setPuppetMode(false); setSelected(null); setValidMoves([]); return;
     }
 
     if (deathNoteMode){
@@ -1175,8 +1235,12 @@ export default function ChessGame() {
       const isValid=validMoves.some(([vr,vc])=>vr===r&&vc===c);
       if (isValid){
         const movingColor=game.turn;
+        const enemyColorRH=opp(movingColor);
         const [kr,kc]=findKing(game.board,movingColor);
         const dr=Math.sign(r-kr),dc=Math.sign(c-kc);
+        // Detect enemy king anywhere in the rampage path (inclusive of dest)
+        let enemyKingInPath=false;
+        {let sc:[number,number]=[kr+dr,kc+dc];while(sc[0]!==r||sc[1]!==c){if(game.board[sc[0]][sc[1]]?.type==="K"&&game.board[sc[0]][sc[1]]?.color===enemyColorRH)enemyKingInPath=true;sc=[sc[0]+dr,sc[1]+dc];}if(game.board[r][c]?.type==="K"&&game.board[r][c]?.color===enemyColorRH)enemyKingInPath=true;}
         const nb=cloneBoard(game.board);
         nb[kr][kc]=null;
         let cur:[number,number]=[kr+dr,kc+dc];
@@ -1195,6 +1259,8 @@ export default function ChessGame() {
         };
         newGame=applyEndOfTurnEffects(newGame,movingColor,playerAugsNow,newTurnCount);
         newGame=recomputeStatus(newGame);
+        // Instant win if rampage killed the enemy king
+        if (enemyKingInPath) newGame={...newGame,status:"checkmate"};
         setGame(newGame);
         if (movingColor==="white") setWhiteRoyalHouseholdUsed(true); else setBlackRoyalHouseholdUsed(true);
       }
@@ -1224,7 +1290,13 @@ export default function ChessGame() {
 
     const computeMoves=(pr:number,pc:number):[number,number][]=>{
       if (isColdWindFrozen(pr,pc)) return [];
-      let moves=getLegalMoves(game,pr,pc);
+      // Inject wall squares as M-pieces so rays/movement are properly blocked
+      const gameForMoves = wallSquares.length>0
+        ? {...game, board: game.board.map((row2,ri)=>row2.map((sq,ci)=>
+            wallSquares.some(w=>w.row===ri&&w.col===ci)?{type:"M" as PieceType,color:"white" as Color}:sq
+          ))}
+        : game;
+      let moves=getLegalMoves(gameForMoves,pr,pc);
       const p=game.board[pr][pc];
       if (hasAlternative&&p?.type==="P")
         for (const [er,ec] of getAlternativeMoves(game,pr,pc))
@@ -1233,6 +1305,24 @@ export default function ChessGame() {
       moves=moves.filter(([tr,tc])=>!game.board[tr][tc]||!blessedSquares.some(b=>b.row===tr&&b.col===tc));
       return moves;
     };
+
+    // Puppet force: the puppeted player must move the puppet piece
+    if (activePuppetColor===game.turn&&activePuppetSquare&&game.status!=="check") {
+      const pMoves=computeMoves(activePuppetSquare[0],activePuppetSquare[1]);
+      if (pMoves.length===0) {
+        setActivePuppetSquare(null); setActivePuppetColor(null);
+        // fall through to normal selection
+      } else {
+        if (r===activePuppetSquare[0]&&c===activePuppetSquare[1]) {
+          setSelected([r,c]); setValidMoves(pMoves); return;
+        }
+        if (selected&&validMoves.some(([vr,vc])=>vr===r&&vc===c)) {
+          const cap=game.board[r][c]?.type??null;
+          executeMove(activePuppetSquare,[r,c],undefined,cap);
+        }
+        setSelected(null); setValidMoves([]); return;
+      }
+    }
 
     if (selected){
       const isValid=validMoves.some(([vr,vc])=>vr===r&&vc===c);
@@ -1256,8 +1346,8 @@ export default function ChessGame() {
     phase,currentTrigger,game,selected,validMoves,promotionPending,
     freezeMode,necroMode,royalEdMode,whatMode,whatSelected,frozenSquare,
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
-    deathNoteMode,monolithMode,contractMode,blessedWaterMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
-    coldWindsMovesLeft,coldWindsSquares,blessedSquares,
+    deathNoteMode,monolithMode,contractMode,blessedWaterMode,puppetMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
+    coldWindsMovesLeft,coldWindsSquares,blessedSquares,wallSquares,activePuppetSquare,activePuppetColor,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1288,8 +1378,10 @@ export default function ChessGame() {
     setBoardExpanded(false); setWhiteDomainUsed(false); setBlackDomainUsed(false); setBoardSize(8);
     setNextEventTurn(nextEventInterval()); setPendingEvent(null); setPeaceTreatyMovesLeft(0); setActiveNuke(null);
     setBlessedSquares([]); setColdWindsSquares([]); setColdWindsMovesLeft(0);
+    setWallSquares([]); setWallMovesLeft(0); setEventInterval(30);
     setWhiteContractTarget(null); setBlackContractTarget(null); setContractMode(false);
     setWhiteBlessedWaterCharges(0); setBlackBlessedWaterCharges(0); setBlessedWaterMode(false);
+    setWhitePuppetUsed(false); setBlackPuppetUsed(false); setPuppetMode(false); setActivePuppetSquare(null); setActivePuppetColor(null);
     setMonolithMode(null);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
@@ -1361,6 +1453,11 @@ export default function ChessGame() {
     blessedWaterCharges: color==="white"?whiteBlessedWaterCharges:blackBlessedWaterCharges,
     blessedWaterActive: blessedWaterMode&&game.turn===color,
     onBlessedWater: handleToggleBlessedWater,
+    puppetAvailable: color==="white"
+      ?(!whitePuppetUsed&&whiteAugments.some(a=>a.id==="puppet"))
+      :(!blackPuppetUsed&&blackAugments.some(a=>a.id==="puppet")),
+    puppetActive: puppetMode&&game.turn===color,
+    onPuppet: handleTogglePuppet,
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
@@ -1383,6 +1480,8 @@ export default function ChessGame() {
     if (monolithMode==="remove") return {text:"🗿 Click your monolith to remove it (free action)",color:"#64748b"};
     if (contractMode) return {text:"🎯 CONTRACT — Click an enemy piece (not king/pawn) to mark it",color:"#f59e0b"};
     if (blessedWaterMode) return {text:"💧 BLESS — Click any square to protect the piece on it for 2 rounds",color:"#22d3ee"};
+    if (puppetMode) return {text:"🪆 PUPPET — Click an enemy piece to force them to play it next turn",color:"#f97316"};
+    if (activePuppetColor===game.turn&&activePuppetSquare&&game.status!=="check") return {text:"🪆 You are puppeted! You MUST move the marked piece.",color:"#ef4444"};
     return null;
   })();
 
@@ -1415,7 +1514,9 @@ export default function ChessGame() {
             const isBlessed=blessedSquares.some(b=>b.row===r&&b.col===c);
             const isColdWind=coldWindsMovesLeft>0&&coldWindsSquares.some(([cr,cc])=>cr===r&&cc===c);
             const contractMark=!!(whiteContractTarget&&whiteContractTarget[0]===r&&whiteContractTarget[1]===c)||!!(blackContractTarget&&blackContractTarget[0]===r&&blackContractTarget[1]===c);
-            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark}/>;
+            const isWall=wallSquares.some(w=>w.row===r&&w.col===c);
+            const isPuppet=!!(activePuppetSquare&&activePuppetSquare[0]===r&&activePuppetSquare[1]===c);
+            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark} isWall={isWall} isPuppet={isPuppet}/>;
           }))}
         </div>
 

@@ -2,7 +2,7 @@
 // Events system — random board events every 15 full turns (30 half-moves)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type EventRarity = "common" | "uncommon" | "rare" | "epic";
+export type EventRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export interface GameEvent {
   id: string;
@@ -33,6 +33,10 @@ export const EVENT_RARITY_META: Record<EventRarity, {
   epic: {
     border: "#a855f7", glow: "rgba(168,85,247,0.45)",
     badge: "#3b0764", text: "#d8b4fe", label: "Epic",
+  },
+  legendary: {
+    border: "#f59e0b", glow: "rgba(245,158,11,0.60)",
+    badge: "#451a03", text: "#fde68a", label: "Legendary",
   },
 };
 
@@ -80,6 +84,14 @@ export const EVENT_POOL: GameEvent[] = [
     flavor: "The markets have spoken.",
   },
   {
+    id: "great-wall-of-hatay",
+    name: "Great Wall of Hatay",
+    rarity: "rare",
+    icon: "🧱",
+    description: "3 consecutive free squares (horizontal or vertical) are walled off for 2 rounds. No piece may enter or pass through them. If no valid span exists, this event has no effect.",
+    flavor: "A wall rises overnight.",
+  },
+  {
     id: "tactical-nuke",
     name: "Tactical Nuke Incoming",
     rarity: "rare",
@@ -95,15 +107,24 @@ export const EVENT_POOL: GameEvent[] = [
     description: "2 random pawns from each player are slain.",
     flavor: "\"The Lannisters send their regards.\"",
   },
+  {
+    id: "just-chaos",
+    name: "Just Chaos",
+    rarity: "legendary",
+    icon: "🌀",
+    description: "Events now trigger every 5 rounds instead of 15, for the rest of the game.",
+    flavor: "\"Let the world burn.\"",
+  },
 ];
 
 // ─── Weighted roll ────────────────────────────────────────────────────────────
 
 const RARITY_WEIGHTS: Record<EventRarity, number> = {
-  common:   50,
-  uncommon: 28,
-  rare:     16,
-  epic:      6,
+  common:    44,
+  uncommon:  25,
+  rare:      20,
+  epic:       9,
+  legendary:  2,
 };
 
 export function rollEvent(): GameEvent {
@@ -119,7 +140,7 @@ export function rollEvent(): GameEvent {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Returns 30 half-moves (15 full turns) between events. */
+/** Returns 30 half-moves (15 full turns) between events (default). */
 export function nextEventInterval(): number {
   return 30;
 }

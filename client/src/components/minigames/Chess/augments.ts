@@ -93,6 +93,7 @@ export const MAX_STACK: Record<string, number> = {
   "death-note":          1,
   "domain-expansion":    1,
   "impassable":          1,
+  "puppet":              1,
   "contract-killer":     1,
   "blessed-water-spell": 2,
 };
@@ -124,6 +125,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square in your half of the board." },
   { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages UP TO 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
   { id:"death-note", name:"Death Note", rarity:"epic", icon:"☠️", description:"Choose an enemy piece (not king or queen). It dies after 5 rounds. Pieces killed this way grant no gold, no augment, and don't count as captures." },
+  { id:"puppet",     name:"Puppet",    rarity:"epic", icon:"🪆",  description:"Once per game: mark any enemy piece (not king). On their next turn, the opponent MUST move that piece." },
   { id:"domain-expansion", name:"DOMAIN EXPANSION", rarity:"legendary", icon:"♾️", description:"Expand the board from 8×8 to 10×10. New peripheral squares (file x, file i, rank 0, rank 9) are added empty. No piece moves during expansion." },
 ];
 
