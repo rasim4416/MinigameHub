@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Events system — random board events every 10–15 turns
+// Events system — random board events every 15 full turns (30 half-moves)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type EventRarity = "common" | "rare" | "epic";
+export type EventRarity = "common" | "uncommon" | "rare" | "epic";
 
 export interface GameEvent {
   id: string;
@@ -21,6 +21,10 @@ export const EVENT_RARITY_META: Record<EventRarity, {
   common: {
     border: "#6b7280", glow: "rgba(156,163,175,0.15)",
     badge: "#1f2937", text: "#d1d5db", label: "Common",
+  },
+  uncommon: {
+    border: "#22c55e", glow: "rgba(34,197,94,0.30)",
+    badge: "#052e16", text: "#86efac", label: "Uncommon",
   },
   rare: {
     border: "#3b82f6", glow: "rgba(59,130,246,0.40)",
@@ -52,20 +56,28 @@ export const EVENT_POOL: GameEvent[] = [
     flavor: "A temporary ceasefire has been declared.",
   },
   {
+    id: "blessed-waters",
+    name: "Blessed Waters",
+    rarity: "uncommon",
+    icon: "💧",
+    description: "A random square between ranks 3–6 is blessed. The piece standing on it cannot be captured for 3 rounds.",
+    flavor: "The waters protect the chosen.",
+  },
+  {
+    id: "cold-winds",
+    name: "Cold Winds",
+    rarity: "uncommon",
+    icon: "🌬️",
+    description: "2 random pieces from each player (except kings) are frozen and cannot move for 1 round.",
+    flavor: "The battlefield falls silent.",
+  },
+  {
     id: "stock-crash",
     name: "Stock Crash",
     rarity: "rare",
     icon: "📉",
-    description: "Both players lose 50% of their gold.",
+    description: "Both players lose 10 gold.",
     flavor: "The markets have spoken.",
-  },
-  {
-    id: "red-wedding",
-    name: "Red Wedding",
-    rarity: "epic",
-    icon: "🩸",
-    description: "2 random pawns from each player are slain.",
-    flavor: "\"The Lannisters send their regards.\"",
   },
   {
     id: "tactical-nuke",
@@ -75,14 +87,23 @@ export const EVENT_POOL: GameEvent[] = [
     description: "A random 3×3 area is targeted. All pieces inside will be destroyed after 5 rounds.",
     flavor: "\"Incoming!\"",
   },
+  {
+    id: "red-wedding",
+    name: "Red Wedding",
+    rarity: "epic",
+    icon: "🩸",
+    description: "2 random pawns from each player are slain.",
+    flavor: "\"The Lannisters send their regards.\"",
+  },
 ];
 
 // ─── Weighted roll ────────────────────────────────────────────────────────────
 
 const RARITY_WEIGHTS: Record<EventRarity, number> = {
-  common: 68,
-  rare: 24,
-  epic: 8,
+  common:   50,
+  uncommon: 28,
+  rare:     16,
+  epic:      6,
 };
 
 export function rollEvent(): GameEvent {
@@ -98,7 +119,7 @@ export function rollEvent(): GameEvent {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Returns a random number of half-moves until the next event (10–15). */
+/** Returns 30 half-moves (15 full turns) between events. */
 export function nextEventInterval(): number {
-  return Math.floor(Math.random() * 6) + 10;
+  return 30;
 }

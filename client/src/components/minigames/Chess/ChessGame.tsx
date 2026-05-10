@@ -124,17 +124,13 @@ function getRoyalEdMoves(game: ChessState, color: Color): {kingPos:[number,numbe
 
 const RAMPAGE_DIRS: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
 
-/** All unoccupied squares in the player's half the piece can safely teleport to. */
+/** All unoccupied squares on the entire board the piece can safely teleport to. */
 function getSakoMoves(game: ChessState, from: [number,number], color: Color): [number,number][] {
   const piece = game.board[from[0]][from[1]];
   if (!piece) return [];
   const bs = game.board.length;
-  const half = Math.floor(bs / 2);
-  const rows = color === "white"
-    ? Array.from({length: bs - half}, (_, i) => half + i)
-    : Array.from({length: half}, (_, i) => i);
   const result: [number,number][] = [];
-  for (const r of rows) for (let c = 0; c < bs; c++) {
+  for (let r = 0; r < bs; r++) for (let c = 0; c < bs; c++) {
     if (game.board[r][c]) continue;
     if (r === from[0] && c === from[1]) continue;
     const nb = cloneBoard(game.board);
@@ -199,10 +195,11 @@ const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
-function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft}:{
+function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft,isBlessed,isColdWind,contractMark}:{
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
   onClick:()=>void;boardSize:number;deathNoteCount?:number;isNuke?:boolean;nukeMovesLeft?:number;
+  isBlessed?:boolean;isColdWind?:boolean;contractMark?:boolean;
 }) {
   const light=(row+col)%2===0;
   let bg=light?LIGHT_SQ:DARK_SQ;
@@ -217,6 +214,9 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
       {isFrozen&&<div style={{position:"absolute",inset:0,background:"rgba(147,210,255,0.28)",border:"2px solid rgba(147,210,255,0.7)",boxShadow:"inset 0 0 8px rgba(147,210,255,0.5)",pointerEvents:"none",zIndex:2}}/>}
       {isNuke&&<div style={{position:"absolute",inset:0,background:"rgba(34,197,94,0.30)",border:"2px solid rgba(34,197,94,0.85)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 6px rgba(34,197,94,0.6)"}}/>}
       {isNuke&&nukeMovesLeft!==undefined&&row===Math.floor(row)&&col===Math.floor(col)&&<div style={{position:"absolute",bottom:2,left:2,width:14,height:14,borderRadius:"50%",background:"#16a34a",border:"1px solid #4ade80",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{nukeMovesLeft}</span></div>}
+      {isBlessed&&<div style={{position:"absolute",inset:0,background:"rgba(250,204,21,0.20)",border:"2px solid rgba(250,204,21,0.80)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 8px rgba(250,204,21,0.45)"}}/>}
+      {isColdWind&&<div style={{position:"absolute",inset:0,background:"rgba(147,210,255,0.22)",border:"2px solid rgba(147,210,255,0.80)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 8px rgba(147,210,255,0.45)"}}/>}
+      {contractMark&&<div style={{position:"absolute",top:1,right:2,fontSize:10,lineHeight:1,pointerEvents:"none",zIndex:5}}>🎯</div>}
       {deathNoteCount!==undefined&&<div style={{position:"absolute",top:2,right:2,width:14,height:14,borderRadius:"50%",background:"#dc2626",border:"1px solid #fca5a5",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{deathNoteCount}</span></div>}
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
       {isValidMove&&piece&&!isMonolith&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
@@ -496,6 +496,8 @@ type SpellState={
   domainAvailable:boolean;onDomain:()=>void;
   monolithPlaceAvailable:boolean;monolithPlaceActive:boolean;onMonolithPlace:()=>void;
   monolithRemoveAvailable:boolean;onMonolithRemove:()=>void;
+  contractAvailable:boolean;contractActive:boolean;onContract:()=>void;contractTarget:[number,number]|null;
+  blessedWaterCharges:number;blessedWaterActive:boolean;onBlessedWater:()=>void;
   canUndo:boolean;onUndo:()=>void;
   captureCount:number;hasBloodlust:boolean;
   shopOpen:boolean;onToggleShop:()=>void;
@@ -532,6 +534,8 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.domainAvailable&&<SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="DOMAIN EXPANSION — expand the board to 10×10"/>}
         {canAct&&spells.monolithPlaceAvailable&&<SpellButton icon="🗿" label="PLACE" active={spells.monolithPlaceActive} onClick={spells.onMonolithPlace} title="Place an impassable monolith on any empty square (spends a turn)"/>}
         {canAct&&spells.monolithRemoveAvailable&&<SpellButton icon="🗑️" label="REMOVE" active={spells.monolithPlaceActive} onClick={spells.onMonolithRemove} title="Remove your monolith (free action)"/>}
+        {canAct&&spells.contractAvailable&&<SpellButton icon="🎯" label="CONTRACT" active={spells.contractActive} onClick={spells.onContract} title="Mark an enemy piece (not king/pawn) — capture it for 4× its value"/>}
+        {canAct&&spells.blessedWaterCharges>0&&<SpellButton icon="💧" label="BLESS" count={spells.blessedWaterCharges} active={spells.blessedWaterActive} onClick={spells.onBlessedWater} title="Bless a square — piece cannot be captured for 2 rounds"/>}
         {canAct&&<SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop"/>}
         <GoldBadge gold={gold} active={canAct}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
@@ -642,6 +646,23 @@ export default function ChessGame() {
   const [peaceTreatyMovesLeft,setPeaceTreatyMovesLeft]=useState(0);
   const [activeNuke,setActiveNuke]=useState<{topRow:number;leftCol:number;movesLeft:number}|null>(null);
 
+  // Blessed squares (Blessed Waters event + Blessed Water Spell augment)
+  const [blessedSquares,setBlessedSquares]=useState<{row:number;col:number;movesLeft:number}[]>([]);
+
+  // Cold Winds (event)
+  const [coldWindsSquares,setColdWindsSquares]=useState<[number,number][]>([]);
+  const [coldWindsMovesLeft,setColdWindsMovesLeft]=useState(0);
+
+  // Contract Killer (augment)
+  const [whiteContractTarget,setWhiteContractTarget]=useState<[number,number]|null>(null);
+  const [blackContractTarget,setBlackContractTarget]=useState<[number,number]|null>(null);
+  const [contractMode,setContractMode]=useState(false);
+
+  // Blessed Water Spell (augment)
+  const [whiteBlessedWaterCharges,setWhiteBlessedWaterCharges]=useState(0);
+  const [blackBlessedWaterCharges,setBlackBlessedWaterCharges]=useState(0);
+  const [blessedWaterMode,setBlessedWaterMode]=useState(false);
+
   // Monolith (Impassable)
   const [monolithMode,setMonolithMode]=useState<"place"|"remove"|null>(null);
 
@@ -676,7 +697,8 @@ export default function ChessGame() {
 
   const grantPickedEffects=useCallback((aug:Augment,color:Color)=>{
     if (aug.id==="oops")          { if(color==="white")setWhiteUndosLeft(u=>u+1);else setBlackUndosLeft(u=>u+1); }
-    if (aug.id==="frost")         { if(color==="white")setWhiteFreezeCharges(n=>n+1);else setBlackFreezeCharges(n=>n+1); }
+    if (aug.id==="frost")              { if(color==="white")setWhiteFreezeCharges(n=>n+1);else setBlackFreezeCharges(n=>n+1); }
+    if (aug.id==="blessed-water-spell"){ if(color==="white")setWhiteBlessedWaterCharges(n=>n+1);else setBlackBlessedWaterCharges(n=>n+1); }
     if (aug.id==="necromancer")   { if(color==="white")setWhiteNecroCharges(n=>n+1);else setBlackNecroCharges(n=>n+1); }
     if (aug.id==="royal-education"){ if(color==="white")setWhiteRoyalEdUsed(false);else setBlackRoyalEdUsed(false); }
     if (aug.id==="what")           { if(color==="white")setWhiteWhatUsed(false);else setBlackWhatUsed(false); }
@@ -793,6 +815,25 @@ export default function ChessGame() {
     // Peace treaty countdown
     if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft(n => n - 1);
 
+    // Contract Killer — fulfillment + position tracking
+    {
+      const wCT=whiteContractTarget, bCT=blackContractTarget;
+      if (capturedType&&capturedType!=="K") {
+        if (movingColor==="white"&&wCT&&wCT[0]===to[0]&&wCT[1]===to[1]) {
+          const bonus=(PIECE_VALUE[capturedType]??1)*4;
+          newGame={...newGame,goldWhite:newGame.goldWhite+bonus};
+          setWhiteContractTarget(null);
+        }
+        if (movingColor==="black"&&bCT&&bCT[0]===to[0]&&bCT[1]===to[1]) {
+          const bonus=(PIECE_VALUE[capturedType]??1)*4;
+          newGame={...newGame,goldBlack:newGame.goldBlack+bonus};
+          setBlackContractTarget(null);
+        }
+      }
+      if (movingColor==="black"&&wCT&&wCT[0]===from[0]&&wCT[1]===from[1]) setWhiteContractTarget([to[0],to[1]]);
+      if (movingColor==="white"&&bCT&&bCT[0]===from[0]&&bCT[1]===from[1]) setBlackContractTarget([to[0],to[1]]);
+    }
+
     // ── Event trigger ──────────────────────────────────────────────────────
     const totalMoves = (movingColor==="white" ? newTurnCount : whiteTurnCount)
                      + (movingColor==="black" ? newTurnCount : blackTurnCount);
@@ -802,8 +843,8 @@ export default function ChessGame() {
         newGame = {...newGame, goldWhite: newGame.goldWhite+10, goldBlack: newGame.goldBlack+10};
       } else if (event.id === "stock-crash") {
         newGame = {...newGame,
-          goldWhite: Math.floor(newGame.goldWhite * 0.5),
-          goldBlack: Math.floor(newGame.goldBlack * 0.5),
+          goldWhite: Math.max(0, newGame.goldWhite - 10),
+          goldBlack: Math.max(0, newGame.goldBlack - 10),
         };
       } else if (event.id === "peace-treaty") {
         setPeaceTreatyMovesLeft(10);
@@ -826,6 +867,24 @@ export default function ChessGame() {
         for (const [r,c] of wPawns.slice(0,2)) nb[r][c]=null;
         for (const [r,c] of bPawns.slice(0,2)) nb[r][c]=null;
         newGame = recomputeStatus({...newGame, board:nb});
+      } else if (event.id === "blessed-waters") {
+        const bs2 = newGame.board.length;
+        const off2 = (bs2 - 8) / 2;
+        const minRow = 2 + off2, maxRow = 5 + off2;
+        const bRow = minRow + Math.floor(Math.random() * (maxRow - minRow + 1));
+        const bCol = Math.floor(Math.random() * bs2);
+        setBlessedSquares(prev => [...prev, {row: bRow, col: bCol, movesLeft: 6}]);
+      } else if (event.id === "cold-winds") {
+        const bs3 = newGame.board.length;
+        const wPcs: [number,number][] = [], blPcs: [number,number][] = [];
+        for (let rr=0;rr<bs3;rr++) for (let cc=0;cc<bs3;cc++) {
+          const p = newGame.board[rr][cc];
+          if (p&&p.type!=="K"&&p.type!=="M"&&p.color==="white") wPcs.push([rr,cc]);
+          if (p&&p.type!=="K"&&p.type!=="M"&&p.color==="black") blPcs.push([rr,cc]);
+        }
+        const shuf = (a:[number,number][]) => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+        setColdWindsSquares([...shuf(wPcs).slice(0,2), ...shuf(blPcs).slice(0,2)]);
+        setColdWindsMovesLeft(2);
       }
       setPendingEvent(event);
       setNextEventTurn(totalMoves + nextEventInterval());
@@ -868,6 +927,15 @@ export default function ChessGame() {
       }
     }
 
+    // Blessed squares decrement (filter out expired)
+    setBlessedSquares(prev=>prev.map(b=>({...b,movesLeft:b.movesLeft-1})).filter(b=>b.movesLeft>1));
+
+    // Cold Winds decrement
+    if (coldWindsMovesLeft>0) {
+      if (coldWindsMovesLeft<=1){setColdWindsSquares([]);setColdWindsMovesLeft(0);}
+      else setColdWindsMovesLeft(n=>n-1);
+    }
+
     setGame(newGame);
 
     // Triggers
@@ -908,7 +976,7 @@ export default function ChessGame() {
     whiteAugments,blackAugments,whiteMilestones,blackMilestones,
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
-    peaceTreatyMovesLeft,nextEventTurn,activeNuke,
+    peaceTreatyMovesLeft,nextEventTurn,activeNuke,coldWindsMovesLeft,whiteContractTarget,blackContractTarget,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -916,6 +984,10 @@ export default function ChessGame() {
   const handleUndo=useCallback(()=>{
     if (gameHistory.length<2) return;
     const restored=gameHistory[gameHistory.length-2];
+    // Cancel domain expansion if the restored board is smaller than current
+    if (restored.board.length < game.board.length) {
+      setBoardExpanded(false); setBoardSize(8);
+    }
     setGame(restored); setGameHistory(h=>h.slice(0,-2));
     setSelected(null); setValidMoves([]);
     setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null);
@@ -925,7 +997,7 @@ export default function ChessGame() {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -957,6 +1029,8 @@ export default function ChessGame() {
   const handleToggleDeathNote=useCallback(()=>{ const e=!deathNoteMode; clearModes(); setDeathNoteMode(e); },[deathNoteMode]);
   const handleToggleMonolithPlace=useCallback(()=>{ const e=monolithMode!=="place"; clearModes(); if(e) setMonolithMode("place"); },[monolithMode]);
   const handleToggleMonolithRemove=useCallback(()=>{ const e=monolithMode!=="remove"; clearModes(); if(e) setMonolithMode("remove"); },[monolithMode]);
+  const handleToggleContract=useCallback(()=>{ const e=!contractMode; clearModes(); setContractMode(e); },[contractMode]);
+  const handleToggleBlessedWater=useCallback(()=>{ const e=!blessedWaterMode; clearModes(); setBlessedWaterMode(e); },[blessedWaterMode]);
   const handleDomainExpansion=useCallback(()=>{
     if (boardExpanded) return;
     setBoardSize(10);
@@ -967,6 +1041,10 @@ export default function ChessGame() {
     if (frozenSquare) setFrozenSquare([frozenSquare[0]+1,frozenSquare[1]+1]);
     setDeathNoteTargets(prev=>prev.map(dn=>({...dn,row:dn.row+1,col:dn.col+1})));
     setActiveNuke(prev=>prev?{...prev,topRow:prev.topRow+1,leftCol:prev.leftCol+1}:null);
+    setBlessedSquares(prev=>prev.map(b=>({...b,row:b.row+1,col:b.col+1})));
+    setColdWindsSquares(prev=>prev.map(([r2,c2])=>[r2+1,c2+1] as [number,number]));
+    if (whiteContractTarget) setWhiteContractTarget([whiteContractTarget[0]+1,whiteContractTarget[1]+1]);
+    if (blackContractTarget) setBlackContractTarget([blackContractTarget[0]+1,blackContractTarget[1]+1]);
     setWhiteLostPawnCols(prev=>prev.map(c=>c+1));
     setBlackLostPawnCols(prev=>prev.map(c=>c+1));
     if (selected) setSelected([selected[0]+1,selected[1]+1]);
@@ -1010,6 +1088,19 @@ export default function ChessGame() {
       setMonolithMode(null); setSelected(null); setValidMoves([]); return;
     }
 
+    if (contractMode){
+      if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="P"&&piece.type!=="M"){
+        if (game.turn==="white") setWhiteContractTarget([r,c]); else setBlackContractTarget([r,c]);
+      }
+      setContractMode(false); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (blessedWaterMode){
+      setBlessedSquares(prev=>[...prev,{row:r,col:c,movesLeft:4}]);
+      if (game.turn==="white") setWhiteBlessedWaterCharges(n=>n-1); else setBlackBlessedWaterCharges(n=>n-1);
+      setBlessedWaterMode(false); setSelected(null); setValidMoves([]); return;
+    }
+
     if (deathNoteMode){
       if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="Q"&&piece.type!=="M"){
         setDeathNoteTargets(prev=>[...prev,{row:r,col:c,turnsLeft:10,targetColor:piece.color}]);
@@ -1019,7 +1110,7 @@ export default function ChessGame() {
     }
 
     if (freezeMode){
-      if (piece&&piece.color!==game.turn){
+      if (piece&&piece.color!==game.turn&&piece.type!=="K"){
         setFrozenSquare([r,c]); setFrozenExpireAfter(opp(game.turn));
         if (game.turn==="white") setWhiteFreezeCharges(n=>n-1); else setBlackFreezeCharges(n=>n-1);
       }
@@ -1128,14 +1219,18 @@ export default function ChessGame() {
 
     const playerAugsNow=game.turn==="white"?whiteAugments:blackAugments;
     const hasAlternative=playerAugsNow.some(a=>a.id==="alternative");
-    const isFrozenPiece=frozenSquare&&frozenSquare[0]===r&&frozenSquare[1]===c&&piece?.color===game.turn;
+    const isColdWindFrozen=(row:number,col:number)=>coldWindsMovesLeft>0&&coldWindsSquares.some(([fr,fc])=>fr===row&&fc===col);
+    const isFrozenPiece=(frozenSquare&&frozenSquare[0]===r&&frozenSquare[1]===c&&piece?.color===game.turn)||(isColdWindFrozen(r,c)&&piece?.color===game.turn);
 
     const computeMoves=(pr:number,pc:number):[number,number][]=>{
-      const moves=getLegalMoves(game,pr,pc);
+      if (isColdWindFrozen(pr,pc)) return [];
+      let moves=getLegalMoves(game,pr,pc);
       const p=game.board[pr][pc];
       if (hasAlternative&&p?.type==="P")
         for (const [er,ec] of getAlternativeMoves(game,pr,pc))
           if (!moves.some(([mr,mc])=>mr===er&&mc===ec)) moves.push([er,ec]);
+      // Filter out captures of blessed pieces
+      moves=moves.filter(([tr,tc])=>!game.board[tr][tc]||!blessedSquares.some(b=>b.row===tr&&b.col===tc));
       return moves;
     };
 
@@ -1161,7 +1256,8 @@ export default function ChessGame() {
     phase,currentTrigger,game,selected,validMoves,promotionPending,
     freezeMode,necroMode,royalEdMode,whatMode,whatSelected,frozenSquare,
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
-    deathNoteMode,monolithMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
+    deathNoteMode,monolithMode,contractMode,blessedWaterMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
+    coldWindsMovesLeft,coldWindsSquares,blessedSquares,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1191,6 +1287,9 @@ export default function ChessGame() {
     setWhiteDNUsed(false); setBlackDNUsed(false); setDeathNoteMode(false); setDeathNoteTargets([]);
     setBoardExpanded(false); setWhiteDomainUsed(false); setBlackDomainUsed(false); setBoardSize(8);
     setNextEventTurn(nextEventInterval()); setPendingEvent(null); setPeaceTreatyMovesLeft(0); setActiveNuke(null);
+    setBlessedSquares([]); setColdWindsSquares([]); setColdWindsMovesLeft(0);
+    setWhiteContractTarget(null); setBlackContractTarget(null); setContractMode(false);
+    setWhiteBlessedWaterCharges(0); setBlackBlessedWaterCharges(0); setBlessedWaterMode(false);
     setMonolithMode(null);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
@@ -1253,6 +1352,15 @@ export default function ChessGame() {
       ?game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white"))
       :game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black")),
     onMonolithRemove: handleToggleMonolithRemove,
+    contractAvailable: color==="white"
+      ?(whiteAugments.some(a=>a.id==="contract-killer")&&whiteContractTarget===null)
+      :(blackAugments.some(a=>a.id==="contract-killer")&&blackContractTarget===null),
+    contractActive: contractMode&&game.turn===color,
+    onContract: handleToggleContract,
+    contractTarget: color==="white"?whiteContractTarget:blackContractTarget,
+    blessedWaterCharges: color==="white"?whiteBlessedWaterCharges:blackBlessedWaterCharges,
+    blessedWaterActive: blessedWaterMode&&game.turn===color,
+    onBlessedWater: handleToggleBlessedWater,
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
@@ -1262,17 +1370,19 @@ export default function ChessGame() {
   });
 
   const modeBanner=(()=>{
-    if (freezeMode) return {text:"❄️ Click an enemy piece to freeze it",color:"#06b6d4"};
+    if (freezeMode) return {text:"❄️ Click an enemy piece to freeze it (not king)",color:"#06b6d4"};
     if (necroMode)  return {text:"💀 Click a home-rank square to revive a pawn",color:"#a855f7"};
     if (royalEdMode)return {text:"♞ Click a destination for your king's knight move",color:"#facc15"};
     if (whatMode&&!whatSelected) return {text:"↔️ Click one of your pawns to move it sideways",color:"#f97316"};
     if (whatMode&&whatSelected)  return {text:"↔️ Click the destination square",color:"#f97316"};
-    if (sakoMode&&!sakoSelected) return {text:"⚓ ŞAKO — Click a piece to teleport",color:"#eab308"};
-    if (sakoMode&&sakoSelected)  return {text:"⚓ ŞAKO — Click a destination in your half",color:"#eab308"};
+    if (sakoMode&&!sakoSelected) return {text:"⚓ ŞAKO — Click any of your pieces to teleport anywhere",color:"#eab308"};
+    if (sakoMode&&sakoSelected)  return {text:"⚓ ŞAKO — Click any empty square on the board",color:"#eab308"};
     if (royalHouseholdMode) return {text:"🏰 RAMPAGE — Click a destination (up to 4 squares, destroys all in path)",color:"#ef4444"};
     if (deathNoteMode) return {text:"☠️ DEATH NOTE — Click an enemy piece (not king/queen) to doom it in 10 moves",color:"#dc2626"};
     if (monolithMode==="place") return {text:"🗿 Click an empty square to place your monolith (spends a turn)",color:"#64748b"};
     if (monolithMode==="remove") return {text:"🗿 Click your monolith to remove it (free action)",color:"#64748b"};
+    if (contractMode) return {text:"🎯 CONTRACT — Click an enemy piece (not king/pawn) to mark it",color:"#f59e0b"};
+    if (blessedWaterMode) return {text:"💧 BLESS — Click any square to protect the piece on it for 2 rounds",color:"#22d3ee"};
     return null;
   })();
 
@@ -1302,7 +1412,10 @@ export default function ChessGame() {
             const dn=deathNoteTargets.find(d=>d.row===r&&d.col===c);
             const isNukeSquare=!!(activeNuke&&r>=activeNuke.topRow&&r<activeNuke.topRow+3&&c>=activeNuke.leftCol&&c<activeNuke.leftCol+3);
             const showNukeCount=isNukeSquare&&r===activeNuke!.topRow&&c===activeNuke!.leftCol;
-            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined}/>;
+            const isBlessed=blessedSquares.some(b=>b.row===r&&b.col===c);
+            const isColdWind=coldWindsMovesLeft>0&&coldWindsSquares.some(([cr,cc])=>cr===r&&cc===c);
+            const contractMark=!!(whiteContractTarget&&whiteContractTarget[0]===r&&whiteContractTarget[1]===c)||!!(blackContractTarget&&blackContractTarget[0]===r&&blackContractTarget[1]===c);
+            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark}/>;
           }))}
         </div>
 

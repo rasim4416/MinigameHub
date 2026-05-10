@@ -93,6 +93,8 @@ export const MAX_STACK: Record<string, number> = {
   "death-note":          1,
   "domain-expansion":    1,
   "impassable":          1,
+  "contract-killer":     1,
+  "blessed-water-spell": 2,
 };
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -110,7 +112,9 @@ export const AUGMENT_POOL: Augment[] = [
   // ── Rare ──────────────────────────────────────────────────────────────────
   { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn." },
   { id:"what",         name:"What?",        rarity:"rare",     icon:"↔️",   description:"Once, one of your pawns may move one square sideways to an empty square." },
-  { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). You may remove it for free at any time." },
+  { id:"impassable",       name:"Impassable",       rarity:"rare",   icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). You may remove it for free at any time." },
+  { id:"contract-killer",  name:"Contract Killer",  rarity:"common", icon:"🎯",   description:"Mark one enemy piece (not king or pawn). If you capture it, earn 4× its base gold value instead of 1." },
+  { id:"blessed-water-spell", name:"Blessed Water", rarity:"rare",   icon:"💧",   description:"Bless any square (instant, free). The piece on that square cannot be captured for 2 rounds." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer",  name:"Necromancer",  rarity:"epic",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
