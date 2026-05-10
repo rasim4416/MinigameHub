@@ -4,7 +4,7 @@ import {
   PIECE_UNICODE, PIECE_VALUE,
   createInitialState, getLegalMoves, makeMove,
   materialAdvantage, opp, cloneBoard, findKing,
-  isInCheck, hasAnyLegalMove,
+  isInCheck, hasAnyLegalMove, setBoardSize,
 } from "./engine";
 import {
   Augment, AUGMENT_POOL, rollAugments, RARITY_META,
@@ -24,10 +24,14 @@ type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
 type AugmentTrigger = { color: Color; reason: "milestone" | "bloodlust"; milestoneType?: PieceType };
 type TierBought = { common:number; uncommon:number; rare:number; epic:number; legendary:number };
+type DeathNoteTarget = { row:number; col:number; turnsLeft:number; targetColor:Color };
 
 const EMPTY_MILESTONES: Milestones = { knight:false, bishop:false, rook:false };
 const EMPTY_TIER: TierBought = { common:0, uncommon:0, rare:0, epic:0, legendary:0 };
-const CENTER_SQUARES = new Set(["4,3","3,3","4,4","3,4"]);
+function getCenterSquares(bs: number): Set<string> {
+  const mid = Math.floor(bs / 2);
+  return new Set([`${mid},${mid-1}`,`${mid-1},${mid-1}`,`${mid},${mid}`,`${mid-1},${mid}`]);
+}
 const KNIGHT_OFFSETS: [number,number][] = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
 
 function checkNewMilestone(t: PieceType|null, ms: Milestones): PieceType|null {
@@ -46,7 +50,8 @@ function applyMilestone(t: PieceType, ms: Milestones): Milestones {
 function findCheckingPiece(board: Board, kingColor: Color): [number,number]|null {
   const [kr,kc] = findKing(board, kingColor);
   if (kr===-1) return null;
-  for (let r=0;r<8;r++) for (let c=0;c<8;c++) {
+  const bs=board.length;
+  for (let r=0;r<bs;r++) for (let c=0;c<bs;c++) {
     const p=board[r][c];
     if (p?.color===opp(kingColor)) {
       const test=cloneBoard(board); test[r][c]=null;
@@ -69,11 +74,13 @@ function applyEndOfTurnEffects(g: ChessState, color: Color, augments: Augment[],
   let delta=0;
   for (const aug of augments) {
     if (aug.id==="miner"&&turn%2===0) delta+=1;
-    if (aug.id==="king-of-the-hill")
-      for (const key of CENTER_SQUARES) {
+    if (aug.id==="king-of-the-hill") {
+      const cs=Array.from(getCenterSquares(g.board.length));
+      for (const key of cs) {
         const [r,c]=key.split(",").map(Number);
         if (g.board[r][c]?.color===color) delta+=1;
       }
+    }
   }
   if (!delta) return g;
   return {...g, goldWhite:color==="white"?g.goldWhite+delta:g.goldWhite, goldBlack:color==="black"?g.goldBlack+delta:g.goldBlack};
@@ -81,18 +88,30 @@ function applyEndOfTurnEffects(g: ChessState, color: Color, augments: Augment[],
 
 function getAlternativeMoves(game: ChessState, r: number, c: number): [number,number][] {
   const piece=game.board[r][c];
-  if (!piece||piece.type!=="P"||(c!==0&&c!==7)) return [];
-  if (piece.color==="white") { if (r!==6) return []; if (game.board[5][c]||game.board[4][c]||game.board[3][c]) return []; return [[3,c]]; }
-  else { if (r!==1) return []; if (game.board[2][c]||game.board[3][c]||game.board[4][c]) return []; return [[4,c]]; }
+  const bs=game.board.length;
+  const off=(bs-8)/2;
+  if (!piece||piece.type!=="P"||(c!==0&&c!==bs-1)) return [];
+  if (piece.color==="white") {
+    const sr=6+off;
+    if (r!==sr) return [];
+    if (game.board[sr-1][c]||game.board[sr-2][c]||game.board[sr-3][c]) return [];
+    return [[sr-3,c]];
+  } else {
+    const sr=1+off;
+    if (r!==sr) return [];
+    if (game.board[sr+1][c]||game.board[sr+2][c]||game.board[sr+3][c]) return [];
+    return [[sr+3,c]];
+  }
 }
 
 function getRoyalEdMoves(game: ChessState, color: Color): {kingPos:[number,number];dests:[number,number][]} {
   const [kr,kc]=findKing(game.board,color);
   if (kr===-1) return {kingPos:[-1,-1],dests:[]};
   const dests:[number,number][]=[];
+  const bs=game.board.length;
   for (const [dr,dc] of KNIGHT_OFFSETS) {
     const nr=kr+dr,nc=kc+dc;
-    if (nr<0||nr>=8||nc<0||nc>=8) continue;
+    if (nr<0||nr>=bs||nc<0||nc>=bs) continue;
     if (game.board[nr][nc]?.color===color) continue;
     const test=cloneBoard(game.board); test[kr][kc]=null; test[nr][nc]={type:"K",color};
     if (!isInCheck(test,color)) dests.push([nr,nc]);
@@ -108,9 +127,13 @@ const RAMPAGE_DIRS: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1
 function getSakoMoves(game: ChessState, from: [number,number], color: Color): [number,number][] {
   const piece = game.board[from[0]][from[1]];
   if (!piece) return [];
-  const rows = color === "white" ? [4,5,6,7] : [0,1,2,3];
+  const bs = game.board.length;
+  const half = Math.floor(bs / 2);
+  const rows = color === "white"
+    ? Array.from({length: bs - half}, (_, i) => half + i)
+    : Array.from({length: half}, (_, i) => i);
   const result: [number,number][] = [];
-  for (const r of rows) for (let c = 0; c < 8; c++) {
+  for (const r of rows) for (let c = 0; c < bs; c++) {
     if (game.board[r][c]) continue;
     if (r === from[0] && c === from[1]) continue;
     const nb = cloneBoard(game.board);
@@ -120,27 +143,53 @@ function getSakoMoves(game: ChessState, from: [number,number], color: Color): [n
   return result;
 }
 
-/** Destinations the king can rampage to (straight line, up to 4 sq, all in-path pieces removed). */
+/** Destinations the king can rampage to (straight line, UP TO 4 sq, all pieces cleared up to dest). */
 function getRoyalHouseholdDests(game: ChessState, color: Color): [number,number][] {
   const [kr, kc] = findKing(game.board, color);
   if (kr === -1) return [];
+  const bs = game.board.length;
   const dests: [number,number][] = [];
   for (const [dr, dc] of RAMPAGE_DIRS) {
-    const path: [number,number][] = [];
     for (let s = 1; s <= 4; s++) {
       const nr = kr+dr*s, nc = kc+dc*s;
-      if (nr<0||nr>=8||nc<0||nc>=8) break;
-      path.push([nr,nc]);
+      if (nr<0||nr>=bs||nc<0||nc>=bs) break;
+      const nb = cloneBoard(game.board);
+      nb[kr][kc] = null;
+      for (let t = 1; t <= s; t++) nb[kr+dr*t][kc+dc*t] = null;
+      nb[nr][nc] = {type:"K",color};
+      if (!isInCheck(nb, color)) dests.push([nr, nc]);
     }
-    if (!path.length) continue;
-    const dest = path[path.length-1];
-    const nb = cloneBoard(game.board);
-    nb[kr][kc] = null;
-    for (const [pr,pc] of path) nb[pr][pc] = null;
-    nb[dest[0]][dest[1]] = {type:"K",color};
-    if (!isInCheck(nb, color)) dests.push(dest);
   }
   return dests;
+}
+
+// ─── Board expansion helpers ──────────────────────────────────────────────────
+
+function expandGameBoard(g: ChessState): ChessState {
+  const newBoard: Board = Array(10).fill(null).map(() => Array(10).fill(null));
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) newBoard[r+1][c+1] = g.board[r][c];
+  return {
+    ...g,
+    board: newBoard,
+    castlingRights: { white:{kingside:false,queenside:false}, black:{kingside:false,queenside:false} },
+    enPassantTarget: g.enPassantTarget ? [g.enPassantTarget[0]+1, g.enPassantTarget[1]+1] as [number,number] : null,
+    lastMove: g.lastMove ? {
+      ...g.lastMove,
+      from: [g.lastMove.from[0]+1, g.lastMove.from[1]+1] as [number,number],
+      to:   [g.lastMove.to[0]+1,   g.lastMove.to[1]+1]   as [number,number],
+    } : null,
+  };
+}
+
+function getFileChar(col: number, boardSize: number): string {
+  if (boardSize === 8) return String.fromCharCode(97 + col);
+  if (col === 0) return 'x';
+  if (col === boardSize - 1) return 'i';
+  return String.fromCharCode(96 + col);
+}
+
+function getRankLabel(row: number, boardSize: number): string {
+  return boardSize === 8 ? String(8 - row) : String(9 - row);
 }
 
 // ─── Board constants ──────────────────────────────────────────────────────────
@@ -149,10 +198,10 @@ const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
-function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick}:{
+function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount}:{
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
-  onClick:()=>void;
+  onClick:()=>void;boardSize:number;deathNoteCount?:number;
 }) {
   const light=(row+col)%2===0;
   let bg=light?LIGHT_SQ:DARK_SQ;
@@ -160,10 +209,11 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
   const dot=size*0.3,ring=size*0.07;
   return (
     <div onClick={onClick} style={{width:size,height:size,backgroundColor:bg,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background-color 0.1s",overflow:"hidden"}}>
-      {col===0&&<span style={{position:"absolute",top:2,left:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{8-row}</span>}
-      {row===7&&<span style={{position:"absolute",bottom:2,right:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{String.fromCharCode(97+col)}</span>}
+      {col===0&&<span style={{position:"absolute",top:2,left:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{getRankLabel(row,boardSize)}</span>}
+      {row===boardSize-1&&<span style={{position:"absolute",bottom:2,right:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{getFileChar(col,boardSize)}</span>}
       {isCenter&&<div style={{position:"absolute",top:3,right:3,width:5,height:5,background:"rgba(234,179,8,0.6)",borderRadius:"50%",pointerEvents:"none",boxShadow:"0 0 3px rgba(234,179,8,0.8)"}}/>}
       {isFrozen&&<div style={{position:"absolute",inset:0,background:"rgba(147,210,255,0.28)",border:"2px solid rgba(147,210,255,0.7)",boxShadow:"inset 0 0 8px rgba(147,210,255,0.5)",pointerEvents:"none",zIndex:2}}/>}
+      {deathNoteCount!==undefined&&<div style={{position:"absolute",top:2,right:2,width:14,height:14,borderRadius:"50%",background:"#dc2626",border:"1px solid #fca5a5",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{deathNoteCount}</span></div>}
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
       {isValidMove&&piece&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
       {piece&&<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>}
@@ -414,6 +464,8 @@ type SpellState={
   whatAvailable:boolean;whatActive:boolean;onWhat:()=>void;
   sakoAvailable:boolean;sakoActive:boolean;onSako:()=>void;
   royalHouseholdAvailable:boolean;royalHouseholdActive:boolean;onRoyalHousehold:()=>void;
+  deathNoteAvailable:boolean;deathNoteActive:boolean;onDeathNote:()=>void;
+  domainAvailable:boolean;onDomain:()=>void;
   canUndo:boolean;onUndo:()=>void;
   captureCount:number;hasBloodlust:boolean;
   shopOpen:boolean;onToggleShop:()=>void;
@@ -445,7 +497,9 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.royalEdAvailable&&<SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)"/>}
         {canAct&&spells.whatAvailable&&<SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} title="Move one pawn sideways one square (one time)"/>}
         {canAct&&spells.sakoAvailable&&<SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece to your half board (free action)"/>}
-        {canAct&&spells.royalHouseholdAvailable&&<SpellButton icon="🏰" label="RAMPAGE" active={spells.royalHouseholdActive} onClick={spells.onRoyalHousehold} title="King rampages 4 squares, destroying everything in its path"/>}
+        {canAct&&spells.royalHouseholdAvailable&&<SpellButton icon="🏰" label="RAMPAGE" active={spells.royalHouseholdActive} onClick={spells.onRoyalHousehold} title="King rampages up to 4 squares, destroys all in path"/>}
+        {canAct&&spells.deathNoteAvailable&&<SpellButton icon="☠️" label="DEATH" active={spells.deathNoteActive} onClick={spells.onDeathNote} title="Mark an enemy piece (not king/queen) to die in 5 rounds"/>}
+        {canAct&&spells.domainAvailable&&<SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="DOMAIN EXPANSION — expand the board to 10×10"/>}
         {canAct&&<SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop"/>}
         <GoldBadge gold={gold} active={canAct}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
@@ -539,12 +593,25 @@ export default function ChessGame() {
   const [blackRoyalHouseholdUsed,setBlackRoyalHouseholdUsed]=useState(false);
   const [royalHouseholdMode,setRoyalHouseholdMode]=useState(false);
 
+  // Death Note
+  const [whiteDNUsed,setWhiteDNUsed]=useState(false);
+  const [blackDNUsed,setBlackDNUsed]=useState(false);
+  const [deathNoteMode,setDeathNoteMode]=useState(false);
+  const [deathNoteTargets,setDeathNoteTargets]=useState<DeathNoteTarget[]>([]);
+
+  // Domain Expansion
+  const [boardExpanded,setBoardExpanded]=useState(false);
+  const [whiteDomainUsed,setWhiteDomainUsed]=useState(false);
+  const [blackDomainUsed,setBlackDomainUsed]=useState(false);
+
   // Shop
   const [shopOpen,setShopOpen]=useState(false);
   const [whiteTierBought,setWhiteTierBought]=useState<TierBought>({...EMPTY_TIER});
   const [blackTierBought,setBlackTierBought]=useState<TierBought>({...EMPTY_TIER});
 
+  const boardSize = boardExpanded ? 10 : 8;
   const showCenterMarkers=phase==="playing"&&[...whiteAugments,...blackAugments].some(a=>a.id==="king-of-the-hill");
+  const centerSquares=showCenterMarkers?getCenterSquares(boardSize):new Set<string>();
 
   // Responsive board
   useEffect(()=>{
@@ -555,7 +622,14 @@ export default function ChessGame() {
     if (containerRef.current) obs.observe(containerRef.current);
     return ()=>obs.disconnect();
   },[]);
-  const sqSize=boardPx/8;
+  useEffect(()=>{
+    if (containerRef.current){
+      const {width,height}=containerRef.current.getBoundingClientRect();
+      const sqCount=boardExpanded?10:8;
+      setBoardPx(Math.floor(Math.min(width-4,height-4)/sqCount)*sqCount);
+    }
+  },[boardExpanded]);
+  const sqSize=boardPx/boardSize;
 
   // ── Grant effects ────────────────────────────────────────────────────────
 
@@ -667,6 +741,29 @@ export default function ChessGame() {
       }
     }
 
+    // Death Note: track piece movement, decrement timers, kill expired
+    let updatedDN=deathNoteTargets;
+    if (newGame.lastMove){
+      const {from,to}=newGame.lastMove;
+      updatedDN=updatedDN.map(dn=>dn.row===from[0]&&dn.col===from[1]?{...dn,row:to[0],col:to[1]}:dn);
+    }
+    updatedDN=updatedDN.map(dn=>({...dn,turnsLeft:dn.turnsLeft-1}));
+    let dnBoard=newGame.board;
+    let dnChanged=false;
+    updatedDN=updatedDN.filter(dn=>{
+      if (dn.turnsLeft<=0){
+        const p=dnBoard[dn.row]?.[dn.col];
+        if (p&&p.color===dn.targetColor&&p.type!=="K"){
+          if (!dnChanged){dnBoard=cloneBoard(dnBoard);dnChanged=true;}
+          dnBoard[dn.row][dn.col]=null;
+        }
+        return false;
+      }
+      return true;
+    });
+    if (dnChanged) newGame=recomputeStatus({...newGame,board:dnBoard});
+    setDeathNoteTargets(updatedDN);
+
     setGame(newGame);
 
     // Triggers
@@ -706,7 +803,7 @@ export default function ChessGame() {
     game,frozenSquare,frozenExpireAfter,whiteTurnCount,blackTurnCount,
     whiteAugments,blackAugments,whiteMilestones,blackMilestones,
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
-    whiteBloodlustNext,blackBloodlustNext,
+    whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -723,15 +820,16 @@ export default function ChessGame() {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
     const entering=!necroMode; clearModes(); setNecroMode(entering);
     if (entering){
       const lostCols=game.turn==="white"?whiteLostPawnCols:blackLostPawnCols;
-      const homeRow=game.turn==="white"?6:1;
-      setValidMoves(lostCols.filter(col=>!game.board[homeRow][col]).map(col=>[homeRow,col] as [number,number]));
+      const bs=game.board.length; const off=(bs-8)/2;
+      const homeRow=game.turn==="white"?6+off:1+off;
+      setValidMoves(lostCols.filter(col=>game.board[homeRow]&&!game.board[homeRow][col]).map(col=>[homeRow,col] as [number,number]));
     }
   },[necroMode,game,whiteLostPawnCols,blackLostPawnCols]);
   const handleToggleRoyalEd=useCallback(()=>{
@@ -751,6 +849,24 @@ export default function ChessGame() {
     }
   },[royalHouseholdMode,game]);
   const handleToggleShop=useCallback(()=>{ setShopOpen(s=>!s); clearModes(); },[]);
+  const handleToggleDeathNote=useCallback(()=>{ const e=!deathNoteMode; clearModes(); setDeathNoteMode(e); },[deathNoteMode]);
+  const handleDomainExpansion=useCallback(()=>{
+    if (boardExpanded) return;
+    setBoardSize(10);
+    const expanded=expandGameBoard(game);
+    setGame(recomputeStatus(expanded));
+    setBoardExpanded(true);
+    if (game.turn==="white") setWhiteDomainUsed(true); else setBlackDomainUsed(true);
+    if (frozenSquare) setFrozenSquare([frozenSquare[0]+1,frozenSquare[1]+1]);
+    setDeathNoteTargets(prev=>prev.map(dn=>({...dn,row:dn.row+1,col:dn.col+1})));
+    setWhiteLostPawnCols(prev=>prev.map(c=>c+1));
+    setBlackLostPawnCols(prev=>prev.map(c=>c+1));
+    if (selected) setSelected([selected[0]+1,selected[1]+1]);
+    if (sakoSelected) setSakoSelected([sakoSelected[0]+1,sakoSelected[1]+1]);
+    if (whatSelected) setWhatSelected([whatSelected[0]+1,whatSelected[1]+1]);
+    setValidMoves(prev=>prev.map(([r,c])=>[r+1,c+1]));
+    clearModes();
+  },[game,boardExpanded,frozenSquare,selected,sakoSelected,whatSelected]);
 
   // ── Square click ─────────────────────────────────────────────────────────
 
@@ -759,6 +875,14 @@ export default function ChessGame() {
     if (game.status==="checkmate"||game.status==="stalemate") return;
     if (promotionPending) return;
     const piece=game.board[r][c];
+
+    if (deathNoteMode){
+      if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="Q"){
+        setDeathNoteTargets(prev=>[...prev,{row:r,col:c,turnsLeft:10,targetColor:piece.color}]);
+        if (game.turn==="white") setWhiteDNUsed(true); else setBlackDNUsed(true);
+      }
+      setDeathNoteMode(false);setSelected(null);setValidMoves([]); return;
+    }
 
     if (freezeMode){
       if (piece&&piece.color!==game.turn){
@@ -769,7 +893,9 @@ export default function ChessGame() {
     }
 
     if (necroMode){
-      const playerColor=game.turn,homeRow=playerColor==="white"?6:1;
+      const playerColor=game.turn;
+      const _bs=game.board.length;const _off=(_bs-8)/2;
+      const homeRow=playerColor==="white"?6+_off:1+_off;
       const lostCols=playerColor==="white"?whiteLostPawnCols:blackLostPawnCols;
       if (lostCols.some(col=>col===c)&&r===homeRow&&!game.board[r][c]){
         const nb=cloneBoard(game.board); nb[r][c]={type:"P",color:playerColor};
@@ -855,7 +981,7 @@ export default function ChessGame() {
         if (piece?.type==="P"&&piece.color===game.turn){
           const moves:[number,number][]=[];
           if (c>0&&!game.board[r][c-1]) moves.push([r,c-1]);
-          if (c<7&&!game.board[r][c+1]) moves.push([r,c+1]);
+          if (c<game.board.length-1&&!game.board[r][c+1]) moves.push([r,c+1]);
           if (moves.length>0){setWhatSelected([r,c]);setSelected([r,c]);setValidMoves(moves);}
           else{setWhatMode(false);setWhatSelected(null);setSelected(null);setValidMoves([]);}
         }else{setWhatMode(false);setWhatSelected(null);setSelected(null);setValidMoves([]);}
@@ -883,7 +1009,8 @@ export default function ChessGame() {
       const isValid=validMoves.some(([vr,vc])=>vr===r&&vc===c);
       if (isValid){
         const movingPiece=game.board[selected[0]][selected[1]]!;
-        const isPromotion=movingPiece.type==="P"&&((movingPiece.color==="white"&&r===0)||(movingPiece.color==="black"&&r===7));
+        const promRowBlack=game.board.length-1;
+        const isPromotion=movingPiece.type==="P"&&((movingPiece.color==="white"&&r===0)||(movingPiece.color==="black"&&r===promRowBlack));
         if (isPromotion){setPromotionPending({from:selected,to:[r,c]});}
         else{
           const isEP=movingPiece.type==="P"&&selected[1]!==c&&!game.board[r][c];
@@ -900,6 +1027,7 @@ export default function ChessGame() {
     phase,currentTrigger,game,selected,validMoves,promotionPending,
     freezeMode,necroMode,royalEdMode,whatMode,whatSelected,frozenSquare,
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
+    deathNoteMode,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -926,6 +1054,8 @@ export default function ChessGame() {
     setWhiteWhatUsed(false); setBlackWhatUsed(false); setWhatMode(false); setWhatSelected(null);
     setWhiteSakoUsed(false); setBlackSakoUsed(false); setSakoMode(false); setSakoSelected(null);
     setWhiteRoyalHouseholdUsed(false); setBlackRoyalHouseholdUsed(false); setRoyalHouseholdMode(false);
+    setWhiteDNUsed(false); setBlackDNUsed(false); setDeathNoteMode(false); setDeathNoteTargets([]);
+    setBoardExpanded(false); setWhiteDomainUsed(false); setBlackDomainUsed(false); setBoardSize(8);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
 
@@ -942,8 +1072,10 @@ export default function ChessGame() {
 
   const canWhiteUndo=phase==="playing"&&!isOver&&game.turn==="white"&&whiteUndosLeft>0&&gameHistory.length>=2;
   const canBlackUndo=phase==="playing"&&!isOver&&game.turn==="black"&&blackUndosLeft>0&&gameHistory.length>=2;
-  const whiteHasNecroTargets=whiteLostPawnCols.some(col=>!game.board[6][col]);
-  const blackHasNecroTargets=blackLostPawnCols.some(col=>!game.board[1][col]);
+  const necroOff=(boardSize-8)/2;
+  const whiteNecroRow=6+necroOff, blackNecroRow=1+necroOff;
+  const whiteHasNecroTargets=whiteLostPawnCols.some(col=>game.board[whiteNecroRow]&&!game.board[whiteNecroRow][col]);
+  const blackHasNecroTargets=blackLostPawnCols.some(col=>game.board[blackNecroRow]&&!game.board[blackNecroRow][col]);
 
   const makeSpells=(color:Color):SpellState=>({
     freezeCharges:  color==="white"?whiteFreezeCharges:blackFreezeCharges,
@@ -967,6 +1099,15 @@ export default function ChessGame() {
       :(!blackRoyalHouseholdUsed&&blackAugments.some(a=>a.id==="royal-household")&&game.status==="check"&&game.turn==="black"),
     royalHouseholdActive: royalHouseholdMode&&game.turn===color,
     onRoyalHousehold: handleToggleRoyalHousehold,
+    deathNoteAvailable: color==="white"
+      ?(!whiteDNUsed&&whiteAugments.some(a=>a.id==="death-note"))
+      :(!blackDNUsed&&blackAugments.some(a=>a.id==="death-note")),
+    deathNoteActive: deathNoteMode&&game.turn===color,
+    onDeathNote: handleToggleDeathNote,
+    domainAvailable: color==="white"
+      ?(!whiteDomainUsed&&!boardExpanded&&whiteAugments.some(a=>a.id==="domain-expansion"))
+      :(!blackDomainUsed&&!boardExpanded&&blackAugments.some(a=>a.id==="domain-expansion")),
+    onDomain: handleDomainExpansion,
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
@@ -983,7 +1124,8 @@ export default function ChessGame() {
     if (whatMode&&whatSelected)  return {text:"↔️ Click the destination square",color:"#f97316"};
     if (sakoMode&&!sakoSelected) return {text:"⚓ ŞAKO — Click a piece to teleport",color:"#eab308"};
     if (sakoMode&&sakoSelected)  return {text:"⚓ ŞAKO — Click a destination in your half",color:"#eab308"};
-    if (royalHouseholdMode) return {text:"🏰 RAMPAGE — Click where the king charges (4 squares straight, destroys all in path)",color:"#ef4444"};
+    if (royalHouseholdMode) return {text:"🏰 RAMPAGE — Click a destination (up to 4 squares, destroys all in path)",color:"#ef4444"};
+    if (deathNoteMode) return {text:"☠️ DEATH NOTE — Click an enemy piece (not king/queen) to doom it in 10 moves",color:"#dc2626"};
     return null;
   })();
 
@@ -1001,16 +1143,17 @@ export default function ChessGame() {
         spells={makeSpells("black")} showReset={true} onReset={resetGame}/>
 
       <div ref={containerRef} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:6,minHeight:0,position:"relative",background:"#030712"}}>
-        <div style={{width:boardPx,height:boardPx,display:"grid",gridTemplateColumns:`repeat(8,${sqSize}px)`,gridTemplateRows:`repeat(8,${sqSize}px)`,border:"3px solid #5c3d1e",borderRadius:2,boxShadow:"0 8px 40px rgba(0,0,0,0.8),0 2px 8px rgba(0,0,0,0.5)",flexShrink:0}}>
-          {Array.from({length:8},(_,r)=>Array.from({length:8},(_,c)=>{
-            const piece=game.board[r][c];
+        <div style={{width:boardPx,height:boardPx,display:"grid",gridTemplateColumns:`repeat(${boardSize},${sqSize}px)`,gridTemplateRows:`repeat(${boardSize},${sqSize}px)`,border:"3px solid #5c3d1e",borderRadius:2,boxShadow:"0 8px 40px rgba(0,0,0,0.8),0 2px 8px rgba(0,0,0,0.5)",flexShrink:0}}>
+          {Array.from({length:boardSize},(_,r)=>Array.from({length:boardSize},(_,c)=>{
+            const piece=game.board[r]?.[c]??null;
             const isSel=selected?.[0]===r&&selected?.[1]===c;
             const isVM=validMoves.some(([vr,vc])=>vr===r&&vc===c);
             const isLM=!!(game.lastMove&&((game.lastMove.from[0]===r&&game.lastMove.from[1]===c)||(game.lastMove.to[0]===r&&game.lastMove.to[1]===c)));
             const isCK=!!(piece?.type==="K"&&piece.color===game.turn&&(game.status==="check"||game.status==="checkmate"));
-            const isCenter=showCenterMarkers&&CENTER_SQUARES.has(`${r},${c}`);
+            const isCenter=showCenterMarkers&&centerSquares.has(`${r},${c}`);
             const isFrozen=!!(frozenSquare&&frozenSquare[0]===r&&frozenSquare[1]===c);
-            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)}/>;
+            const dn=deathNoteTargets.find(d=>d.row===r&&d.col===c);
+            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft}/>;
           }))}
         </div>
 

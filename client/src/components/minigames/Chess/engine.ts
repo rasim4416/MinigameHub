@@ -42,6 +42,11 @@ export interface ChessState {
   moveHistory: MoveRecord[];
 }
 
+// ─── Board size (mutable for Domain Expansion) ───────────────────────────────
+
+let BOARD_SIZE = 8;
+export function setBoardSize(size: number) { BOARD_SIZE = size; }
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const BACK_RANK: PieceType[] = ["R", "N", "B", "Q", "K", "B", "N", "R"];
@@ -57,7 +62,7 @@ export const PIECE_VALUE: Record<PieceType, number> = {
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-export const inB = (r: number, c: number) => r >= 0 && r < 8 && c >= 0 && c < 8;
+export const inB = (r: number, c: number) => r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
 export const opp = (color: Color): Color => color === "white" ? "black" : "white";
 
 export function cloneBoard(board: Board): Board {
@@ -113,8 +118,8 @@ function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number,
 }
 
 export function isSquareAttackedBy(board: Board, r: number, c: number, byColor: Color): boolean {
-  for (let pr = 0; pr < 8; pr++)
-    for (let pc = 0; pc < 8; pc++) {
+  for (let pr = 0; pr < BOARD_SIZE; pr++)
+    for (let pc = 0; pc < BOARD_SIZE; pc++) {
       const p = board[pr][pc];
       if (p && p.color === byColor)
         if (attacksFrom(board, pr, pc, p).some(([ar, ac]) => ar === r && ac === c))
@@ -142,7 +147,8 @@ function pseudoMoves(
 
   if (type === "P") {
     const dir = color === "white" ? -1 : 1;
-    const startRow = color === "white" ? 6 : 1;
+    const _off = (BOARD_SIZE - 8) / 2;
+    const startRow = color === "white" ? 6 + _off : 1 + _off;
     if (inB(r+dir, c) && !board[r+dir][c]) {
       sq.push([r+dir, c]);
       if (r === startRow && !board[r+2*dir][c]) sq.push([r+2*dir, c]);
@@ -260,8 +266,8 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 }
 
 export function hasAnyLegalMove(state: ChessState, color: Color): boolean {
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
+  for (let r = 0; r < BOARD_SIZE; r++)
+    for (let c = 0; c < BOARD_SIZE; c++)
       if (state.board[r][c]?.color === color) {
         const tempState = { ...state, turn: color };
         if (getLegalMoves(tempState, r, c).length > 0) return true;

@@ -42,7 +42,7 @@ const GameMenu = () => {
           <div className="flex items-center justify-center gap-2 mb-2">
             <Gamepad2 className="h-6 w-6 text-indigo-400" />
             <h2 className="text-2xl font-bold text-white tracking-wide">
-              Mal Akın hahahah mal akın akın mal
+              Minigame hub
             </h2>
             <Gamepad2 className="h-6 w-6 text-indigo-400" />
           </div>
