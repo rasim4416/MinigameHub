@@ -100,6 +100,49 @@ function getRoyalEdMoves(game: ChessState, color: Color): {kingPos:[number,numbe
   return {kingPos:[kr,kc],dests};
 }
 
+// ─── Legendary ability helpers ────────────────────────────────────────────────
+
+const RAMPAGE_DIRS: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+
+/** All unoccupied squares in the player's half the piece can safely teleport to. */
+function getSakoMoves(game: ChessState, from: [number,number], color: Color): [number,number][] {
+  const piece = game.board[from[0]][from[1]];
+  if (!piece) return [];
+  const rows = color === "white" ? [4,5,6,7] : [0,1,2,3];
+  const result: [number,number][] = [];
+  for (const r of rows) for (let c = 0; c < 8; c++) {
+    if (game.board[r][c]) continue;
+    if (r === from[0] && c === from[1]) continue;
+    const nb = cloneBoard(game.board);
+    nb[from[0]][from[1]] = null; nb[r][c] = piece;
+    if (!isInCheck(nb, color)) result.push([r, c]);
+  }
+  return result;
+}
+
+/** Destinations the king can rampage to (straight line, up to 4 sq, all in-path pieces removed). */
+function getRoyalHouseholdDests(game: ChessState, color: Color): [number,number][] {
+  const [kr, kc] = findKing(game.board, color);
+  if (kr === -1) return [];
+  const dests: [number,number][] = [];
+  for (const [dr, dc] of RAMPAGE_DIRS) {
+    const path: [number,number][] = [];
+    for (let s = 1; s <= 4; s++) {
+      const nr = kr+dr*s, nc = kc+dc*s;
+      if (nr<0||nr>=8||nc<0||nc>=8) break;
+      path.push([nr,nc]);
+    }
+    if (!path.length) continue;
+    const dest = path[path.length-1];
+    const nb = cloneBoard(game.board);
+    nb[kr][kc] = null;
+    for (const [pr,pc] of path) nb[pr][pc] = null;
+    nb[dest[0]][dest[1]] = {type:"K",color};
+    if (!isInCheck(nb, color)) dests.push(dest);
+  }
+  return dests;
+}
+
 // ─── Board constants ──────────────────────────────────────────────────────────
 
 const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b",LAST_LIGHT="#cdd16f",LAST_DARK="#aaa23a";
@@ -369,6 +412,8 @@ type SpellState={
   necroCharges:number;necroActive:boolean;hasNecroTargets:boolean;onNecro:()=>void;
   royalEdAvailable:boolean;royalEdActive:boolean;onRoyalEd:()=>void;
   whatAvailable:boolean;whatActive:boolean;onWhat:()=>void;
+  sakoAvailable:boolean;sakoActive:boolean;onSako:()=>void;
+  royalHouseholdAvailable:boolean;royalHouseholdActive:boolean;onRoyalHousehold:()=>void;
   canUndo:boolean;onUndo:()=>void;
   captureCount:number;hasBloodlust:boolean;
   shopOpen:boolean;onToggleShop:()=>void;
@@ -399,6 +444,8 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.necroCharges>0&&spells.hasNecroTargets&&<SpellButton icon="💀" label="REVIVE" active={spells.necroActive} onClick={spells.onNecro} title="Resurrect a captured pawn at its home square"/>}
         {canAct&&spells.royalEdAvailable&&<SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)"/>}
         {canAct&&spells.whatAvailable&&<SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} title="Move one pawn sideways one square (one time)"/>}
+        {canAct&&spells.sakoAvailable&&<SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece to your half board (free action)"/>}
+        {canAct&&spells.royalHouseholdAvailable&&<SpellButton icon="🏰" label="RAMPAGE" active={spells.royalHouseholdActive} onClick={spells.onRoyalHousehold} title="King rampages 4 squares, destroying everything in its path"/>}
         {canAct&&<SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop"/>}
         <GoldBadge gold={gold} active={canAct}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
@@ -480,6 +527,17 @@ export default function ChessGame() {
   const [blackWhatUsed,setBlackWhatUsed]=useState(false);
   const [whatMode,setWhatMode]=useState(false);
   const [whatSelected,setWhatSelected]=useState<[number,number]|null>(null);
+
+  // Şako Bosphorus
+  const [whiteSakoUsed,setWhiteSakoUsed]=useState(false);
+  const [blackSakoUsed,setBlackSakoUsed]=useState(false);
+  const [sakoMode,setSakoMode]=useState(false);
+  const [sakoSelected,setSakoSelected]=useState<[number,number]|null>(null);
+
+  // Royal Household
+  const [whiteRoyalHouseholdUsed,setWhiteRoyalHouseholdUsed]=useState(false);
+  const [blackRoyalHouseholdUsed,setBlackRoyalHouseholdUsed]=useState(false);
+  const [royalHouseholdMode,setRoyalHouseholdMode]=useState(false);
 
   // Shop
   const [shopOpen,setShopOpen]=useState(false);
@@ -665,7 +723,7 @@ export default function ChessGame() {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -684,6 +742,14 @@ export default function ChessGame() {
     }
   },[royalEdMode,game]);
   const handleToggleWhat=useCallback(()=>{ const e=!whatMode; clearModes(); setWhatMode(e); },[whatMode]);
+  const handleToggleSako=useCallback(()=>{ const e=!sakoMode; clearModes(); setSakoMode(e); },[sakoMode]);
+  const handleToggleRoyalHousehold=useCallback(()=>{
+    const entering=!royalHouseholdMode; clearModes(); setRoyalHouseholdMode(entering);
+    if (entering){
+      const dests=getRoyalHouseholdDests(game,game.turn);
+      if (dests.length>0){setValidMoves(dests);}else setRoyalHouseholdMode(false);
+    }
+  },[royalHouseholdMode,game]);
   const handleToggleShop=useCallback(()=>{ setShopOpen(s=>!s); clearModes(); },[]);
 
   // ── Square click ─────────────────────────────────────────────────────────
@@ -728,6 +794,60 @@ export default function ChessGame() {
         if (game.turn==="white") setWhiteRoyalEdUsed(true); else setBlackRoyalEdUsed(true);
       }
       setRoyalEdMode(false); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (sakoMode){
+      if (!sakoSelected){
+        if (piece&&piece.color===game.turn){
+          const dests=getSakoMoves(game,[r,c],game.turn);
+          if (dests.length>0){setSakoSelected([r,c]);setSelected([r,c]);setValidMoves(dests);}
+          else{setSakoMode(false);setSakoSelected(null);setSelected(null);setValidMoves([]);}
+        }else{setSakoMode(false);setSakoSelected(null);setSelected(null);setValidMoves([]);}
+        return;
+      }
+      const isValid=validMoves.some(([vr,vc])=>vr===r&&vc===c);
+      if (isValid){
+        const movingPiece=game.board[sakoSelected[0]][sakoSelected[1]]!;
+        const nb=cloneBoard(game.board);
+        nb[sakoSelected[0]][sakoSelected[1]]=null; nb[r][c]=movingPiece;
+        const newGame=recomputeStatus({...game,board:nb,enPassantTarget:null});
+        setGame(newGame);
+        if (game.turn==="white") setWhiteSakoUsed(true); else setBlackSakoUsed(true);
+      } else if (piece&&piece.color===game.turn&&!(r===sakoSelected[0]&&c===sakoSelected[1])){
+        const dests=getSakoMoves(game,[r,c],game.turn);
+        if (dests.length>0){setSakoSelected([r,c]);setSelected([r,c]);setValidMoves(dests);return;}
+      }
+      setSakoMode(false);setSakoSelected(null);setSelected(null);setValidMoves([]); return;
+    }
+
+    if (royalHouseholdMode){
+      const isValid=validMoves.some(([vr,vc])=>vr===r&&vc===c);
+      if (isValid){
+        const movingColor=game.turn;
+        const [kr,kc]=findKing(game.board,movingColor);
+        const dr=Math.sign(r-kr),dc=Math.sign(c-kc);
+        const nb=cloneBoard(game.board);
+        nb[kr][kc]=null;
+        let cur:[number,number]=[kr+dr,kc+dc];
+        while(cur[0]!==r||cur[1]!==c){nb[cur[0]][cur[1]]=null;cur=[cur[0]+dr,cur[1]+dc];}
+        nb[r][c]={type:"K",color:movingColor};
+        setGameHistory(h=>[...h,game]); setShopOpen(false);
+        const newTurnCount=(movingColor==="white"?whiteTurnCount:blackTurnCount)+1;
+        if (movingColor==="white") setWhiteTurnCount(newTurnCount); else setBlackTurnCount(newTurnCount);
+        const playerAugsNow=movingColor==="white"?whiteAugments:blackAugments;
+        let newGame:ChessState={...game,board:nb,turn:opp(movingColor),enPassantTarget:null,
+          castlingRights:{...game.castlingRights,
+            white:movingColor==="white"?{kingside:false,queenside:false}:game.castlingRights.white,
+            black:movingColor==="black"?{kingside:false,queenside:false}:game.castlingRights.black,
+          },
+          lastMove:{from:[kr,kc],to:[r,c],piece:{type:"K",color:movingColor},captured:null},
+        };
+        newGame=applyEndOfTurnEffects(newGame,movingColor,playerAugsNow,newTurnCount);
+        newGame=recomputeStatus(newGame);
+        setGame(newGame);
+        if (movingColor==="white") setWhiteRoyalHouseholdUsed(true); else setBlackRoyalHouseholdUsed(true);
+      }
+      setRoyalHouseholdMode(false);setSelected(null);setValidMoves([]); return;
     }
 
     if (whatMode){
@@ -804,6 +924,8 @@ export default function ChessGame() {
     setWhiteIcUsed(false); setBlackIcUsed(false);
     setWhiteRoyalEdUsed(false); setBlackRoyalEdUsed(false); setRoyalEdMode(false);
     setWhiteWhatUsed(false); setBlackWhatUsed(false); setWhatMode(false); setWhatSelected(null);
+    setWhiteSakoUsed(false); setBlackSakoUsed(false); setSakoMode(false); setSakoSelected(null);
+    setWhiteRoyalHouseholdUsed(false); setBlackRoyalHouseholdUsed(false); setRoyalHouseholdMode(false);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
 
@@ -837,6 +959,14 @@ export default function ChessGame() {
     whatAvailable:  color==="white"?(!whiteWhatUsed&&whiteAugments.some(a=>a.id==="what")):(!blackWhatUsed&&blackAugments.some(a=>a.id==="what")),
     whatActive:     whatMode&&game.turn===color,
     onWhat:         handleToggleWhat,
+    sakoAvailable:  color==="white"?(!whiteSakoUsed&&whiteAugments.some(a=>a.id==="sako-bosphorus")):(!blackSakoUsed&&blackAugments.some(a=>a.id==="sako-bosphorus")),
+    sakoActive:     sakoMode&&game.turn===color,
+    onSako:         handleToggleSako,
+    royalHouseholdAvailable: color==="white"
+      ?(!whiteRoyalHouseholdUsed&&whiteAugments.some(a=>a.id==="royal-household")&&game.status==="check"&&game.turn==="white")
+      :(!blackRoyalHouseholdUsed&&blackAugments.some(a=>a.id==="royal-household")&&game.status==="check"&&game.turn==="black"),
+    royalHouseholdActive: royalHouseholdMode&&game.turn===color,
+    onRoyalHousehold: handleToggleRoyalHousehold,
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
@@ -851,6 +981,9 @@ export default function ChessGame() {
     if (royalEdMode)return {text:"♞ Click a destination for your king's knight move",color:"#facc15"};
     if (whatMode&&!whatSelected) return {text:"↔️ Click one of your pawns to move it sideways",color:"#f97316"};
     if (whatMode&&whatSelected)  return {text:"↔️ Click the destination square",color:"#f97316"};
+    if (sakoMode&&!sakoSelected) return {text:"⚓ ŞAKO — Click a piece to teleport",color:"#eab308"};
+    if (sakoMode&&sakoSelected)  return {text:"⚓ ŞAKO — Click a destination in your half",color:"#eab308"};
+    if (royalHouseholdMode) return {text:"🏰 RAMPAGE — Click where the king charges (4 squares straight, destroys all in path)",color:"#ef4444"};
     return null;
   })();
 

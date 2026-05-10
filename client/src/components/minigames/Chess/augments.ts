@@ -88,6 +88,8 @@ export const MAX_STACK: Record<string, number> = {
   "bloodlust":           1,
   "internal-combustion": 1,
   "royal-education":     1,
+  "sako-bosphorus":      1,
+  "royal-household":     1,
 };
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -110,6 +112,9 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
   { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
   { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight." },
+  // ── Legendary ─────────────────────────────────────────────────────────────
+  { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square in your half of the board." },
+  { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages up to 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
 ];
 
 // ─── Weighted random roll ─────────────────────────────────────────────────────
