@@ -16,7 +16,7 @@ export interface Augment {
 
 export const RARITY_META: Record<Rarity, {
   border: string; glow: string; badge: string; text: string; label: string;
-  shimmer?: string; // extra gradient for legendary
+  shimmer?: string;
 }> = {
   common: {
     border: "#6b7280",
@@ -56,7 +56,7 @@ export const RARITY_META: Record<Rarity, {
   },
 };
 
-// ─── Roll weights ──────────────────────────────────────────────────────────────
+// ─── Roll weights ─────────────────────────────────────────────────────────────
 
 export type RarityWeights = Record<Rarity, number>;
 
@@ -69,10 +69,10 @@ export const MASTERMIND_WEIGHTS: RarityWeights = {
   common: 35, uncommon: 30, rare: 20, epic: 15, legendary: 0,
 };
 
-// ─── Augment pool ─────────────────────────────────────────────────────────────
+// ─── Augment pool (only implemented augments) ─────────────────────────────────
 
 export const AUGMENT_POOL: Augment[] = [
-  // ── Common (implemented) ──────────────────────────────────────────────────
+  // ── Common ────────────────────────────────────────────────────────────────
   {
     id: "miner",
     name: "Miner",
@@ -94,7 +94,7 @@ export const AUGMENT_POOL: Augment[] = [
     rarity: "common",
     icon: "🧠",
   },
-  // ── Uncommon (implemented) ────────────────────────────────────────────────
+  // ── Uncommon ──────────────────────────────────────────────────────────────
   {
     id: "king-of-the-hill",
     name: "King of the Hill",
@@ -105,7 +105,7 @@ export const AUGMENT_POOL: Augment[] = [
   {
     id: "oops",
     name: "Oops",
-    description: "Gain 1 undo. You may undo your last move once per game.",
+    description: "Gain 1 undo. You may undo the last 2 half-moves once per game.",
     rarity: "uncommon",
     icon: "↩️",
   },
@@ -116,115 +116,35 @@ export const AUGMENT_POOL: Augment[] = [
     rarity: "uncommon",
     icon: "💎",
   },
-  // ── Common ────────────────────────────────────────────────────────────────
-  {
-    id: "iron-pawns",
-    name: "Iron Pawns",
-    description: "Your pawns cannot be captured on the turn they first advance.",
-    rarity: "common",
-    icon: "🛡️",
-  },
-  {
-    id: "bishops-tithe",
-    name: "Bishop's Tithe",
-    description: "Capturing with a bishop earns 2 bonus gold.",
-    rarity: "common",
-    icon: "✝️",
-  },
-  {
-    id: "steady-march",
-    name: "Steady March",
-    description: "Each pawn that reaches rank 5 earns 1 bonus gold.",
-    rarity: "common",
-    icon: "🪖",
-  },
-  {
-    id: "merchants-eye",
-    name: "Merchant's Eye",
-    description: "Start the game with 3 bonus gold.",
-    rarity: "common",
-    icon: "💼",
-  },
-  // ── Uncommon ──────────────────────────────────────────────────────────────
-  {
-    id: "fortify",
-    name: "Fortify",
-    description: "Your rooks can move one additional square per turn.",
-    rarity: "uncommon",
-    icon: "🏰",
-  },
-  {
-    id: "last-stand",
-    name: "Last Stand",
-    description: "When your queen is captured, earn gold equal to its value.",
-    rarity: "uncommon",
-    icon: "🏳️",
-  },
   // ── Rare ──────────────────────────────────────────────────────────────────
   {
-    id: "gold-rush",
-    name: "Gold Rush",
-    description: "Earn double gold from all piece captures.",
+    id: "frost",
+    name: "Frost",
+    description: "Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn.",
     rarity: "rare",
-    icon: "💰",
-  },
-  {
-    id: "silver-rook",
-    name: "Silver Rook",
-    description: "Your rooks earn 2 bonus gold when capturing knights or bishops.",
-    rarity: "rare",
-    icon: "🥈",
-  },
-  {
-    id: "berserker",
-    name: "Berserker",
-    description: "Your knights deal splash — also capturing pawns adjacent to their landing square.",
-    rarity: "rare",
-    icon: "⚔️",
-  },
-  {
-    id: "shadow-bishop",
-    name: "Shadow Bishop",
-    description: "One of your bishops is hidden from your opponent's view.",
-    rarity: "rare",
-    icon: "🌑",
+    icon: "❄️",
   },
   // ── Epic ──────────────────────────────────────────────────────────────────
   {
-    id: "ghost-step",
-    name: "Ghost Step",
-    description: "Once per game, your king may pass through an occupied square.",
+    id: "necromancer",
+    name: "Necromancer",
+    description: "Bring one of your lost pawns back to its last square. Cannot use if that square is occupied.",
     rarity: "epic",
-    icon: "👻",
+    icon: "💀",
   },
   {
-    id: "royal-gambit",
-    name: "Royal Gambit",
-    description: "Once per game, your queen may move as a knight.",
+    id: "bloodlust",
+    name: "Bloodlust",
+    description: "Every 4 enemy pieces you capture, gain 1 bonus augment pick.",
     rarity: "epic",
-    icon: "👑",
+    icon: "🩸",
   },
   {
-    id: "chain-capture",
-    name: "Chain Capture",
-    description: "After capturing a piece, you may immediately take one additional move.",
+    id: "internal-combustion",
+    name: "Internal Combustion",
+    description: "The first enemy piece that checks your king explodes — removed from the board, granting no gold.",
     rarity: "epic",
-    icon: "🔗",
-  },
-  {
-    id: "time-warp",
-    name: "Time Warp",
-    description: "Once per game, undo your last move after seeing the opponent's response.",
-    rarity: "epic",
-    icon: "⏪",
-  },
-  // ── Legendary ─────────────────────────────────────────────────────────────
-  {
-    id: "undying-pawn",
-    name: "Undying Pawn",
-    description: "Once per game, one of your captured pawns is returned to its last square.",
-    rarity: "legendary",
-    icon: "🔁",
+    icon: "💥",
   },
 ];
 
