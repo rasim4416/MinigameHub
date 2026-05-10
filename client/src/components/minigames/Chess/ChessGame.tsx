@@ -10,6 +10,7 @@ import {
   Augment, AUGMENT_POOL, rollAugments, RARITY_META,
   RarityWeights, getWeightsForPlayer, BASE_COST, getShopCost, MAX_STACK,
 } from "./augments";
+import { GameEvent, EVENT_RARITY_META, rollEvent, nextEventInterval } from "./events";
 
 /** Augments the player already holds at their max stack count — exclude from future rolls. */
 function getExcludeForPlayer(augments: Augment[]): string[] {
@@ -217,6 +218,29 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
       {isValidMove&&piece&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
       {piece&&<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>}
+    </div>
+  );
+}
+
+// ─── EventAnnouncement ────────────────────────────────────────────────────────
+
+function EventAnnouncement({event,peaceTreatyLeft,onClose}:{event:GameEvent;peaceTreatyLeft:number;onClose:()=>void}) {
+  const meta=EVENT_RARITY_META[event.rarity];
+  return (
+    <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:30}}>
+      <div style={{background:"#0f172a",border:`2px solid ${meta.border}`,borderRadius:16,padding:"28px 36px",display:"flex",flexDirection:"column",alignItems:"center",gap:12,boxShadow:`0 0 40px ${meta.glow}, 0 8px 40px rgba(0,0,0,0.8)`,minWidth:300,maxWidth:420,textAlign:"center"}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:meta.text,background:meta.badge,padding:"3px 12px",borderRadius:20,border:`1px solid ${meta.border}`}}>
+          ⚡ EVENT · {meta.label}
+        </div>
+        <div style={{fontSize:36,lineHeight:1,marginTop:4}}>{event.icon}</div>
+        <div style={{fontSize:22,fontWeight:900,color:"#f1f5f9",letterSpacing:"0.02em"}}>{event.name}</div>
+        <div style={{fontSize:13,color:"#94a3b8",lineHeight:1.5,maxWidth:300}}>{event.description}</div>
+        {event.id==="peace-treaty"&&peaceTreatyLeft>0&&(
+          <div style={{fontSize:11,color:"#64748b",fontStyle:"italic"}}>({peaceTreatyLeft} half-moves remaining)</div>
+        )}
+        {event.flavor&&<div style={{fontSize:12,color:meta.text,fontStyle:"italic",marginTop:2,opacity:0.85}}>{event.flavor}</div>}
+        <button onClick={onClose} style={{marginTop:8,padding:"9px 32px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${meta.border},${meta.text})`,color:"#0f172a",letterSpacing:"0.04em"}}>Continue</button>
+      </div>
     </div>
   );
 }
@@ -604,6 +628,11 @@ export default function ChessGame() {
   const [whiteDomainUsed,setWhiteDomainUsed]=useState(false);
   const [blackDomainUsed,setBlackDomainUsed]=useState(false);
 
+  // Events
+  const [nextEventTurn,setNextEventTurn]=useState(()=>nextEventInterval());
+  const [pendingEvent,setPendingEvent]=useState<GameEvent|null>(null);
+  const [peaceTreatyMovesLeft,setPeaceTreatyMovesLeft]=useState(0);
+
   // Shop
   const [shopOpen,setShopOpen]=useState(false);
   const [whiteTierBought,setWhiteTierBought]=useState<TierBought>({...EMPTY_TIER});
@@ -741,6 +770,50 @@ export default function ChessGame() {
       }
     }
 
+    // Gold from capture (1 gold per captured piece, blocked by peace treaty)
+    if (capturedType && peaceTreatyMovesLeft <= 0) {
+      newGame = {...newGame,
+        goldWhite: movingColor==="white" ? newGame.goldWhite+1 : newGame.goldWhite,
+        goldBlack: movingColor==="black" ? newGame.goldBlack+1 : newGame.goldBlack,
+      };
+    }
+
+    // Peace treaty countdown
+    if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft(n => n - 1);
+
+    // ── Event trigger ──────────────────────────────────────────────────────
+    const totalMoves = (movingColor==="white" ? newTurnCount : whiteTurnCount)
+                     + (movingColor==="black" ? newTurnCount : blackTurnCount);
+    if (totalMoves >= nextEventTurn) {
+      const event = rollEvent();
+      if (event.id === "golden-age") {
+        newGame = {...newGame, goldWhite: newGame.goldWhite+10, goldBlack: newGame.goldBlack+10};
+      } else if (event.id === "stock-crash") {
+        newGame = {...newGame,
+          goldWhite: Math.floor(newGame.goldWhite * 0.5),
+          goldBlack: Math.floor(newGame.goldBlack * 0.5),
+        };
+      } else if (event.id === "peace-treaty") {
+        setPeaceTreatyMovesLeft(10);
+      } else if (event.id === "red-wedding") {
+        const nb = cloneBoard(newGame.board);
+        const bs = nb.length;
+        const wPawns: [number,number][] = [];
+        const bPawns: [number,number][] = [];
+        for (let r=0;r<bs;r++) for (let c=0;c<bs;c++) {
+          if (nb[r][c]?.type==="P"&&nb[r][c]?.color==="white") wPawns.push([r,c]);
+          if (nb[r][c]?.type==="P"&&nb[r][c]?.color==="black") bPawns.push([r,c]);
+        }
+        for (let i=wPawns.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[wPawns[i],wPawns[j]]=[wPawns[j],wPawns[i]];}
+        for (let i=bPawns.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[bPawns[i],bPawns[j]]=[bPawns[j],bPawns[i]];}
+        for (const [r,c] of wPawns.slice(0,2)) nb[r][c]=null;
+        for (const [r,c] of bPawns.slice(0,2)) nb[r][c]=null;
+        newGame = recomputeStatus({...newGame, board:nb});
+      }
+      setPendingEvent(event);
+      setNextEventTurn(totalMoves + nextEventInterval());
+    }
+
     // Death Note: track piece movement, decrement timers, kill expired
     let updatedDN=deathNoteTargets;
     if (newGame.lastMove){
@@ -804,6 +877,7 @@ export default function ChessGame() {
     whiteAugments,blackAugments,whiteMilestones,blackMilestones,
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
+    peaceTreatyMovesLeft,nextEventTurn,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -1056,6 +1130,7 @@ export default function ChessGame() {
     setWhiteRoyalHouseholdUsed(false); setBlackRoyalHouseholdUsed(false); setRoyalHouseholdMode(false);
     setWhiteDNUsed(false); setBlackDNUsed(false); setDeathNoteMode(false); setDeathNoteTargets([]);
     setBoardExpanded(false); setWhiteDomainUsed(false); setBlackDomainUsed(false); setBoardSize(8);
+    setNextEventTurn(nextEventInterval()); setPendingEvent(null); setPeaceTreatyMovesLeft(0);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
 
@@ -1158,6 +1233,7 @@ export default function ChessGame() {
         </div>
 
         {promotionPending&&<PromotionDialog color={game.turn} onChoose={handlePromotion}/>}
+        {pendingEvent&&<EventAnnouncement event={pendingEvent} peaceTreatyLeft={peaceTreatyMovesLeft} onClose={()=>setPendingEvent(null)}/>}
 
         {isOver&&(
           <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
