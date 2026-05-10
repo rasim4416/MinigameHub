@@ -5,7 +5,7 @@ import {
   createInitialState, getLegalMoves, makeMove,
   materialAdvantage, opp,
 } from "./engine";
-import { Augment, rollAugments, RARITY_META } from "./augments";
+import { Augment, rollAugments, RARITY_META, DEFAULT_WEIGHTS, MASTERMIND_WEIGHTS, RarityWeights } from "./augments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +61,23 @@ function applyEndOfTurnEffects(
     goldWhite: movingColor === "white" ? g.goldWhite + delta : g.goldWhite,
     goldBlack: movingColor === "black" ? g.goldBlack + delta : g.goldBlack,
   };
+}
+
+// ─── Alternative augment: extra 3-square move for rook-file pawns ────────────
+
+function getAlternativeMoves(game: ChessState, r: number, c: number): [number, number][] {
+  const piece = game.board[r][c];
+  if (!piece || piece.type !== "P") return [];
+  if (c !== 0 && c !== 7) return [];
+  if (piece.color === "white") {
+    if (r !== 6) return [];
+    if (game.board[5][c] || game.board[4][c] || game.board[3][c]) return [];
+    return [[3, c]];
+  } else {
+    if (r !== 1) return [];
+    if (game.board[2][c] || game.board[3][c] || game.board[4][c]) return [];
+    return [[4, c]];
+  }
 }
 
 // ─── Board square constants ───────────────────────────────────────────────────
@@ -305,8 +322,13 @@ function AugmentCard({ augment, onSelect }: { augment: Augment; onSelect: () => 
       <div style={{
         position: "absolute", top: 0, left: 14, right: 14, height: 3,
         borderRadius: "0 0 3px 3px",
-        background: `linear-gradient(90deg, transparent, ${m.border}, transparent)`,
-        opacity: hov ? 1 : 0.4, transition: "opacity 0.2s",
+        background: m.shimmer
+          ? m.shimmer
+          : `linear-gradient(90deg, transparent, ${m.border}, transparent)`,
+        backgroundSize: m.shimmer ? "200% 100%" : "100% 100%",
+        opacity: hov ? 1 : (augment.rarity === "legendary" ? 0.8 : 0.4),
+        transition: "opacity 0.2s",
+        animation: m.shimmer ? "shimmer 2s linear infinite" : "none",
       }} />
       <span style={{ fontSize: 36, lineHeight: 1, filter: hov ? "drop-shadow(0 0 8px rgba(255,255,255,0.3))" : "none", transition: "filter 0.2s" }}>
         {augment.icon}
@@ -501,6 +523,7 @@ export default function ChessGame() {
     capturedType: PieceType | null,
     wMs: Milestones, bMs: Milestones,
     heldIds: string[],
+    weights: RarityWeights,
   ) => {
     const ms = movingColor === "white" ? wMs : bMs;
     const triggered = checkNewMilestone(capturedType, ms);
@@ -512,7 +535,7 @@ export default function ChessGame() {
 
     setPendingAugmentFor(movingColor);
     setPendingMilestoneType(triggered);
-    setMidGameOffered(rollAugments(3, heldIds));
+    setMidGameOffered(rollAugments(3, heldIds, weights));
 
     return { wMs: newWMs, bMs: newBMs };
   }, []);
@@ -587,14 +610,31 @@ export default function ChessGame() {
     const playerAugs = movingColor === "white" ? whiteAugments : blackAugments;
     newGame = applyEndOfTurnEffects(newGame, movingColor, playerAugs, newTurnCount);
 
+    // Jew: when your pawn is captured, you gain 1 gold
+    if (capturedType === "P") {
+      const victimColor = opp(movingColor);
+      const victimAugs  = victimColor === "white" ? whiteAugments : blackAugments;
+      if (victimAugs.some(a => a.id === "jew")) {
+        newGame = {
+          ...newGame,
+          goldWhite: victimColor === "white" ? newGame.goldWhite + 1 : newGame.goldWhite,
+          goldBlack: victimColor === "black" ? newGame.goldBlack + 1 : newGame.goldBlack,
+        };
+      }
+    }
+
     setGame(newGame);
+
+    // Mastermind: use boosted weights for the rolling player's milestone picks
+    const hasMastermind = playerAugs.some(a => a.id === "mastermind");
+    const rollWeights: RarityWeights = hasMastermind ? MASTERMIND_WEIGHTS : DEFAULT_WEIGHTS;
 
     // Check milestone (N/B/R capture)
     if (capturedType) {
       const held = [...whiteAugments, ...blackAugments].map(a => a.id);
-      const curWMs = whiteMilestones;
-      const curBMs = blackMilestones;
-      const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedType, curWMs, curBMs, held);
+      const { wMs, bMs } = maybeTriggerMilestone(
+        movingColor, capturedType, whiteMilestones, blackMilestones, held, rollWeights,
+      );
       setWhiteMilestones(wMs);
       setBlackMilestones(bMs);
     }
@@ -635,6 +675,21 @@ export default function ChessGame() {
 
     const piece = game.board[r][c];
 
+    const playerAugsNow = game.turn === "white" ? whiteAugments : blackAugments;
+    const hasAlternative = playerAugsNow.some(a => a.id === "alternative");
+
+    // Helper: compute full valid move list for a piece (including Alternative extras)
+    const computeMoves = (pr: number, pc: number): [number, number][] => {
+      const moves = getLegalMoves(game, pr, pc);
+      const p = game.board[pr][pc];
+      if (hasAlternative && p?.type === "P") {
+        for (const [er, ec] of getAlternativeMoves(game, pr, pc)) {
+          if (!moves.some(([mr, mc]) => mr === er && mc === ec)) moves.push([er, ec]);
+        }
+      }
+      return moves;
+    };
+
     if (selected) {
       const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
       if (isValid) {
@@ -647,8 +702,10 @@ export default function ChessGame() {
         if (isPromotion) {
           setPromotionPending({ from: selected, to: [r, c] });
         } else {
-          const captured = game.board[r][c];
-          executeMove(selected, [r, c], undefined, captured?.type ?? null);
+          // Detect en passant so Jew still triggers on EP pawn capture
+          const isEP = movingPiece.type === "P" && selected[1] !== c && !game.board[r][c];
+          const capturedType = game.board[r][c]?.type ?? (isEP ? "P" : null);
+          executeMove(selected, [r, c], undefined, capturedType);
           setSelected(null);
           setValidMoves([]);
         }
@@ -656,7 +713,7 @@ export default function ChessGame() {
       }
       if (piece && piece.color === game.turn) {
         setSelected([r, c]);
-        setValidMoves(getLegalMoves(game, r, c));
+        setValidMoves(computeMoves(r, c));
         return;
       }
       setSelected(null);
@@ -666,9 +723,10 @@ export default function ChessGame() {
 
     if (piece && piece.color === game.turn) {
       setSelected([r, c]);
-      setValidMoves(getLegalMoves(game, r, c));
+      setValidMoves(computeMoves(r, c));
     }
-  }, [phase, pendingAugmentFor, game, selected, validMoves, promotionPending, executeMove]);
+  }, [phase, pendingAugmentFor, game, selected, validMoves, promotionPending,
+      executeMove, whiteAugments, blackAugments]);
 
   const handlePromotion = useCallback((type: PieceType) => {
     if (!promotionPending) return;
