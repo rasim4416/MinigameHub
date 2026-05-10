@@ -199,25 +199,29 @@ const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
-function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount}:{
+function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft}:{
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
-  onClick:()=>void;boardSize:number;deathNoteCount?:number;
+  onClick:()=>void;boardSize:number;deathNoteCount?:number;isNuke?:boolean;nukeMovesLeft?:number;
 }) {
   const light=(row+col)%2===0;
   let bg=light?LIGHT_SQ:DARK_SQ;
   if (isCheckKing) bg="#c82020"; else if (isSelected) bg=light?SEL_LIGHT:SEL_DARK; else if (isLastMove) bg=light?LAST_LIGHT:LAST_DARK;
   const dot=size*0.3,ring=size*0.07;
+  const isMonolith=piece?.type==="M";
   return (
     <div onClick={onClick} style={{width:size,height:size,backgroundColor:bg,position:"relative",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background-color 0.1s",overflow:"hidden"}}>
       {col===0&&<span style={{position:"absolute",top:2,left:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{getRankLabel(row,boardSize)}</span>}
       {row===boardSize-1&&<span style={{position:"absolute",bottom:2,right:3,fontSize:Math.max(9,size*0.18),fontWeight:700,color:light?DARK_SQ:LIGHT_SQ,userSelect:"none",lineHeight:1}}>{getFileChar(col,boardSize)}</span>}
       {isCenter&&<div style={{position:"absolute",top:3,right:3,width:5,height:5,background:"rgba(234,179,8,0.6)",borderRadius:"50%",pointerEvents:"none",boxShadow:"0 0 3px rgba(234,179,8,0.8)"}}/>}
       {isFrozen&&<div style={{position:"absolute",inset:0,background:"rgba(147,210,255,0.28)",border:"2px solid rgba(147,210,255,0.7)",boxShadow:"inset 0 0 8px rgba(147,210,255,0.5)",pointerEvents:"none",zIndex:2}}/>}
+      {isNuke&&<div style={{position:"absolute",inset:0,background:"rgba(34,197,94,0.30)",border:"2px solid rgba(34,197,94,0.85)",pointerEvents:"none",zIndex:2,boxShadow:"inset 0 0 6px rgba(34,197,94,0.6)"}}/>}
+      {isNuke&&nukeMovesLeft!==undefined&&row===Math.floor(row)&&col===Math.floor(col)&&<div style={{position:"absolute",bottom:2,left:2,width:14,height:14,borderRadius:"50%",background:"#16a34a",border:"1px solid #4ade80",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{nukeMovesLeft}</span></div>}
       {deathNoteCount!==undefined&&<div style={{position:"absolute",top:2,right:2,width:14,height:14,borderRadius:"50%",background:"#dc2626",border:"1px solid #fca5a5",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3,pointerEvents:"none"}}><span style={{fontSize:8,fontWeight:900,color:"white",lineHeight:1}}>{deathNoteCount}</span></div>}
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
-      {isValidMove&&piece&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
-      {piece&&<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>}
+      {isValidMove&&piece&&!isMonolith&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
+      {isMonolith&&<div style={{width:size*0.72,height:size*0.72,background:"linear-gradient(145deg,#475569,#1e293b)",border:"2px solid #64748b",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 3px 10px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.1)",pointerEvents:"none",position:"relative",zIndex:1}}><span style={{fontSize:size*0.38,lineHeight:1,userSelect:"none"}}>🗿</span></div>}
+      {piece&&!isMonolith&&<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>}
     </div>
   );
 }
@@ -490,6 +494,8 @@ type SpellState={
   royalHouseholdAvailable:boolean;royalHouseholdActive:boolean;onRoyalHousehold:()=>void;
   deathNoteAvailable:boolean;deathNoteActive:boolean;onDeathNote:()=>void;
   domainAvailable:boolean;onDomain:()=>void;
+  monolithPlaceAvailable:boolean;monolithPlaceActive:boolean;onMonolithPlace:()=>void;
+  monolithRemoveAvailable:boolean;onMonolithRemove:()=>void;
   canUndo:boolean;onUndo:()=>void;
   captureCount:number;hasBloodlust:boolean;
   shopOpen:boolean;onToggleShop:()=>void;
@@ -524,6 +530,8 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.royalHouseholdAvailable&&<SpellButton icon="🏰" label="RAMPAGE" active={spells.royalHouseholdActive} onClick={spells.onRoyalHousehold} title="King rampages up to 4 squares, destroys all in path"/>}
         {canAct&&spells.deathNoteAvailable&&<SpellButton icon="☠️" label="DEATH" active={spells.deathNoteActive} onClick={spells.onDeathNote} title="Mark an enemy piece (not king/queen) to die in 5 rounds"/>}
         {canAct&&spells.domainAvailable&&<SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="DOMAIN EXPANSION — expand the board to 10×10"/>}
+        {canAct&&spells.monolithPlaceAvailable&&<SpellButton icon="🗿" label="PLACE" active={spells.monolithPlaceActive} onClick={spells.onMonolithPlace} title="Place an impassable monolith on any empty square (spends a turn)"/>}
+        {canAct&&spells.monolithRemoveAvailable&&<SpellButton icon="🗑️" label="REMOVE" active={spells.monolithPlaceActive} onClick={spells.onMonolithRemove} title="Remove your monolith (free action)"/>}
         {canAct&&<SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop"/>}
         <GoldBadge gold={gold} active={canAct}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
@@ -632,6 +640,10 @@ export default function ChessGame() {
   const [nextEventTurn,setNextEventTurn]=useState(()=>nextEventInterval());
   const [pendingEvent,setPendingEvent]=useState<GameEvent|null>(null);
   const [peaceTreatyMovesLeft,setPeaceTreatyMovesLeft]=useState(0);
+  const [activeNuke,setActiveNuke]=useState<{topRow:number;leftCol:number;movesLeft:number}|null>(null);
+
+  // Monolith (Impassable)
+  const [monolithMode,setMonolithMode]=useState<"place"|"remove"|null>(null);
 
   // Shop
   const [shopOpen,setShopOpen]=useState(false);
@@ -795,6 +807,11 @@ export default function ChessGame() {
         };
       } else if (event.id === "peace-treaty") {
         setPeaceTreatyMovesLeft(10);
+      } else if (event.id === "tactical-nuke") {
+        const bs = newGame.board.length;
+        const topRow = Math.floor(Math.random() * (bs - 2));
+        const leftCol = Math.floor(Math.random() * (bs - 2));
+        setActiveNuke({topRow, leftCol, movesLeft: 10});
       } else if (event.id === "red-wedding") {
         const nb = cloneBoard(newGame.board);
         const bs = nb.length;
@@ -837,6 +854,20 @@ export default function ChessGame() {
     if (dnChanged) newGame=recomputeStatus({...newGame,board:dnBoard});
     setDeathNoteTargets(updatedDN);
 
+    // Nuke countdown
+    if (activeNuke) {
+      if (activeNuke.movesLeft <= 1) {
+        const nb2=cloneBoard(newGame.board);
+        for (let nr=activeNuke.topRow;nr<activeNuke.topRow+3;nr++)
+          for (let nc=activeNuke.leftCol;nc<activeNuke.leftCol+3;nc++)
+            if (nb2[nr]?.[nc]?.type!=="K") nb2[nr][nc]=null;
+        newGame=recomputeStatus({...newGame,board:nb2});
+        setActiveNuke(null);
+      } else {
+        setActiveNuke(prev=>prev?{...prev,movesLeft:prev.movesLeft-1}:null);
+      }
+    }
+
     setGame(newGame);
 
     // Triggers
@@ -877,7 +908,7 @@ export default function ChessGame() {
     whiteAugments,blackAugments,whiteMilestones,blackMilestones,
     whiteIcUsed,blackIcUsed,whiteCaptureCount,blackCaptureCount,
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
-    peaceTreatyMovesLeft,nextEventTurn,
+    peaceTreatyMovesLeft,nextEventTurn,activeNuke,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -894,7 +925,7 @@ export default function ChessGame() {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -924,6 +955,8 @@ export default function ChessGame() {
   },[royalHouseholdMode,game]);
   const handleToggleShop=useCallback(()=>{ setShopOpen(s=>!s); clearModes(); },[]);
   const handleToggleDeathNote=useCallback(()=>{ const e=!deathNoteMode; clearModes(); setDeathNoteMode(e); },[deathNoteMode]);
+  const handleToggleMonolithPlace=useCallback(()=>{ const e=monolithMode!=="place"; clearModes(); if(e) setMonolithMode("place"); },[monolithMode]);
+  const handleToggleMonolithRemove=useCallback(()=>{ const e=monolithMode!=="remove"; clearModes(); if(e) setMonolithMode("remove"); },[monolithMode]);
   const handleDomainExpansion=useCallback(()=>{
     if (boardExpanded) return;
     setBoardSize(10);
@@ -933,6 +966,7 @@ export default function ChessGame() {
     if (game.turn==="white") setWhiteDomainUsed(true); else setBlackDomainUsed(true);
     if (frozenSquare) setFrozenSquare([frozenSquare[0]+1,frozenSquare[1]+1]);
     setDeathNoteTargets(prev=>prev.map(dn=>({...dn,row:dn.row+1,col:dn.col+1})));
+    setActiveNuke(prev=>prev?{...prev,topRow:prev.topRow+1,leftCol:prev.leftCol+1}:null);
     setWhiteLostPawnCols(prev=>prev.map(c=>c+1));
     setBlackLostPawnCols(prev=>prev.map(c=>c+1));
     if (selected) setSelected([selected[0]+1,selected[1]+1]);
@@ -950,8 +984,34 @@ export default function ChessGame() {
     if (promotionPending) return;
     const piece=game.board[r][c];
 
+    if (monolithMode==="place"){
+      if (!piece){
+        const movingColor=game.turn;
+        const nb=cloneBoard(game.board); nb[r][c]={type:"M",color:movingColor};
+        const newTurnCount=(movingColor==="white"?whiteTurnCount:blackTurnCount)+1;
+        if (movingColor==="white") setWhiteTurnCount(newTurnCount); else setBlackTurnCount(newTurnCount);
+        const playerAugsNow=movingColor==="white"?whiteAugments:blackAugments;
+        setGameHistory(h=>[...h,game]);
+        let newGState={...game,board:nb,turn:opp(movingColor),enPassantTarget:null,
+          lastMove:{from:[r,c] as [number,number],to:[r,c] as [number,number],piece:{type:"M" as const,color:movingColor},captured:null}};
+        newGState=applyEndOfTurnEffects(newGState,movingColor,playerAugsNow,newTurnCount);
+        newGState=recomputeStatus(newGState);
+        if (peaceTreatyMovesLeft>0) setPeaceTreatyMovesLeft(n=>n-1);
+        setGame(newGState);
+      }
+      setMonolithMode(null); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (monolithMode==="remove"){
+      if (piece?.type==="M"&&piece.color===game.turn){
+        const nb=cloneBoard(game.board); nb[r][c]=null;
+        setGame(g=>recomputeStatus({...g,board:nb}));
+      }
+      setMonolithMode(null); setSelected(null); setValidMoves([]); return;
+    }
+
     if (deathNoteMode){
-      if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="Q"){
+      if (piece&&piece.color!==game.turn&&piece.type!=="K"&&piece.type!=="Q"&&piece.type!=="M"){
         setDeathNoteTargets(prev=>[...prev,{row:r,col:c,turnsLeft:10,targetColor:piece.color}]);
         if (game.turn==="white") setWhiteDNUsed(true); else setBlackDNUsed(true);
       }
@@ -1096,12 +1156,12 @@ export default function ChessGame() {
       if (piece&&piece.color===game.turn&&!isFrozenPiece){setSelected([r,c]);setValidMoves(computeMoves(r,c));return;}
       setSelected(null);setValidMoves([]);return;
     }
-    if (piece&&piece.color===game.turn&&!isFrozenPiece){setSelected([r,c]);setValidMoves(computeMoves(r,c));}
+    if (piece&&piece.color===game.turn&&piece.type!=="M"&&!isFrozenPiece){setSelected([r,c]);setValidMoves(computeMoves(r,c));}
   },[
     phase,currentTrigger,game,selected,validMoves,promotionPending,
     freezeMode,necroMode,royalEdMode,whatMode,whatSelected,frozenSquare,
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
-    deathNoteMode,
+    deathNoteMode,monolithMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1130,7 +1190,8 @@ export default function ChessGame() {
     setWhiteRoyalHouseholdUsed(false); setBlackRoyalHouseholdUsed(false); setRoyalHouseholdMode(false);
     setWhiteDNUsed(false); setBlackDNUsed(false); setDeathNoteMode(false); setDeathNoteTargets([]);
     setBoardExpanded(false); setWhiteDomainUsed(false); setBlackDomainUsed(false); setBoardSize(8);
-    setNextEventTurn(nextEventInterval()); setPendingEvent(null); setPeaceTreatyMovesLeft(0);
+    setNextEventTurn(nextEventInterval()); setPendingEvent(null); setPeaceTreatyMovesLeft(0); setActiveNuke(null);
+    setMonolithMode(null);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
   };
 
@@ -1183,6 +1244,15 @@ export default function ChessGame() {
       ?(!whiteDomainUsed&&!boardExpanded&&whiteAugments.some(a=>a.id==="domain-expansion"))
       :(!blackDomainUsed&&!boardExpanded&&blackAugments.some(a=>a.id==="domain-expansion")),
     onDomain: handleDomainExpansion,
+    monolithPlaceAvailable: color==="white"
+      ?(whiteAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white")))
+      :(blackAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black"))),
+    monolithPlaceActive: monolithMode==="place"&&game.turn===color,
+    onMonolithPlace: handleToggleMonolithPlace,
+    monolithRemoveAvailable: color==="white"
+      ?game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white"))
+      :game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black")),
+    onMonolithRemove: handleToggleMonolithRemove,
     canUndo:        color==="white"?canWhiteUndo:canBlackUndo,
     onUndo:         handleUndo,
     captureCount:   color==="white"?whiteCaptureCount:blackCaptureCount,
@@ -1201,6 +1271,8 @@ export default function ChessGame() {
     if (sakoMode&&sakoSelected)  return {text:"⚓ ŞAKO — Click a destination in your half",color:"#eab308"};
     if (royalHouseholdMode) return {text:"🏰 RAMPAGE — Click a destination (up to 4 squares, destroys all in path)",color:"#ef4444"};
     if (deathNoteMode) return {text:"☠️ DEATH NOTE — Click an enemy piece (not king/queen) to doom it in 10 moves",color:"#dc2626"};
+    if (monolithMode==="place") return {text:"🗿 Click an empty square to place your monolith (spends a turn)",color:"#64748b"};
+    if (monolithMode==="remove") return {text:"🗿 Click your monolith to remove it (free action)",color:"#64748b"};
     return null;
   })();
 
@@ -1228,7 +1300,9 @@ export default function ChessGame() {
             const isCenter=showCenterMarkers&&centerSquares.has(`${r},${c}`);
             const isFrozen=!!(frozenSquare&&frozenSquare[0]===r&&frozenSquare[1]===c);
             const dn=deathNoteTargets.find(d=>d.row===r&&d.col===c);
-            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft}/>;
+            const isNukeSquare=!!(activeNuke&&r>=activeNuke.topRow&&r<activeNuke.topRow+3&&c>=activeNuke.leftCol&&c<activeNuke.leftCol+3);
+            const showNukeCount=isNukeSquare&&r===activeNuke!.topRow&&c===activeNuke!.leftCol;
+            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined}/>;
           }))}
         </div>
 

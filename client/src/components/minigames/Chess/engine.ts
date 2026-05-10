@@ -3,7 +3,7 @@
 // Designed to be extended with roguelike augment hooks later
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type PieceType = "K" | "Q" | "R" | "B" | "N" | "P";
+export type PieceType = "K" | "Q" | "R" | "B" | "N" | "P" | "M";
 export type Color = "white" | "black";
 export interface Piece { type: PieceType; color: Color; }
 export type Square = Piece | null;
@@ -52,12 +52,12 @@ export function setBoardSize(size: number) { BOARD_SIZE = size; }
 const BACK_RANK: PieceType[] = ["R", "N", "B", "Q", "K", "B", "N", "R"];
 
 export const PIECE_UNICODE: Record<Color, Record<PieceType, string>> = {
-  white: { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙" },
-  black: { K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟" },
+  white: { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙", M: "🗿" },
+  black: { K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟", M: "🗿" },
 };
 
 export const PIECE_VALUE: Record<PieceType, number> = {
-  P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0,
+  P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0, M: 0,
 };
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
@@ -70,11 +70,11 @@ export function cloneBoard(board: Board): Board {
 }
 
 export function findKing(board: Board, color: Color): [number, number] {
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
+  for (let r = 0; r < board.length; r++)
+    for (let c = 0; c < board.length; c++)
       if (board[r][c]?.type === "K" && board[r][c]?.color === color)
         return [r, c];
-  return [-1, -1]; // should never happen
+  return [-1, -1];
 }
 
 // ─── Attack detection ─────────────────────────────────────────────────────────
@@ -83,6 +83,8 @@ export function findKing(board: Board, color: Color): [number, number] {
 function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number, number][] {
   const { type, color } = piece;
   const sq: [number, number][] = [];
+
+  if (type === "M") return [];
 
   if (type === "P") {
     const dir = color === "white" ? -1 : 1;
@@ -145,6 +147,8 @@ function pseudoMoves(
   const { type, color } = piece;
   const sq: [number, number][] = [];
 
+  if (type === "M") return [];
+
   if (type === "P") {
     const dir = color === "white" ? -1 : 1;
     const _off = (BOARD_SIZE - 8) / 2;
@@ -156,7 +160,7 @@ function pseudoMoves(
     for (const dc of [-1, 1]) {
       if (!inB(r+dir, c+dc)) continue;
       const tgt = board[r+dir][c+dc];
-      if (tgt && tgt.color !== color) sq.push([r+dir, c+dc]);
+      if (tgt && tgt.color !== color && tgt.type !== "M") sq.push([r+dir, c+dc]);
       if (enPassantTarget &&
           enPassantTarget[0] === r+dir && enPassantTarget[1] === c+dc)
         sq.push([r+dir, c+dc]);
@@ -167,7 +171,8 @@ function pseudoMoves(
   if (type === "N") {
     for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
       const nr = r+dr, nc = c+dc;
-      if (inB(nr, nc) && board[nr][nc]?.color !== color) sq.push([nr, nc]);
+      const tgt = board[nr]?.[nc];
+      if (inB(nr, nc) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
     }
     return sq;
   }
@@ -175,7 +180,8 @@ function pseudoMoves(
   if (type === "K") {
     for (const [dr, dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
       const nr = r+dr, nc = c+dc;
-      if (inB(nr, nc) && board[nr][nc]?.color !== color) sq.push([nr, nc]);
+      const tgt = board[nr]?.[nc];
+      if (inB(nr, nc) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
     }
     return sq;
   }
@@ -186,9 +192,10 @@ function pseudoMoves(
   for (const [dr, dc] of dirs) {
     let nr = r+dr, nc = c+dc;
     while (inB(nr, nc)) {
-      if (board[nr][nc]) {
-        if (board[nr][nc]!.color !== color) sq.push([nr, nc]);
-        break;
+      const tgt = board[nr][nc];
+      if (tgt) {
+        if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
+        break; // blocked regardless (M blocks ray but can't be captured)
       }
       sq.push([nr, nc]);
       nr += dr; nc += dc;

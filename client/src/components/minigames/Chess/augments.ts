@@ -92,6 +92,7 @@ export const MAX_STACK: Record<string, number> = {
   "royal-household":     1,
   "death-note":          1,
   "domain-expansion":    1,
+  "impassable":          1,
 };
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ export const AUGMENT_POOL: Augment[] = [
   // ── Rare ──────────────────────────────────────────────────────────────────
   { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn." },
   { id:"what",         name:"What?",        rarity:"rare",     icon:"↔️",   description:"Once, one of your pawns may move one square sideways to an empty square." },
+  { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). You may remove it for free at any time." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer",  name:"Necromancer",  rarity:"epic",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },

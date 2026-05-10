@@ -67,6 +67,14 @@ export const EVENT_POOL: GameEvent[] = [
     description: "2 random pawns from each player are slain.",
     flavor: "\"The Lannisters send their regards.\"",
   },
+  {
+    id: "tactical-nuke",
+    name: "Tactical Nuke Incoming",
+    rarity: "rare",
+    icon: "☢️",
+    description: "A random 3×3 area is targeted. All pieces inside will be destroyed after 5 rounds.",
+    flavor: "\"Incoming!\"",
+  },
 ];
 
 // ─── Weighted roll ────────────────────────────────────────────────────────────
