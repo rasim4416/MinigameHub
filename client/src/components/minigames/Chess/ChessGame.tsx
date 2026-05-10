@@ -11,12 +11,33 @@ import { Augment, rollAugments, RARITY_META } from "./augments";
 
 type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 
+type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
+
+const EMPTY_MILESTONES: Milestones = { knight: false, bishop: false, rook: false };
+
+/** Returns the piece type that just triggered a new milestone, or null. */
+function checkNewMilestone(captured: PieceType | null, ms: Milestones): PieceType | null {
+  if (!captured) return null;
+  if (captured === "N" && !ms.knight) return "N";
+  if (captured === "B" && !ms.bishop) return "B";
+  if (captured === "R" && !ms.rook) return "R";
+  return null;
+}
+
+function applyMilestone(type: PieceType, ms: Milestones): Milestones {
+  return {
+    knight: type === "N" ? true : ms.knight,
+    bishop: type === "B" ? true : ms.bishop,
+    rook:   type === "R" ? true : ms.rook,
+  };
+}
+
 // ─── Board square constants ───────────────────────────────────────────────────
 
-const LIGHT_SQ  = "#f0d9b5";
-const DARK_SQ   = "#b58863";
-const SEL_LIGHT = "#f6f669";
-const SEL_DARK  = "#baca2b";
+const LIGHT_SQ   = "#f0d9b5";
+const DARK_SQ    = "#b58863";
+const SEL_LIGHT  = "#f6f669";
+const SEL_DARK   = "#baca2b";
 const LAST_LIGHT = "#cdd16f";
 const LAST_DARK  = "#aaa23a";
 
@@ -36,7 +57,7 @@ function SquareEl({
   else if (isSelected) bg = light ? SEL_LIGHT : SEL_DARK;
   else if (isLastMove) bg = light ? LAST_LIGHT : LAST_DARK;
 
-  const dot = size * 0.3;
+  const dot  = size * 0.3;
   const ring = size * 0.07;
 
   return (
@@ -173,22 +194,20 @@ function GoldBadge({ gold, active }: { gold: number; active: boolean }) {
   );
 }
 
-// ─── AugmentChip (shown in player bar during game) ────────────────────────────
+// ─── AugmentIconChip (compact, for player bar) ────────────────────────────────
 
-function AugmentChip({ augment }: { augment: Augment }) {
+function AugmentIconChip({ augment }: { augment: Augment }) {
   const m = RARITY_META[augment.rarity];
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 4,
+    <div title={`${augment.name} — ${augment.description}`} style={{
+      width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
+      border: `1.5px solid ${m.border}`,
       background: "#0f172a",
-      border: `1px solid ${m.border}`,
-      borderRadius: 20, padding: "1px 8px 1px 4px",
-      boxShadow: `0 0 6px ${m.glow}`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      boxShadow: `0 0 5px ${m.glow}`,
+      cursor: "default",
     }}>
       <span style={{ fontSize: 12, lineHeight: 1 }}>{augment.icon}</span>
-      <span style={{ fontSize: 10, fontWeight: 700, color: m.text, letterSpacing: "0.02em" }}>
-        {augment.name}
-      </span>
     </div>
   );
 }
@@ -205,7 +224,7 @@ function AugmentCard({ augment, onSelect }: { augment: Augment; onSelect: () => 
       onMouseLeave={() => setHov(false)}
       style={{
         width: 155, padding: "18px 14px 14px",
-        borderRadius: 14,
+        borderRadius: 14, position: "relative",
         border: `2px solid ${hov ? m.border : "rgba(255,255,255,0.07)"}`,
         background: hov ? "#0b1120" : "#080e1a",
         cursor: "pointer",
@@ -216,7 +235,6 @@ function AugmentCard({ augment, onSelect }: { augment: Augment; onSelect: () => 
         userSelect: "none",
       }}
     >
-      {/* Rarity bar at top */}
       <div style={{
         position: "absolute", top: 0, left: 14, right: 14, height: 3,
         borderRadius: "0 0 3px 3px",
@@ -247,52 +265,67 @@ function AugmentCard({ augment, onSelect }: { augment: Augment; onSelect: () => 
 
 // ─── AugmentSelector ─────────────────────────────────────────────────────────
 
-function AugmentSelector({ playerColor, offered, onSelect }: {
+const MILESTONE_LABEL: Partial<Record<PieceType, string>> = {
+  N: "First Knight Captured!",
+  B: "First Bishop Captured!",
+  R: "First Rook Captured!",
+};
+
+function AugmentSelector({ playerColor, offered, onSelect, milestone }: {
   playerColor: Color; offered: Augment[]; onSelect: (aug: Augment) => void;
+  milestone?: PieceType | null;
 }) {
   const isWhite = playerColor === "white";
+  const milestoneLabel = milestone ? MILESTONE_LABEL[milestone] : null;
+
   return (
     <div style={{
       position: "absolute", inset: 0, zIndex: 80,
       background: "linear-gradient(160deg, #030712 0%, #080e1f 100%)",
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
-      gap: 20, padding: "16px 12px",
+      gap: 16, padding: "16px 12px",
     }}>
-      {/* Header */}
       <div style={{ textAlign: "center" }}>
-        <p style={{
-          fontSize: 10, letterSpacing: "0.2em", fontWeight: 700,
-          color: "#475569", margin: "0 0 6px", textTransform: "uppercase",
-        }}>
-          Choose your augment
-        </p>
+        {milestoneLabel ? (
+          <div style={{
+            display: "inline-block", marginBottom: 10,
+            padding: "4px 14px", borderRadius: 20,
+            background: "linear-gradient(135deg,#1c1f2e,#2d2f45)",
+            border: "1px solid #4f46e5",
+            fontSize: 11, fontWeight: 700, letterSpacing: "0.1em",
+            color: "#818cf8", textTransform: "uppercase",
+          }}>
+            ✦ {milestoneLabel}
+          </div>
+        ) : (
+          <p style={{
+            fontSize: 10, letterSpacing: "0.2em", fontWeight: 700,
+            color: "#475569", margin: "0 0 6px", textTransform: "uppercase",
+          }}>
+            Choose your augment
+          </p>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <div style={{
-            width: 12, height: 12, borderRadius: "50%",
+            width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
             background: isWhite ? "#ffffff" : "#1a0f00",
             border: `2px solid ${isWhite ? "#94a3b8" : "#6b7280"}`,
             boxShadow: `0 0 10px ${isWhite ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}`,
           }} />
-          <h2 style={{
-            fontSize: 20, fontWeight: 900, margin: 0, letterSpacing: "0.08em",
-            color: isWhite ? "#f1f5f9" : "#cbd5e1",
-          }}>
+          <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0, letterSpacing: "0.08em", color: "#f1f5f9" }}>
             {playerColor.toUpperCase()}
           </h2>
         </div>
       </div>
 
-      {/* Cards row */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
         {offered.map(aug => (
           <AugmentCard key={aug.id} augment={aug} onSelect={() => onSelect(aug)} />
         ))}
       </div>
 
-      <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>
-        Click a card to select it
-      </p>
+      <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>Click a card to select it</p>
     </div>
   );
 }
@@ -306,16 +339,11 @@ function StartScreen({ onStart }: { onStart: () => void }) {
       position: "absolute", inset: 0, zIndex: 80,
       background: "linear-gradient(160deg, #030712 0%, #080e1f 100%)",
       display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      gap: 18,
+      alignItems: "center", justifyContent: "center", gap: 18,
     }}>
-      {/* Chess board mini-decoration */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,10px)", gap: 1, opacity: 0.15, marginBottom: 4 }}>
         {Array.from({ length: 16 }, (_, i) => (
-          <div key={i} style={{
-            width: 10, height: 10,
-            background: (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863",
-          }} />
+          <div key={i} style={{ width: 10, height: 10, background: (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863" }} />
         ))}
       </div>
 
@@ -338,13 +366,9 @@ function StartScreen({ onStart }: { onStart: () => void }) {
           padding: "11px 44px", fontSize: 14, fontWeight: 800,
           letterSpacing: "0.1em", textTransform: "uppercase",
           borderRadius: 12, border: "none", cursor: "pointer",
-          background: hov
-            ? "linear-gradient(135deg,#4338ca,#6366f1)"
-            : "linear-gradient(135deg,#4f46e5,#818cf8)",
+          background: hov ? "linear-gradient(135deg,#4338ca,#6366f1)" : "linear-gradient(135deg,#4f46e5,#818cf8)",
           color: "#fff",
-          boxShadow: hov
-            ? "0 6px 28px rgba(99,102,241,0.65)"
-            : "0 4px 18px rgba(99,102,241,0.45)",
+          boxShadow: hov ? "0 6px 28px rgba(99,102,241,0.65)" : "0 4px 18px rgba(99,102,241,0.45)",
           transform: hov ? "translateY(-2px)" : "none",
           transition: "all 0.18s",
         }}
@@ -361,7 +385,7 @@ export default function ChessGame() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardPx, setBoardPx] = useState(320);
 
-  // Chess state
+  // Chess engine state
   const [game, setGame] = useState<ChessState>(createInitialState);
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
@@ -369,12 +393,20 @@ export default function ChessGame() {
     from: [number, number]; to: [number, number];
   } | null>(null);
 
-  // Roguelike phase + augment state
+  // Roguelike: pregame phase
   const [phase, setPhase] = useState<GamePhase>("start");
   const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
   const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
-  const [whiteAugment, setWhiteAugment] = useState<Augment | null>(null);
-  const [blackAugment, setBlackAugment] = useState<Augment | null>(null);
+  const [whiteAugments, setWhiteAugments] = useState<Augment[]>([]);
+  const [blackAugments, setBlackAugments] = useState<Augment[]>([]);
+
+  // Roguelike: mid-game milestone augment picks
+  const [whiteMilestones, setWhiteMilestones] = useState<Milestones>(EMPTY_MILESTONES);
+  const [blackMilestones, setBlackMilestones] = useState<Milestones>(EMPTY_MILESTONES);
+  // pendingAugmentFor: which player needs to pick right now (mid-game)
+  const [pendingAugmentFor, setPendingAugmentFor] = useState<Color | null>(null);
+  const [pendingMilestoneType, setPendingMilestoneType] = useState<PieceType | null>(null);
+  const [midGameOffered, setMidGameOffered] = useState<Augment[]>([]);
 
   // Responsive board size
   useEffect(() => {
@@ -388,7 +420,42 @@ export default function ChessGame() {
 
   const sqSize = boardPx / 8;
 
-  // ── Phase handlers ──────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /** Returns all augment IDs already held by either player. */
+  const allHeldIds = useCallback(() =>
+    [...whiteAugments, ...blackAugments].map(a => a.id),
+    [whiteAugments, blackAugments]
+  );
+
+  /** After a move, check if a milestone was triggered and queue an augment pick. */
+  const maybeTriggerMilestone = useCallback((
+    movingColor: Color,
+    capturedType: PieceType | null,
+    wMs: Milestones,
+    bMs: Milestones,
+    heldIds: string[],
+  ) => {
+    const ms = movingColor === "white" ? wMs : bMs;
+    const triggered = checkNewMilestone(capturedType, ms);
+    if (!triggered) return { wMs, bMs };
+
+    // Update milestones
+    const newMs = applyMilestone(triggered, ms);
+    const newWMs = movingColor === "white" ? newMs : wMs;
+    const newBMs = movingColor === "black" ? newMs : bMs;
+
+    // Roll 3 new augments (exclude everything already held)
+    const offered = rollAugments(3, heldIds);
+
+    setPendingAugmentFor(movingColor);
+    setPendingMilestoneType(triggered);
+    setMidGameOffered(offered);
+
+    return { wMs: newWMs, bMs: newBMs };
+  }, []);
+
+  // ── Pre-game phase handlers ─────────────────────────────────────────────────
 
   const handleStart = () => {
     const offered = rollAugments(3);
@@ -397,21 +464,35 @@ export default function ChessGame() {
   };
 
   const handleWhitePick = (aug: Augment) => {
-    setWhiteAugment(aug);
+    setWhiteAugments([aug]);
     const offered = rollAugments(3, [aug.id]);
     setOfferedToBlack(offered);
     setPhase("black-augment");
   };
 
   const handleBlackPick = (aug: Augment) => {
-    setBlackAugment(aug);
+    setBlackAugments([aug]);
     setPhase("playing");
+  };
+
+  // ── Mid-game augment pick ────────────────────────────────────────────────────
+
+  const handleMidGamePick = (aug: Augment) => {
+    if (pendingAugmentFor === "white") {
+      setWhiteAugments(prev => [...prev, aug]);
+    } else {
+      setBlackAugments(prev => [...prev, aug]);
+    }
+    setPendingAugmentFor(null);
+    setPendingMilestoneType(null);
+    setMidGameOffered([]);
   };
 
   // ── Chess handlers ──────────────────────────────────────────────────────────
 
   const handleSquareClick = useCallback((r: number, c: number) => {
     if (phase !== "playing") return;
+    if (pendingAugmentFor !== null) return;
     if (game.status === "checkmate" || game.status === "stalemate") return;
     if (promotionPending) return;
 
@@ -425,12 +506,27 @@ export default function ChessGame() {
           movingPiece.type === "P" &&
           ((movingPiece.color === "white" && r === 0) ||
            (movingPiece.color === "black" && r === 7));
+
         if (isPromotion) {
           setPromotionPending({ from: selected, to: [r, c] });
         } else {
+          // Detect capture BEFORE making the move
+          const capturedPiece = game.board[r][c];
+          const movingColor = game.turn;
+          const curWMs = whiteMilestones;
+          const curBMs = blackMilestones;
+
           setGame(g => makeMove(g, selected, [r, c]));
           setSelected(null);
           setValidMoves([]);
+
+          // Check milestone
+          if (capturedPiece) {
+            const held = [...whiteAugments, ...blackAugments].map(a => a.id);
+            const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedPiece.type, curWMs, curBMs, held);
+            setWhiteMilestones(wMs);
+            setBlackMilestones(bMs);
+          }
         }
         return;
       }
@@ -448,15 +544,28 @@ export default function ChessGame() {
       setSelected([r, c]);
       setValidMoves(getLegalMoves(game, r, c));
     }
-  }, [phase, game, selected, validMoves, promotionPending]);
+  }, [phase, pendingAugmentFor, game, selected, validMoves, promotionPending,
+      whiteMilestones, blackMilestones, whiteAugments, blackAugments, maybeTriggerMilestone]);
 
   const handlePromotion = useCallback((type: PieceType) => {
     if (!promotionPending) return;
+    const capturedPiece = game.board[promotionPending.to[0]][promotionPending.to[1]];
+    const movingColor = game.turn;
+    const curWMs = whiteMilestones;
+    const curBMs = blackMilestones;
+
     setGame(g => makeMove(g, promotionPending.from, promotionPending.to, type));
     setPromotionPending(null);
     setSelected(null);
     setValidMoves([]);
-  }, [promotionPending]);
+
+    if (capturedPiece) {
+      const held = [...whiteAugments, ...blackAugments].map(a => a.id);
+      const { wMs, bMs } = maybeTriggerMilestone(movingColor, capturedPiece.type, curWMs, curBMs, held);
+      setWhiteMilestones(wMs);
+      setBlackMilestones(bMs);
+    }
+  }, [promotionPending, game, whiteMilestones, blackMilestones, whiteAugments, blackAugments, maybeTriggerMilestone]);
 
   const resetGame = () => {
     setGame(createInitialState());
@@ -464,15 +573,20 @@ export default function ChessGame() {
     setValidMoves([]);
     setPromotionPending(null);
     setPhase("start");
-    setWhiteAugment(null);
-    setBlackAugment(null);
+    setWhiteAugments([]);
+    setBlackAugments([]);
     setOfferedToWhite([]);
     setOfferedToBlack([]);
+    setWhiteMilestones(EMPTY_MILESTONES);
+    setBlackMilestones(EMPTY_MILESTONES);
+    setPendingAugmentFor(null);
+    setPendingMilestoneType(null);
+    setMidGameOffered([]);
   };
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
-  const adv = materialAdvantage(game);
+  const adv    = materialAdvantage(game);
   const isOver = game.status === "checkmate" || game.status === "stalemate";
 
   const statusText = (() => {
@@ -491,7 +605,7 @@ export default function ChessGame() {
     <div style={{
       display: "flex", flexDirection: "column", width: "100%", height: "100%",
       background: "#030712", color: "#fff", userSelect: "none", overflow: "hidden",
-      position: "relative",  // so phase overlays can cover the full card
+      position: "relative",
     }}>
 
       {/* ── Black's info bar ── */}
@@ -500,22 +614,27 @@ export default function ChessGame() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 12px", background: "#0a0f1a", borderBottom: "1px solid #1f2937",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}>
           <div style={{
             width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
             background: "#1a0f00", border: "2px solid #6b7280",
             boxShadow: game.turn === "black" && !isOver && phase === "playing" ? "0 0 0 2px #6366f1" : "none",
           }} />
           <span style={{
-            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", flexShrink: 0,
             color: game.turn === "black" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
           }}>BLACK</span>
-          {blackAugment && <AugmentChip augment={blackAugment} />}
+          {/* Augment icons */}
+          {blackAugments.length > 0 && (
+            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+              {blackAugments.map(a => <AugmentIconChip key={a.id} augment={a} />)}
+            </div>
+          )}
           <GoldBadge gold={game.goldBlack} active={game.turn === "black" && !isOver && phase === "playing"} />
           <CapturedRow pieces={game.capturedByBlack} byColor="white" advantage={adv.black > 0 ? adv.black : 0} />
         </div>
         <button onClick={resetGame} style={{
-          padding: "4px 12px", fontSize: 11, fontWeight: 700,
+          padding: "4px 12px", fontSize: 11, fontWeight: 700, flexShrink: 0,
           borderRadius: 6, border: "1px solid #374151",
           background: "#111827", color: "#9ca3af", cursor: "pointer",
         }}>
@@ -528,7 +647,6 @@ export default function ChessGame() {
         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
         padding: 6, minHeight: 0, position: "relative", background: "#030712",
       }}>
-        {/* Board grid */}
         <div style={{
           width: boardPx, height: boardPx,
           display: "grid",
@@ -559,12 +677,10 @@ export default function ChessGame() {
           )}
         </div>
 
-        {/* Promotion overlay */}
         {promotionPending && (
           <PromotionDialog color={game.turn} onChoose={handlePromotion} />
         )}
 
-        {/* Game-over overlay */}
         {isOver && (
           <div style={{
             position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)",
@@ -598,23 +714,28 @@ export default function ChessGame() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 12px", background: "#0a0f1a", borderTop: "1px solid #1f2937",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}>
           <div style={{
             width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
             background: "#ffffff", border: "2px solid #6b7280",
             boxShadow: game.turn === "white" && !isOver && phase === "playing" ? "0 0 0 2px #6366f1" : "none",
           }} />
           <span style={{
-            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em",
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", flexShrink: 0,
             color: game.turn === "white" && !isOver && phase === "playing" ? "#e2e8f0" : "#6b7280",
           }}>WHITE</span>
-          {whiteAugment && <AugmentChip augment={whiteAugment} />}
+          {/* Augment icons */}
+          {whiteAugments.length > 0 && (
+            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+              {whiteAugments.map(a => <AugmentIconChip key={a.id} augment={a} />)}
+            </div>
+          )}
           <GoldBadge gold={game.goldWhite} active={game.turn === "white" && !isOver && phase === "playing"} />
           <CapturedRow pieces={game.capturedByWhite} byColor="black" advantage={adv.white > 0 ? adv.white : 0} />
         </div>
         {phase === "playing" && !isOver && (
           <div style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+            fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", flexShrink: 0,
             color: statusText.color,
             background: game.status === "check" ? "rgba(239,68,68,0.15)" : "transparent",
             padding: game.status === "check" ? "3px 10px" : "0",
@@ -626,7 +747,7 @@ export default function ChessGame() {
         )}
       </div>
 
-      {/* ══ Phase overlays (cover the full card via position:absolute on outer div) ══ */}
+      {/* ══ Phase overlays ══ */}
 
       {phase === "start" && (
         <StartScreen onStart={handleStart} />
@@ -645,6 +766,16 @@ export default function ChessGame() {
           playerColor="black"
           offered={offeredToBlack}
           onSelect={handleBlackPick}
+        />
+      )}
+
+      {/* Mid-game milestone augment pick */}
+      {phase === "playing" && pendingAugmentFor !== null && (
+        <AugmentSelector
+          playerColor={pendingAugmentFor}
+          offered={midGameOffered}
+          onSelect={handleMidGamePick}
+          milestone={pendingMilestoneType}
         />
       )}
     </div>
