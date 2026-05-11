@@ -8,7 +8,7 @@ import {
 } from "./engine";
 import {
   Augment, AUGMENT_POOL, rollAugments, RARITY_META,
-  RarityWeights, getWeightsForPlayer, BASE_COST, getShopCost, MAX_STACK,
+  RarityWeights, getWeightsForPlayer, BASE_COST, getShopCost, MAX_STACK, NON_PURCHASABLE,
 } from "./augments";
 import { GameEvent, EVENT_RARITY_META, rollEvent, nextEventInterval } from "./events";
 
@@ -62,6 +62,10 @@ function findCheckingPiece(board: Board, kingColor: Color): [number,number]|null
   return null;
 }
 function recomputeStatus(g: ChessState): ChessState {
+  const [wkr]=findKing(g.board,"white");
+  const [bkr]=findKing(g.board,"black");
+  if (wkr===-1) return {...g,status:"checkmate",turn:"black"};
+  if (bkr===-1) return {...g,status:"checkmate",turn:"white"};
   const nextTurn=g.turn;
   const nextHasMove=hasAnyLegalMove(g,nextTurn);
   let status=g.status;
@@ -347,7 +351,7 @@ function ShopPanel({playerColor,gold,tierBought,playerAugments,onBuy,onClose}:{
   const RARITY_ORDER: Array<Augment["rarity"]> = ["common","uncommon","rare","epic","legendary"];
   const grouped = RARITY_ORDER.map(r => ({
     rarity: r,
-    augments: AUGMENT_POOL.filter(a => a.rarity === r),
+    augments: AUGMENT_POOL.filter(a => a.rarity === r && !NON_PURCHASABLE.has(a.id)),
   })).filter(g => g.augments.length > 0);
 
   return (
@@ -491,6 +495,7 @@ function StartScreen({onStart}:{onStart:()=>void}) {
 type SpellState={
   freezeCharges:number;freezeActive:boolean;onFreeze:()=>void;
   necroCharges:number;necroActive:boolean;hasNecroTargets:boolean;onNecro:()=>void;
+  necroPlusCharges:number;necroPlusActive:boolean;hasNecroPlusTargets:boolean;onNecroPlus:()=>void;
   royalEdAvailable:boolean;royalEdActive:boolean;onRoyalEd:()=>void;
   whatAvailable:boolean;whatActive:boolean;onWhat:()=>void;
   sakoAvailable:boolean;sakoActive:boolean;onSako:()=>void;
@@ -530,6 +535,7 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {spells.canUndo&&<UndoButton onUndo={spells.onUndo}/>}
         {canAct&&spells.freezeCharges>0&&<SpellButton icon="❄️" label="FREEZE" active={spells.freezeActive} count={spells.freezeCharges} onClick={spells.onFreeze} title="Freeze an enemy piece for 1 opponent turn"/>}
         {canAct&&spells.necroCharges>0&&spells.hasNecroTargets&&<SpellButton icon="💀" label="REVIVE" active={spells.necroActive} onClick={spells.onNecro} title="Resurrect a captured pawn at its home square"/>}
+        {canAct&&spells.necroPlusCharges>0&&spells.hasNecroPlusTargets&&<SpellButton icon="💀✨" label="REVIVE+" active={spells.necroPlusActive} onClick={spells.onNecroPlus} title="Revive a captured knight or bishop to your home rank"/>}
         {canAct&&spells.royalEdAvailable&&<SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)"/>}
         {canAct&&spells.whatAvailable&&<SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} title="Move one pawn sideways one square (one time)"/>}
         {canAct&&spells.sakoAvailable&&<SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece to your half board (free action)"/>}
@@ -687,6 +693,17 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [blackContractTarget,setBlackContractTarget]=useState<[number,number]|null>(null);
   const [contractMode,setContractMode]=useState(false);
 
+  // Necromancer+ (augment)
+  const [whiteNecroPlusCharges,setWhiteNecroPlusCharges]=useState(0);
+  const [blackNecroPlusCharges,setBlackNecroPlusCharges]=useState(0);
+  const [whiteLostMinors,setWhiteLostMinors]=useState<PieceType[]>([]);
+  const [blackLostMinors,setBlackLostMinors]=useState<PieceType[]>([]);
+  const [necroPlusMode,setNecroPlusMode]=useState(false);
+
+  // Monolith permanent removal flag
+  const [whiteMonolithPermRemoved,setWhiteMonolithPermRemoved]=useState(false);
+  const [blackMonolithPermRemoved,setBlackMonolithPermRemoved]=useState(false);
+
   // Blessed Water Spell (augment)
   const [whiteBlessedWaterCharges,setWhiteBlessedWaterCharges]=useState(0);
   const [blackBlessedWaterCharges,setBlackBlessedWaterCharges]=useState(0);
@@ -725,12 +742,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // ── Grant effects ────────────────────────────────────────────────────────
 
   const grantPickedEffects=useCallback((aug:Augment,color:Color)=>{
-    if (aug.id==="oops")          { if(color==="white")setWhiteUndosLeft(u=>u+1);else setBlackUndosLeft(u=>u+1); }
+    if (aug.id==="oops")           { if(color==="white")setWhiteUndosLeft(u=>u+1);else setBlackUndosLeft(u=>u+1); }
     if (aug.id==="frost")              { if(color==="white")setWhiteFreezeCharges(n=>n+1);else setBlackFreezeCharges(n=>n+1); }
     if (aug.id==="blessed-water-spell"){ if(color==="white")setWhiteBlessedWaterCharges(n=>n+1);else setBlackBlessedWaterCharges(n=>n+1); }
-    if (aug.id==="necromancer")   { if(color==="white")setWhiteNecroCharges(n=>n+1);else setBlackNecroCharges(n=>n+1); }
+    if (aug.id==="necromancer")    { if(color==="white")setWhiteNecroCharges(n=>n+1);else setBlackNecroCharges(n=>n+1); }
+    if (aug.id==="necromancer-plus"){ if(color==="white")setWhiteNecroPlusCharges(n=>n+1);else setBlackNecroPlusCharges(n=>n+1); }
     if (aug.id==="royal-education"){ if(color==="white")setWhiteRoyalEdUsed(false);else setBlackRoyalEdUsed(false); }
     if (aug.id==="what")           { if(color==="white")setWhiteWhatUsed(false);else setBlackWhatUsed(false); }
+    if (aug.id==="instant-cash")   { setGame(g=>({...g,goldWhite:color==="white"?g.goldWhite+10:g.goldWhite,goldBlack:color==="black"?g.goldBlack+10:g.goldBlack})); }
   },[]);
 
   // ── MP: snapshot infrastructure ──────────────────────────────────────────
@@ -764,6 +783,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whiteBlessedWaterCharges,blackBlessedWaterCharges,
     whiteTierBought,blackTierBought,
     augmentQueue,currentTrigger,midGameOffered,
+    whiteNecroPlusCharges,blackNecroPlusCharges,whiteLostMinors,blackLostMinors,
+    whiteMonolithPermRemoved,blackMonolithPermRemoved,
   });
 
   // Apply a snapshot received from the opponent
@@ -827,6 +848,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setAugmentQueue(g.augmentQueue as AugmentTrigger[]);
     setCurrentTrigger(g.currentTrigger as AugmentTrigger|null);
     setMidGameOffered(g.midGameOffered as Augment[]);
+    setWhiteNecroPlusCharges(g.whiteNecroPlusCharges as number);
+    setBlackNecroPlusCharges(g.blackNecroPlusCharges as number);
+    setWhiteLostMinors(g.whiteLostMinors as PieceType[]);
+    setBlackLostMinors(g.blackLostMinors as PieceType[]);
+    setWhiteMonolithPermRemoved(g.whiteMonolithPermRemoved as boolean);
+    setBlackMonolithPermRemoved(g.blackMonolithPermRemoved as boolean);
     // Clear any active interaction mode on opponent's turn
     setSelected(null); setValidMoves([]);
     setFreezeMode(false); setNecroMode(false); setRoyalHouseholdMode(false);
@@ -834,7 +861,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setDeathNoteMode(false); setRoyalEdMode(false);
     setContractMode(false); setBlessedWaterMode(false);
     setPuppetMode(false); setWhatMode(false); setWhatSelected(null);
-    setMonolithMode(null); setShopOpen(false);
+    setMonolithMode(null); setShopOpen(false); setNecroPlusMode(false);
   };
 
   // MP: initialize augment effects on mount
@@ -947,6 +974,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const victimColor=opp(movingColor);
       if (victimColor==="white") setWhiteLostPawnCols(prev=>[...prev,to[1]]);
       else setBlackLostPawnCols(prev=>[...prev,to[1]]);
+    }
+    // Necromancer+: track lost knights/bishops
+    if (capturedType==="N"||capturedType==="B"){
+      const victimColor=opp(movingColor);
+      if (victimColor==="white") setWhiteLostMinors(prev=>[...prev,capturedType]);
+      else setBlackLostMinors(prev=>[...prev,capturedType]);
     }
 
     // Internal Combustion
@@ -1186,7 +1219,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setPuppetMode(false); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setNecroPlusMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setPuppetMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -1218,6 +1251,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const handleToggleDeathNote=useCallback(()=>{ const e=!deathNoteMode; clearModes(); setDeathNoteMode(e); },[deathNoteMode]);
   const handleToggleMonolithPlace=useCallback(()=>{ const e=monolithMode!=="place"; clearModes(); if(e) setMonolithMode("place"); },[monolithMode]);
   const handleToggleMonolithRemove=useCallback(()=>{ const e=monolithMode!=="remove"; clearModes(); if(e) setMonolithMode("remove"); },[monolithMode]);
+  const handleToggleNecroPlus=useCallback(()=>{
+    const entering=!necroPlusMode; clearModes(); setNecroPlusMode(entering);
+    if (entering){
+      const _bs=game.board.length; const _off=(_bs-8)/2;
+      const backRow=game.turn==="white"?7+_off:_off;
+      const validSquares:[number,number][]=[];
+      for (let c=0;c<_bs;c++) if (!game.board[backRow]?.[c]) validSquares.push([backRow,c]);
+      setValidMoves(validSquares);
+    }
+  },[necroPlusMode,game]);
   const handleToggleContract=useCallback(()=>{ const e=!contractMode; clearModes(); setContractMode(e); },[contractMode]);
   const handleToggleBlessedWater=useCallback(()=>{ const e=!blessedWaterMode; clearModes(); setBlessedWaterMode(e); },[blessedWaterMode]);
   const handleTogglePuppet=useCallback(()=>{ const e=!puppetMode; clearModes(); setPuppetMode(e); },[puppetMode]);
@@ -1279,8 +1322,31 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       if (piece?.type==="M"&&piece.color===game.turn){
         const nb=cloneBoard(game.board); nb[r][c]=null;
         setGame(g=>recomputeStatus({...g,board:nb}));
+        if (game.turn==="white") setWhiteMonolithPermRemoved(true); else setBlackMonolithPermRemoved(true);
       }
       setMonolithMode(null); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (necroPlusMode){
+      const playerColor=game.turn;
+      const _bs=game.board.length; const _off=(_bs-8)/2;
+      const backRow=playerColor==="white"?7+_off:_off;
+      const lostMinorsArr=playerColor==="white"?whiteLostMinors:blackLostMinors;
+      if (r===backRow&&!game.board[r][c]&&lostMinorsArr.length>0){
+        const pieceType=lostMinorsArr[lostMinorsArr.length-1];
+        const nb=cloneBoard(game.board); nb[r][c]={type:pieceType,color:playerColor};
+        const newGState=recomputeStatus({...game,board:nb,turn:opp(playerColor)});
+        setGameHistory(h=>[...h,game]); setGame(newGState);
+        if (playerColor==="white"){
+          setWhiteLostMinors(prev=>prev.slice(0,-1));
+          setWhiteNecroPlusCharges(n=>n-1);
+        }else{
+          setBlackLostMinors(prev=>prev.slice(0,-1));
+          setBlackNecroPlusCharges(n=>n-1);
+        }
+        requestSnapshot();
+      }
+      setNecroPlusMode(false); setSelected(null); setValidMoves([]); return;
     }
 
     if (contractMode){
@@ -1495,6 +1561,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whiteLostPawnCols,blackLostPawnCols,whiteAugments,blackAugments,executeMove,
     deathNoteMode,monolithMode,contractMode,blessedWaterMode,puppetMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
     coldWindsMovesLeft,coldWindsSquares,blessedSquares,wallSquares,activePuppetSquare,activePuppetColor,
+    necroPlusMode,whiteLostMinors,blackLostMinors,requestSnapshot,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1531,6 +1598,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setWhitePuppetUsed(false); setBlackPuppetUsed(false); setPuppetMode(false); setActivePuppetSquare(null); setActivePuppetColor(null);
     setMonolithMode(null);
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
+    setWhiteNecroPlusCharges(0); setBlackNecroPlusCharges(0); setWhiteLostMinors([]); setBlackLostMinors([]); setNecroPlusMode(false);
+    setWhiteMonolithPermRemoved(false); setBlackMonolithPermRemoved(false);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -1561,6 +1630,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     necroActive:    necroMode&&game.turn===color,
     hasNecroTargets:color==="white"?whiteHasNecroTargets:blackHasNecroTargets,
     onNecro:        spellGuard(handleToggleNecro),
+    necroPlusCharges:color==="white"?whiteNecroPlusCharges:blackNecroPlusCharges,
+    necroPlusActive: necroPlusMode&&game.turn===color,
+    hasNecroPlusTargets:color==="white"?(whiteLostMinors.length>0):(blackLostMinors.length>0),
+    onNecroPlus:    spellGuard(handleToggleNecroPlus),
     royalEdAvailable:color==="white"?(!whiteRoyalEdUsed&&whiteAugments.some(a=>a.id==="royal-education")):(!blackRoyalEdUsed&&blackAugments.some(a=>a.id==="royal-education")),
     royalEdActive:  royalEdMode&&game.turn===color,
     onRoyalEd:      spellGuard(handleToggleRoyalEd),
@@ -1585,8 +1658,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       :(!blackDomainUsed&&!boardExpanded&&blackAugments.some(a=>a.id==="domain-expansion")),
     onDomain: spellGuard(handleDomainExpansion),
     monolithPlaceAvailable: color==="white"
-      ?(whiteAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white")))
-      :(blackAugments.some(a=>a.id==="impassable")&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black"))),
+      ?(whiteAugments.some(a=>a.id==="impassable")&&!whiteMonolithPermRemoved&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="white")))
+      :(blackAugments.some(a=>a.id==="impassable")&&!blackMonolithPermRemoved&&!game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black"))),
     monolithPlaceActive: monolithMode==="place"&&game.turn===color,
     onMonolithPlace: spellGuard(handleToggleMonolithPlace),
     monolithRemoveAvailable: color==="white"
@@ -1594,8 +1667,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       :game.board.some(row=>row.some(sq=>sq?.type==="M"&&sq.color==="black")),
     onMonolithRemove: spellGuard(handleToggleMonolithRemove),
     contractAvailable: color==="white"
-      ?(whiteAugments.some(a=>a.id==="contract-killer")&&whiteContractTarget===null)
-      :(blackAugments.some(a=>a.id==="contract-killer")&&blackContractTarget===null),
+      ?whiteAugments.some(a=>a.id==="contract-killer")
+      :blackAugments.some(a=>a.id==="contract-killer"),
     contractActive: contractMode&&game.turn===color,
     onContract: spellGuard(handleToggleContract),
     contractTarget: color==="white"?whiteContractTarget:blackContractTarget,
@@ -1618,6 +1691,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const modeBanner=(()=>{
     if (freezeMode) return {text:"❄️ Click an enemy piece to freeze it (not king)",color:"#06b6d4"};
     if (necroMode)  return {text:"💀 Click a home-rank square to revive a pawn",color:"#a855f7"};
+    if (necroPlusMode) return {text:"💀✨ Click your back rank to revive a captured knight/bishop",color:"#c084fc"};
     if (royalEdMode)return {text:"♞ Click a destination for your king's knight move",color:"#facc15"};
     if (whatMode&&!whatSelected) return {text:"↔️ Click one of your pawns to move it sideways",color:"#f97316"};
     if (whatMode&&whatSelected)  return {text:"↔️ Click the destination square",color:"#f97316"};
