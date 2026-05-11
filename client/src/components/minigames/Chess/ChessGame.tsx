@@ -2418,6 +2418,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [whiteLostMinors, setWhiteLostMinors] = useState<PieceType[]>([]);
   const [blackLostMinors, setBlackLostMinors] = useState<PieceType[]>([]);
   const [necroPlusMode, setNecroPlusMode] = useState(false);
+  const [necroPlusChoice, setNecroPlusChoice] = useState<PieceType | null>(null);
 
   // Monolith permanent removal flag
   const [whiteMonolithPermRemoved, setWhiteMonolithPermRemoved] =
@@ -2698,6 +2699,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setMonolithMode(null);
     setShopOpen(false);
     setNecroPlusMode(false);
+    setNecroPlusChoice(null);
     setIlkkanMode(false);
   };
 
@@ -3696,7 +3698,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const lostMinorsArr =
           playerColor === "white" ? whiteLostMinors : blackLostMinors;
         if (r === backRow && !game.board[r][c] && lostMinorsArr.length > 0) {
-          const pieceType = lostMinorsArr[lostMinorsArr.length - 1];
+          const pieceType =
+            necroPlusChoice && lostMinorsArr.includes(necroPlusChoice)
+              ? necroPlusChoice
+              : lostMinorsArr.includes("B")
+                ? "B"
+                : "N";
           const nb = cloneBoard(game.board);
           nb[r][c] = { type: pieceType, color: playerColor };
           const newGState = recomputeStatus({
@@ -3724,15 +3731,28 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           }]);
           setGame(newGState);
           if (playerColor === "white") {
-            setWhiteLostMinors((prev) => prev.slice(0, -1));
+            setWhiteLostMinors((prev) => {
+              const idx = prev.lastIndexOf(pieceType);
+              if (idx === -1) return prev;
+              const next = [...prev];
+              next.splice(idx, 1);
+              return next;
+            });
             setWhiteNecroPlusCharges((n) => n - 1);
           } else {
-            setBlackLostMinors((prev) => prev.slice(0, -1));
+            setBlackLostMinors((prev) => {
+              const idx = prev.lastIndexOf(pieceType);
+              if (idx === -1) return prev;
+              const next = [...prev];
+              next.splice(idx, 1);
+              return next;
+            });
             setBlackNecroPlusCharges((n) => n - 1);
           }
           requestSnapshot();
         }
         setNecroPlusMode(false);
+        setNecroPlusChoice(null);
         setSelected(null);
         setValidMoves([]);
         return;
@@ -3748,8 +3768,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         ) {
           if (game.turn === "white") setWhiteContractTarget([r, c]);
           else setBlackContractTarget([r, c]);
+          if (game.turn === "white") setWhiteAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
+          else setBlackAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
+          setContractMode(false);
         }
-        setContractMode(false);
         setSelected(null);
         setValidMoves([]);
         return;
