@@ -5,7 +5,7 @@
 
 export type PieceType = "K" | "Q" | "R" | "B" | "N" | "P" | "M";
 export type Color = "white" | "black";
-export interface Piece { type: PieceType; color: Color; }
+export interface Piece { type: PieceType; color: Color; id?: string; }
 export type Square = Piece | null;
 export type Board = Square[][];  // [row][col], row 0 = rank 8 (top), row 7 = rank 1 (bottom)
 
@@ -389,11 +389,12 @@ export function makeMove(
 
 export function createInitialState(): ChessState {
   const board: Board = Array(8).fill(null).map(() => Array(8).fill(null));
+  const FILES = ["a","b","c","d","e","f","g","h"];
   for (let c = 0; c < 8; c++) {
-    board[0][c] = { type: BACK_RANK[c], color: "black" };
-    board[1][c] = { type: "P", color: "black" };
-    board[6][c] = { type: "P", color: "white" };
-    board[7][c] = { type: BACK_RANK[c], color: "white" };
+    board[0][c] = { type: BACK_RANK[c], color: "black", id: `b${BACK_RANK[c]}${FILES[c]}` };
+    board[1][c] = { type: "P", color: "black", id: `bP${c}` };
+    board[6][c] = { type: "P", color: "white", id: `wP${c}` };
+    board[7][c] = { type: BACK_RANK[c], color: "white", id: `w${BACK_RANK[c]}${FILES[c]}` };
   }
   return {
     board,

@@ -710,8 +710,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [blackMonolithPermRemoved,setBlackMonolithPermRemoved]=useState(false);
 
   // İlkkan (augment)
-  const [whiteIlkkanSquare,setWhiteIlkkanSquare]=useState<[number,number]|null>(null);
-  const [blackIlkkanSquare,setBlackIlkkanSquare]=useState<[number,number]|null>(null);
+  const [whiteIlkkanId,setWhiteIlkkanId]=useState<string|null>(null);
+  const [blackIlkkanId,setBlackIlkkanId]=useState<string|null>(null);
   const [whiteIlkkanChosen,setWhiteIlkkanChosen]=useState(false);
   const [blackIlkkanChosen,setBlackIlkkanChosen]=useState(false);
   const [ilkkanMode,setIlkkanMode]=useState(false);
@@ -797,7 +797,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     augmentQueue,currentTrigger,midGameOffered,
     whiteNecroPlusCharges,blackNecroPlusCharges,whiteLostMinors,blackLostMinors,
     whiteMonolithPermRemoved,blackMonolithPermRemoved,
-    whiteIlkkanSquare,blackIlkkanSquare,whiteIlkkanChosen,blackIlkkanChosen,
+    whiteIlkkanId,blackIlkkanId,whiteIlkkanChosen,blackIlkkanChosen,
   });
 
   // Apply a snapshot received from the opponent
@@ -867,8 +867,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackLostMinors(g.blackLostMinors as PieceType[]);
     setWhiteMonolithPermRemoved(g.whiteMonolithPermRemoved as boolean);
     setBlackMonolithPermRemoved(g.blackMonolithPermRemoved as boolean);
-    setWhiteIlkkanSquare(g.whiteIlkkanSquare as [number,number]|null);
-    setBlackIlkkanSquare(g.blackIlkkanSquare as [number,number]|null);
+    setWhiteIlkkanId(g.whiteIlkkanId as string|null);
+    setBlackIlkkanId(g.blackIlkkanId as string|null);
     setWhiteIlkkanChosen(g.whiteIlkkanChosen as boolean);
     setBlackIlkkanChosen(g.blackIlkkanChosen as boolean);
     // Clear any active interaction mode on opponent's turn
@@ -999,30 +999,32 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       else setBlackLostMinors(prev=>[...prev,capturedType]);
     }
 
-    // İlkkan: track pawn movement and handle capture-transform
+    // İlkkan: ID-based tracking — no coordinate updates needed, ID travels with piece
     {
-      const myIlkSq=movingColor==="white"?whiteIlkkanSquare:blackIlkkanSquare;
-      const setMyIlkSq=movingColor==="white"?setWhiteIlkkanSquare:setBlackIlkkanSquare;
-      if (myIlkSq&&myIlkSq[0]===from[0]&&myIlkSq[1]===from[1]){
+      const movingPieceId=game.board[from[0]][from[1]]?.id??null;
+      const myIlkId=movingColor==="white"?whiteIlkkanId:blackIlkkanId;
+      const setMyIlkId=movingColor==="white"?setWhiteIlkkanId:setBlackIlkkanId;
+      if (movingPieceId&&movingPieceId===myIlkId){
         if (capturedType==="R"||capturedType==="B"||capturedType==="N"){
-          // İlkkan pawn transforms into the captured piece
+          // İlkkan pawn transforms into the captured piece — strip ID (no longer a pawn)
           const nb2=cloneBoard(newGame.board);
           nb2[to[0]][to[1]]={type:capturedType,color:movingColor};
           newGame={...newGame,board:nb2};
-          setMyIlkSq(null);
+          setMyIlkId(null);
         } else if (promotion){
-          // İlkkan pawn promoted — no longer ilkkan
-          setMyIlkSq(null);
-        } else {
-          setMyIlkSq(to);
+          // İlkkan pawn promoted — engine already replaced piece, clear tracking
+          setMyIlkId(null);
         }
+        // else: normal move — ID already traveled with piece via { ...piece } in applyMoveToBoard
       }
-      // Clear ilkkan if the ilkkan pawn itself was captured by the opponent
-      const enemyIlkSq=movingColor==="white"?blackIlkkanSquare:whiteIlkkanSquare;
-      const setEnemyIlkSq=movingColor==="white"?setBlackIlkkanSquare:setWhiteIlkkanSquare;
-      if (enemyIlkSq&&enemyIlkSq[0]===to[0]&&enemyIlkSq[1]===to[1]){
-        setEnemyIlkSq(null);
-      }
+      // Clear enemy ilkkan if their pawn was captured (regular capture or en passant)
+      const isEP=game.board[from[0]][from[1]]?.type==="P"&&from[1]!==to[1]&&!game.board[to[0]][to[1]];
+      const capturedPieceId=isEP
+        ? game.board[from[0]][to[1]]?.id??null
+        : game.board[to[0]][to[1]]?.id??null;
+      const enemyIlkId=movingColor==="white"?blackIlkkanId:whiteIlkkanId;
+      const setEnemyIlkId=movingColor==="white"?setBlackIlkkanId:setWhiteIlkkanId;
+      if (capturedPieceId&&capturedPieceId===enemyIlkId) setEnemyIlkId(null);
     }
 
     // Internal Combustion
@@ -1242,7 +1244,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
     peaceTreatyMovesLeft,nextEventTurn,activeNuke,coldWindsMovesLeft,whiteContractTarget,blackContractTarget,
     wallMovesLeft,activePuppetColor,activePuppetSquare,eventInterval,requestSnapshot,
-    whiteIlkkanSquare,blackIlkkanSquare,
+    whiteIlkkanId,blackIlkkanId,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
@@ -1380,9 +1382,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     }
 
     if (ilkkanMode){
-      if (piece&&piece.type==="P"&&piece.color===game.turn){
-        if (game.turn==="white"){ setWhiteIlkkanSquare([r,c]); setWhiteIlkkanChosen(true); }
-        else { setBlackIlkkanSquare([r,c]); setBlackIlkkanChosen(true); }
+      if (piece&&piece.type==="P"&&piece.color===game.turn&&piece.id){
+        if (game.turn==="white"){ setWhiteIlkkanId(piece.id); setWhiteIlkkanChosen(true); }
+        else { setBlackIlkkanId(piece.id); setBlackIlkkanChosen(true); }
       }
       setIlkkanMode(false); setSelected(null); setValidMoves([]); return;
     }
@@ -1622,7 +1624,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     deathNoteMode,monolithMode,contractMode,blessedWaterMode,puppetMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
     coldWindsMovesLeft,coldWindsSquares,blessedSquares,wallSquares,activePuppetSquare,activePuppetColor,
     necroPlusMode,whiteLostMinors,blackLostMinors,requestSnapshot,
-    ilkkanMode,whiteIlkkanSquare,blackIlkkanSquare,
+    ilkkanMode,whiteIlkkanId,blackIlkkanId,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1661,7 +1663,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
     setWhiteNecroPlusCharges(0); setBlackNecroPlusCharges(0); setWhiteLostMinors([]); setBlackLostMinors([]); setNecroPlusMode(false);
     setWhiteMonolithPermRemoved(false); setBlackMonolithPermRemoved(false);
-    setWhiteIlkkanSquare(null); setBlackIlkkanSquare(null); setWhiteIlkkanChosen(false); setBlackIlkkanChosen(false); setIlkkanMode(false);
+    setWhiteIlkkanId(null); setBlackIlkkanId(null); setWhiteIlkkanChosen(false); setBlackIlkkanChosen(false); setIlkkanMode(false);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -1815,7 +1817,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             const contractMark=!!(whiteContractTarget&&whiteContractTarget[0]===r&&whiteContractTarget[1]===c)||!!(blackContractTarget&&blackContractTarget[0]===r&&blackContractTarget[1]===c);
             const isWall=wallSquares.some(w=>w.row===r&&w.col===c);
             const isPuppet=!!(activePuppetSquare&&activePuppetSquare[0]===r&&activePuppetSquare[1]===c);
-            const isIlkkanSq=!!(whiteIlkkanSquare&&whiteIlkkanSquare[0]===r&&whiteIlkkanSquare[1]===c)||!!(blackIlkkanSquare&&blackIlkkanSquare[0]===r&&blackIlkkanSquare[1]===c);
+            const isIlkkanSq=!!(piece?.id&&(piece.id===whiteIlkkanId||piece.id===blackIlkkanId));
             return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark} isWall={isWall} isPuppet={isPuppet} isIlkkan={isIlkkanSq}/>;
           }))}
         </div>
