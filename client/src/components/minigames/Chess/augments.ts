@@ -125,7 +125,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). Once removed, it is gone forever." },
   { id:"necromancer",  name:"Necromancer",  rarity:"rare",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   { id:"blessed-water-spell", name:"Blessed Water", rarity:"rare", icon:"💧", description:"Bless any square (instant, free). The piece on that square cannot be captured for 2 rounds." },
-  { id:"ilkkan", name:"İlkkan", rarity:"rare", icon:"🧑", description:"You have no personality ilkkan. İlkkanify one of your pawn. If İlkkan captures a rook, bishop, or knight — it transforms into that piece." },
+  { id:"ilkkan", name:"İlkkan", rarity:"rare", icon:"🧑", description:"You have no personality ilkkan. One of your pawns becomes İlkkan. If İlkkan captures a rook, bishop, or knight — it transforms into that piece." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive one lost knight or bishop to any empty square on your home rank." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },

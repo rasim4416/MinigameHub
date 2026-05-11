@@ -17,7 +17,7 @@ export default function ChessHub() {
       gap: 20,
     }}>
       <div style={{ fontSize: 48 }}>♟️</div>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Chess Augmented</h2>
+      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Chess Roguelike</h2>
       <p style={{ margin: 0, color: "#9ca3af", fontSize: 14 }}>Choose your game mode</p>
       <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
         <button
