@@ -36,10 +36,10 @@ const HeroChessCard = () => {
         </div>
         <div>
           <h2 className={`text-3xl font-extrabold tracking-tight transition-colors duration-200 ${hovered ? "text-indigo-300" : "text-white"}`}>
-            Chess Uncommon
+            Chess Augmented
           </h2>
           <p className="mt-2 text-gray-400 text-base max-w-sm mx-auto">
-            Classic chess with uncommon augments — local or online multiplayer
+            Classic chess with augments — local or online multiplayer
           </p>
           <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
             version 1.0.1
