@@ -199,7 +199,7 @@ const LIGHT_SQ="#f0d9b5",DARK_SQ="#b58863",SEL_LIGHT="#f6f669",SEL_DARK="#baca2b
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
-function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft,isBlessed,isColdWind,contractMark,isWall,isPuppet}:{
+function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckKing,isCenter,isFrozen,onClick,boardSize,deathNoteCount,isNuke,nukeMovesLeft,isBlessed,isColdWind,contractMark,isWall,isPuppet,isIlkkan}:{
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
   onClick:()=>void;boardSize:number;deathNoteCount?:number;isNuke?:boolean;nukeMovesLeft?:number;
