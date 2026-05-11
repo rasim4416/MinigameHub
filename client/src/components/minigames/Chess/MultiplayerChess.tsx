@@ -149,13 +149,9 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
         setOfferedAugs(rollAugments(3));
         setLobbyPhase("picking_augment");
         break;
-      case "opponent_augment": {
-        const oppId = lastMsg.augmentId as string;
-        setOpponentAugmentId(oppId);
-        // If we're still on the pick screen, remove the opponent's chosen augment from our offered list
-        setOfferedAugs(prev => prev.filter(a => a.id !== oppId));
+      case "opponent_augment":
+        setOpponentAugmentId(lastMsg.augmentId as string);
         break;
-      }
       case "start":
         setLobbyPhase("playing");
         break;

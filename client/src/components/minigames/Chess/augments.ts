@@ -57,13 +57,15 @@ export function getShopCost(rarity: Rarity, tierBought: number): number {
 
 export type RarityWeights = Record<Rarity, number>;
 
-export const DEFAULT_WEIGHTS: RarityWeights     = { common:40, uncommon:34, rare:20, epic:5,  legendary:1 };
-export const MASTERMIND_WEIGHTS: RarityWeights  = { common:30, uncommon:30, rare:27, epic:10, legendary:3 };
+export const DEFAULT_WEIGHTS: RarityWeights         = { common:40, uncommon:34, rare:20, epic:5,  legendary:1 };
+export const MASTERMIND_WEIGHTS: RarityWeights      = { common:30, uncommon:30, rare:27, epic:10, legendary:3 };
 export const MASTERMIND_PLUS_WEIGHTS: RarityWeights = { common:15, uncommon:18, rare:25, epic:30, legendary:12 };
+export const MASTERMIND_BOTH_WEIGHTS: RarityWeights = { common:5,  uncommon:10, rare:20, epic:40, legendary:25 };
 
 export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
   const hasMMP = augments.some(a => a.id === "mastermind-plus");
   const hasMM  = augments.some(a => a.id === "mastermind");
+  if (hasMMP && hasMM) return MASTERMIND_BOTH_WEIGHTS;
   if (hasMMP) return MASTERMIND_PLUS_WEIGHTS;
   if (hasMM)  return MASTERMIND_WEIGHTS;
   return DEFAULT_WEIGHTS;
@@ -96,6 +98,7 @@ export const MAX_STACK: Record<string, number> = {
   "contract-killer":     1,
   "blessed-water-spell": 2,
   "instant-cash":        99,
+  "ilkkan":              1,
 };
 
 // ─── Augments that cannot be purchased in the shop ────────────────────────────
@@ -122,6 +125,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). Once removed, it is gone forever." },
   { id:"necromancer",  name:"Necromancer",  rarity:"rare",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   { id:"blessed-water-spell", name:"Blessed Water", rarity:"rare", icon:"💧", description:"Bless any square (instant, free). The piece on that square cannot be captured for 2 rounds." },
+  { id:"ilkkan", name:"İlkkan", rarity:"rare", icon:"🧑", description:"You have no personality ilkkan. One of your pawns becomes İlkkan. If İlkkan captures a rook, bishop, or knight — it transforms into that piece." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive one lost knight or bishop to any empty square on your home rank." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },

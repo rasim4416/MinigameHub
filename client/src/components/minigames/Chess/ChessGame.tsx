@@ -203,7 +203,7 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
   row:number;col:number;size:number;piece:{type:PieceType;color:Color}|null;
   isSelected:boolean;isValidMove:boolean;isLastMove:boolean;isCheckKing:boolean;isCenter:boolean;isFrozen:boolean;
   onClick:()=>void;boardSize:number;deathNoteCount?:number;isNuke?:boolean;nukeMovesLeft?:number;
-  isBlessed?:boolean;isColdWind?:boolean;contractMark?:boolean;isWall?:boolean;isPuppet?:boolean;
+  isBlessed?:boolean;isColdWind?:boolean;contractMark?:boolean;isWall?:boolean;isPuppet?:boolean;isIlkkan?:boolean;
 }) {
   const light=(row+col)%2===0;
   let bg=light?LIGHT_SQ:DARK_SQ;
@@ -227,7 +227,10 @@ function SquareEl({row,col,size,piece,isSelected,isValidMove,isLastMove,isCheckK
       {isValidMove&&!piece&&<div style={{width:dot,height:dot,borderRadius:"50%",backgroundColor:"rgba(0,0,0,0.22)",pointerEvents:"none"}}/>}
       {isValidMove&&piece&&!isMonolith&&<div style={{position:"absolute",inset:ring,borderRadius:"50%",border:`${Math.max(3,size*0.07)}px solid rgba(0,0,0,0.28)`,pointerEvents:"none"}}/>}
       {isMonolith&&<div style={{width:size*0.72,height:size*0.72,background:"linear-gradient(145deg,#475569,#1e293b)",border:"2px solid #64748b",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 3px 10px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.1)",pointerEvents:"none",position:"relative",zIndex:1}}><span style={{fontSize:size*0.38,lineHeight:1,userSelect:"none"}}>🗿</span></div>}
-      {piece&&!isMonolith&&<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>}
+      {piece&&!isMonolith&&(isIlkkan
+        ?<img src="/ilkkan.jpeg" alt="İlkkan" style={{width:size*0.78,height:size*0.78,objectFit:"cover",borderRadius:"50%",pointerEvents:"none",position:"relative",zIndex:1,boxShadow:piece.color==="white"?"0 0 0 2px #fff,0 0 6px #000":"0 0 0 2px #1a0f00,0 0 6px rgba(255,255,255,0.5)"}}/>
+        :<span style={{fontSize:size*0.72,lineHeight:1,color:piece.color==="white"?"#ffffff":"#1a0f00",textShadow:piece.color==="white"?"0 0 3px #000,0 0 6px #000,1px 1px 0 #222":"0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",userSelect:"none",pointerEvents:"none",position:"relative",zIndex:1}}>{PIECE_UNICODE[piece.color][piece.type]}</span>
+      )}
     </div>
   );
 }
@@ -496,6 +499,7 @@ type SpellState={
   freezeCharges:number;freezeActive:boolean;onFreeze:()=>void;
   necroCharges:number;necroActive:boolean;hasNecroTargets:boolean;onNecro:()=>void;
   necroPlusCharges:number;necroPlusActive:boolean;hasNecroPlusTargets:boolean;onNecroPlus:()=>void;
+  ilkkanAvailable:boolean;ilkkanActive:boolean;onIlkkan:()=>void;
   royalEdAvailable:boolean;royalEdActive:boolean;onRoyalEd:()=>void;
   whatAvailable:boolean;whatActive:boolean;onWhat:()=>void;
   sakoAvailable:boolean;sakoActive:boolean;onSako:()=>void;
@@ -536,6 +540,7 @@ function PlayerBar({color,isActive,isOver,phase,augments,gold,capturedPieces,adv
         {canAct&&spells.freezeCharges>0&&<SpellButton icon="❄️" label="FREEZE" active={spells.freezeActive} count={spells.freezeCharges} onClick={spells.onFreeze} title="Freeze an enemy piece for 1 opponent turn"/>}
         {canAct&&spells.necroCharges>0&&spells.hasNecroTargets&&<SpellButton icon="💀" label="REVIVE" active={spells.necroActive} onClick={spells.onNecro} title="Resurrect a captured pawn at its home square"/>}
         {canAct&&spells.necroPlusCharges>0&&spells.hasNecroPlusTargets&&<SpellButton icon="💀✨" label="REVIVE+" active={spells.necroPlusActive} onClick={spells.onNecroPlus} title="Revive a captured knight or bishop to your home rank"/>}
+        {canAct&&spells.ilkkanAvailable&&<SpellButton icon="🧑" label="ILKKAN" active={spells.ilkkanActive} onClick={spells.onIlkkan} title="Click a pawn to make it İlkkan — it transforms into any R/B/N it captures"/>}
         {canAct&&spells.royalEdAvailable&&<SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)"/>}
         {canAct&&spells.whatAvailable&&<SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} title="Move one pawn sideways one square (one time)"/>}
         {canAct&&spells.sakoAvailable&&<SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece to your half board (free action)"/>}
@@ -704,6 +709,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [whiteMonolithPermRemoved,setWhiteMonolithPermRemoved]=useState(false);
   const [blackMonolithPermRemoved,setBlackMonolithPermRemoved]=useState(false);
 
+  // İlkkan (augment)
+  const [whiteIlkkanSquare,setWhiteIlkkanSquare]=useState<[number,number]|null>(null);
+  const [blackIlkkanSquare,setBlackIlkkanSquare]=useState<[number,number]|null>(null);
+  const [whiteIlkkanChosen,setWhiteIlkkanChosen]=useState(false);
+  const [blackIlkkanChosen,setBlackIlkkanChosen]=useState(false);
+  const [ilkkanMode,setIlkkanMode]=useState(false);
+
   // Blessed Water Spell (augment)
   const [whiteBlessedWaterCharges,setWhiteBlessedWaterCharges]=useState(0);
   const [blackBlessedWaterCharges,setBlackBlessedWaterCharges]=useState(0);
@@ -785,6 +797,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     augmentQueue,currentTrigger,midGameOffered,
     whiteNecroPlusCharges,blackNecroPlusCharges,whiteLostMinors,blackLostMinors,
     whiteMonolithPermRemoved,blackMonolithPermRemoved,
+    whiteIlkkanSquare,blackIlkkanSquare,whiteIlkkanChosen,blackIlkkanChosen,
   });
 
   // Apply a snapshot received from the opponent
@@ -854,6 +867,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackLostMinors(g.blackLostMinors as PieceType[]);
     setWhiteMonolithPermRemoved(g.whiteMonolithPermRemoved as boolean);
     setBlackMonolithPermRemoved(g.blackMonolithPermRemoved as boolean);
+    setWhiteIlkkanSquare(g.whiteIlkkanSquare as [number,number]|null);
+    setBlackIlkkanSquare(g.blackIlkkanSquare as [number,number]|null);
+    setWhiteIlkkanChosen(g.whiteIlkkanChosen as boolean);
+    setBlackIlkkanChosen(g.blackIlkkanChosen as boolean);
     // Clear any active interaction mode on opponent's turn
     setSelected(null); setValidMoves([]);
     setFreezeMode(false); setNecroMode(false); setRoyalHouseholdMode(false);
@@ -861,7 +878,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setDeathNoteMode(false); setRoyalEdMode(false);
     setContractMode(false); setBlessedWaterMode(false);
     setPuppetMode(false); setWhatMode(false); setWhatSelected(null);
-    setMonolithMode(null); setShopOpen(false); setNecroPlusMode(false);
+    setMonolithMode(null); setShopOpen(false); setNecroPlusMode(false); setIlkkanMode(false);
   };
 
   // MP: initialize augment effects on mount
@@ -980,6 +997,32 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const victimColor=opp(movingColor);
       if (victimColor==="white") setWhiteLostMinors(prev=>[...prev,capturedType]);
       else setBlackLostMinors(prev=>[...prev,capturedType]);
+    }
+
+    // İlkkan: track pawn movement and handle capture-transform
+    {
+      const myIlkSq=movingColor==="white"?whiteIlkkanSquare:blackIlkkanSquare;
+      const setMyIlkSq=movingColor==="white"?setWhiteIlkkanSquare:setBlackIlkkanSquare;
+      if (myIlkSq&&myIlkSq[0]===from[0]&&myIlkSq[1]===from[1]){
+        if (capturedType==="R"||capturedType==="B"||capturedType==="N"){
+          // İlkkan pawn transforms into the captured piece
+          const nb2=cloneBoard(newGame.board);
+          nb2[to[0]][to[1]]={type:capturedType,color:movingColor};
+          newGame={...newGame,board:nb2};
+          setMyIlkSq(null);
+        } else if (promotion){
+          // İlkkan pawn promoted — no longer ilkkan
+          setMyIlkSq(null);
+        } else {
+          setMyIlkSq(to);
+        }
+      }
+      // Clear ilkkan if the ilkkan pawn itself was captured by the opponent
+      const enemyIlkSq=movingColor==="white"?blackIlkkanSquare:whiteIlkkanSquare;
+      const setEnemyIlkSq=movingColor==="white"?setBlackIlkkanSquare:setWhiteIlkkanSquare;
+      if (enemyIlkSq&&enemyIlkSq[0]===to[0]&&enemyIlkSq[1]===to[1]){
+        setEnemyIlkSq(null);
+      }
     }
 
     // Internal Combustion
@@ -1219,7 +1262,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setNecroPlusMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setPuppetMode(false); setSelected(null); setValidMoves([]); };
+  const clearModes=()=>{ setFreezeMode(false); setNecroMode(false); setNecroPlusMode(false); setIlkkanMode(false); setRoyalEdMode(false); setWhatMode(false); setWhatSelected(null); setSakoMode(false); setSakoSelected(null); setRoyalHouseholdMode(false); setDeathNoteMode(false); setMonolithMode(null); setContractMode(false); setBlessedWaterMode(false); setPuppetMode(false); setSelected(null); setValidMoves([]); };
 
   const handleToggleFreeze=useCallback(()=>{ const e=!freezeMode; clearModes(); setFreezeMode(e); },[freezeMode]);
   const handleToggleNecro=useCallback(()=>{
@@ -1251,6 +1294,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const handleToggleDeathNote=useCallback(()=>{ const e=!deathNoteMode; clearModes(); setDeathNoteMode(e); },[deathNoteMode]);
   const handleToggleMonolithPlace=useCallback(()=>{ const e=monolithMode!=="place"; clearModes(); if(e) setMonolithMode("place"); },[monolithMode]);
   const handleToggleMonolithRemove=useCallback(()=>{ const e=monolithMode!=="remove"; clearModes(); if(e) setMonolithMode("remove"); },[monolithMode]);
+  const handleToggleIlkkan=useCallback(()=>{
+    const entering=!ilkkanMode; clearModes(); setIlkkanMode(entering);
+    if (entering){
+      const pawns:[number,number][]=[];
+      game.board.forEach((row,r)=>row.forEach((p,c)=>{ if(p?.type==="P"&&p.color===game.turn) pawns.push([r,c]); }));
+      setValidMoves(pawns);
+    }
+  },[ilkkanMode,game]);
   const handleToggleNecroPlus=useCallback(()=>{
     const entering=!necroPlusMode; clearModes(); setNecroPlusMode(entering);
     if (entering){
@@ -1325,6 +1376,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (game.turn==="white") setWhiteMonolithPermRemoved(true); else setBlackMonolithPermRemoved(true);
       }
       setMonolithMode(null); setSelected(null); setValidMoves([]); return;
+    }
+
+    if (ilkkanMode){
+      if (piece&&piece.type==="P"&&piece.color===game.turn){
+        if (game.turn==="white"){ setWhiteIlkkanSquare([r,c]); setWhiteIlkkanChosen(true); }
+        else { setBlackIlkkanSquare([r,c]); setBlackIlkkanChosen(true); }
+      }
+      setIlkkanMode(false); setSelected(null); setValidMoves([]); return;
     }
 
     if (necroPlusMode){
@@ -1562,6 +1621,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     deathNoteMode,monolithMode,contractMode,blessedWaterMode,puppetMode,whiteTurnCount,blackTurnCount,peaceTreatyMovesLeft,
     coldWindsMovesLeft,coldWindsSquares,blessedSquares,wallSquares,activePuppetSquare,activePuppetColor,
     necroPlusMode,whiteLostMinors,blackLostMinors,requestSnapshot,
+    ilkkanMode,whiteIlkkanSquare,blackIlkkanSquare,
   ]);
 
   const handlePromotion=useCallback((type:PieceType)=>{
@@ -1600,6 +1660,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setShopOpen(false); setWhiteTierBought({...EMPTY_TIER}); setBlackTierBought({...EMPTY_TIER});
     setWhiteNecroPlusCharges(0); setBlackNecroPlusCharges(0); setWhiteLostMinors([]); setBlackLostMinors([]); setNecroPlusMode(false);
     setWhiteMonolithPermRemoved(false); setBlackMonolithPermRemoved(false);
+    setWhiteIlkkanSquare(null); setBlackIlkkanSquare(null); setWhiteIlkkanChosen(false); setBlackIlkkanChosen(false); setIlkkanMode(false);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -1634,6 +1695,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     necroPlusActive: necroPlusMode&&game.turn===color,
     hasNecroPlusTargets:color==="white"?(whiteLostMinors.length>0):(blackLostMinors.length>0),
     onNecroPlus:    spellGuard(handleToggleNecroPlus),
+    ilkkanAvailable: color==="white"
+      ?(whiteAugments.some(a=>a.id==="ilkkan")&&!whiteIlkkanChosen)
+      :(blackAugments.some(a=>a.id==="ilkkan")&&!blackIlkkanChosen),
+    ilkkanActive:   ilkkanMode&&game.turn===color,
+    onIlkkan:       spellGuard(handleToggleIlkkan),
     royalEdAvailable:color==="white"?(!whiteRoyalEdUsed&&whiteAugments.some(a=>a.id==="royal-education")):(!blackRoyalEdUsed&&blackAugments.some(a=>a.id==="royal-education")),
     royalEdActive:  royalEdMode&&game.turn===color,
     onRoyalEd:      spellGuard(handleToggleRoyalEd),
@@ -1692,6 +1758,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     if (freezeMode) return {text:"❄️ Click an enemy piece to freeze it (not king)",color:"#06b6d4"};
     if (necroMode)  return {text:"💀 Click a home-rank square to revive a pawn",color:"#a855f7"};
     if (necroPlusMode) return {text:"💀✨ Click your back rank to revive a captured knight/bishop",color:"#c084fc"};
+    if (ilkkanMode) return {text:"🧑 ILKKAN — Click one of your pawns to mark it as İlkkan",color:"#6b7280"};
     if (royalEdMode)return {text:"♞ Click a destination for your king's knight move",color:"#facc15"};
     if (whatMode&&!whatSelected) return {text:"↔️ Click one of your pawns to move it sideways",color:"#f97316"};
     if (whatMode&&whatSelected)  return {text:"↔️ Click the destination square",color:"#f97316"};
@@ -1747,7 +1814,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             const contractMark=!!(whiteContractTarget&&whiteContractTarget[0]===r&&whiteContractTarget[1]===c)||!!(blackContractTarget&&blackContractTarget[0]===r&&blackContractTarget[1]===c);
             const isWall=wallSquares.some(w=>w.row===r&&w.col===c);
             const isPuppet=!!(activePuppetSquare&&activePuppetSquare[0]===r&&activePuppetSquare[1]===c);
-            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark} isWall={isWall} isPuppet={isPuppet}/>;
+            const isIlkkanSq=!!(whiteIlkkanSquare&&whiteIlkkanSquare[0]===r&&whiteIlkkanSquare[1]===c)||!!(blackIlkkanSquare&&blackIlkkanSquare[0]===r&&blackIlkkanSquare[1]===c);
+            return <SquareEl key={`${r}-${c}`} row={r} col={c} size={sqSize} piece={piece} isSelected={isSel} isValidMove={isVM} isLastMove={isLM} isCheckKing={isCK} isCenter={isCenter} isFrozen={isFrozen} onClick={()=>handleSquareClick(r,c)} boardSize={boardSize} deathNoteCount={dn?.turnsLeft} isNuke={isNukeSquare} nukeMovesLeft={showNukeCount?activeNuke!.movesLeft:undefined} isBlessed={isBlessed} isColdWind={isColdWind} contractMark={contractMark} isWall={isWall} isPuppet={isPuppet} isIlkkan={isIlkkanSq}/>;
           }))}
         </div>
 
