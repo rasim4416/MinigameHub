@@ -1242,6 +1242,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whiteBloodlustNext,blackBloodlustNext,deathNoteTargets,
     peaceTreatyMovesLeft,nextEventTurn,activeNuke,coldWindsMovesLeft,whiteContractTarget,blackContractTarget,
     wallMovesLeft,activePuppetColor,activePuppetSquare,eventInterval,requestSnapshot,
+    whiteIlkkanSquare,blackIlkkanSquare,
   ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
