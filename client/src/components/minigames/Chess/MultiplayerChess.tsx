@@ -229,7 +229,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
         <div style={{ fontSize: 40, marginBottom: 8 }}>♟️</div>
         <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700 }}>Online Multiplayer</h2>
         <p style={{ color: "#9ca3af", fontSize: 13, margin: "0 0 28px", textAlign: "center" }}>
-          Play Chess Roguelike with a friend in real time
+          Play Chess Augmented with a friend in real time
         </p>
         <Card style={{ width: "100%", maxWidth: 340 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
