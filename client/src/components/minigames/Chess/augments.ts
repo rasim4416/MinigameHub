@@ -109,7 +109,7 @@ export const NON_PURCHASABLE = new Set<string>(["mastermind", "mastermind-plus",
 
 export const AUGMENT_POOL: Augment[] = [
   // ── Common ────────────────────────────────────────────────────────────────
-  { id:"miner",        name:"Miner",        rarity:"common",   icon:"⛏️",   description:"Earn 1 gold every 2 turns. Infinitely stackable." },
+  { id:"miner",        name:"Miner",        rarity:"common",   icon:"⛏️",   description:"Earn 2 gold every 3 turns. Infinitely stackable." },
   { id:"alternative",  name:"Alternative",  rarity:"common",   icon:"🛤️",   description:"Your rook-file pawns (a & h) may advance 3 squares on their first move." },
   { id:"mastermind",   name:"Mastermind",   rarity:"common",   icon:"🧠",   description:"Improves your augment roll chances (Common↓ Rare↑ Epic↑). Cannot be purchased in shop." },
   { id:"instant-cash", name:"Instant Cash", rarity:"common",   icon:"💰",   description:"Grants 10 gold instantly. Cannot be purchased in shop." },

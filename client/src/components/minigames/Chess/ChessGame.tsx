@@ -78,7 +78,7 @@ function recomputeStatus(g: ChessState): ChessState {
 function applyEndOfTurnEffects(g: ChessState, color: Color, augments: Augment[], turn: number): ChessState {
   let delta=0;
   for (const aug of augments) {
-    if (aug.id==="miner"&&turn%2===0) delta+=1;
+    if (aug.id==="miner"&&turn%3===0) delta+=2;
     if (aug.id==="king-of-the-hill") {
       const cs=Array.from(getCenterSquares(g.board.length));
       for (const key of cs) {
@@ -1455,7 +1455,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const homeRow=playerColor==="white"?6+_off:1+_off;
       const lostCols=playerColor==="white"?whiteLostPawnCols:blackLostPawnCols;
       if (lostCols.some(col=>col===c)&&r===homeRow&&!game.board[r][c]){
-        const nb=cloneBoard(game.board); nb[r][c]={type:"P",color:playerColor};
+        const nb=cloneBoard(game.board); nb[r][c]={type:"P",color:playerColor,id:`${playerColor[0]}P_necro_${r}_${c}_${Date.now()}`};
         const newGState=recomputeStatus({...game,board:nb,turn:opp(playerColor)});
         setGameHistory(h=>[...h,game]); setGame(newGState);
         if (playerColor==="white"){
