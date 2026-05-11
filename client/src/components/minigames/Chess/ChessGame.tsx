@@ -2704,8 +2704,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // MP: initialize augment effects on mount
   useEffect(() => {
     if (!mpConfig) return;
+    setWhiteAugments([mpConfig.initialWhiteAugment]);
+    setBlackAugments([mpConfig.initialBlackAugment]);
     grantPickedEffects(mpConfig.initialWhiteAugment, "white");
     grantPickedEffects(mpConfig.initialBlackAugment, "black");
+    setPhase("playing");
     setMpReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
