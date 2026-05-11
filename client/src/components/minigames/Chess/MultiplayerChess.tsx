@@ -28,12 +28,19 @@ function useChessSocket() {
   const [lastMsg, setLastMsg] = useState<WsMsg | null>(null);
 
   const connect = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/chess-ws`);
     wsRef.current = ws;
     ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    ws.onclose = () => {
+      setConnected(false);
+      if (wsRef.current === ws) wsRef.current = null;
+    };
+    ws.onerror = () => {
+      setConnected(false);
+      if (wsRef.current === ws) wsRef.current = null;
+    };
     ws.onmessage = (e) => {
       try { setLastMsg(JSON.parse(e.data)); } catch {}
     };
