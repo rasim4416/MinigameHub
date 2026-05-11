@@ -1,9 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import GameHeader from "./GameHeader";
-import GameGrid from "./GameGrid";
 import { useAudio } from "@/lib/stores/useAudio";
 import { useChips } from "@/lib/stores/useChips";
-import { useEffect } from "react";
+import { useMinigames } from "@/lib/stores/useMinigames";
+import { useEffect, useState } from "react";
 import { Gamepad2 } from "lucide-react";
 
 const MENU_CHIPS = [
@@ -12,10 +12,83 @@ const MENU_CHIPS = [
   { value: 100,   bg: "#1e293b", light: "#475569", dark: "#0f172a", text: "#e2e8f0" },
 ];
 
+const HeroChessCard = () => {
+  const navigate = useNavigate();
+  const { playHit } = useAudio();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onClick={() => { playHit(); navigate("/minigames/chess"); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={`
+        w-full max-w-2xl mx-auto rounded-2xl border cursor-pointer select-none transition-all duration-300
+        ${hovered
+          ? "bg-gray-800 border-indigo-500 shadow-2xl shadow-indigo-900/40 scale-[1.02]"
+          : "bg-gray-900 border-gray-700 shadow-lg"}
+      `}
+      style={{ padding: "48px 32px" }}
+    >
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div className={`text-7xl transition-transform duration-300 ${hovered ? "scale-110" : ""}`}>
+          ♟️
+        </div>
+        <div>
+          <h2 className={`text-3xl font-extrabold tracking-tight transition-colors duration-200 ${hovered ? "text-indigo-300" : "text-white"}`}>
+            Chess Roguelike
+          </h2>
+          <p className="mt-2 text-gray-400 text-base max-w-sm mx-auto">
+            Classic chess with roguelike augments — local or online multiplayer
+          </p>
+        </div>
+        <div className={`mt-2 px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 ${hovered ? "bg-indigo-500 text-white" : "bg-gray-800 text-gray-300 border border-gray-700"}`}>
+          {hovered ? "Play Now" : "Featured Game"}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SmallGameCard = ({ game }: { game: { id: string; title: string; icon: string; description: string } }) => {
+  const navigate = useNavigate();
+  const { playHit } = useAudio();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onClick={() => { playHit(); navigate(`/minigames/${game.id}`); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={`
+        rounded-xl border cursor-pointer select-none transition-all duration-200 p-5 flex flex-col items-center text-center gap-2
+        ${hovered
+          ? "bg-gray-800 border-indigo-500 shadow-lg shadow-indigo-900/30 scale-105"
+          : "bg-gray-900 border-gray-800"}
+      `}
+    >
+      <div className={`text-3xl transition-transform duration-200 ${hovered ? "scale-110" : ""}`}>
+        {game.icon}
+      </div>
+      <div className={`text-sm font-semibold transition-colors duration-200 ${hovered ? "text-indigo-300" : "text-gray-200"}`}>
+        {game.title}
+      </div>
+      {hovered && (
+        <div className="px-3 py-0.5 bg-indigo-600 rounded-full text-[11px] font-semibold text-white">
+          Play Now
+        </div>
+      )}
+    </div>
+  );
+};
+
 const GameMenu = () => {
   const navigate = useNavigate();
   const { backgroundMusic, isMuted } = useAudio();
   const { chips } = useChips();
+  const { games } = useMinigames();
+
+  const otherGames = games.filter(g => g.isAvailable && g.id !== "chess");
 
   useEffect(() => {
     if (backgroundMusic && !isMuted) {
@@ -50,7 +123,6 @@ const GameMenu = () => {
             Hemen tıkla oynamaya başla!
           </p>
 
-          {/* Chip counter */}
           <div className="flex items-center justify-center mt-4">
             <div style={{
               display: "flex", alignItems: "center", gap: 14,
@@ -59,7 +131,6 @@ const GameMenu = () => {
               borderRadius: 20, padding: "10px 22px",
               boxShadow: "0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
             }}>
-              {/* Stacked chips */}
               <div style={{ display: "flex", alignItems: "center" }}>
                 {MENU_CHIPS.map((c, i) => (
                   <div key={c.value} style={{
@@ -86,9 +157,20 @@ const GameMenu = () => {
           </div>
         </div>
 
-        <div className="w-full">
-          <GameGrid />
+        <div className="w-full max-w-2xl mx-auto px-4">
+          <HeroChessCard />
         </div>
+
+        {otherGames.length > 0 && (
+          <div className="w-full max-w-2xl mx-auto px-4">
+            <p className="text-xs text-gray-600 uppercase tracking-widest font-semibold mb-4 text-center">More Games</p>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {otherGames.map(game => (
+                <SmallGameCard key={game.id} game={game} />
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => navigate('/')}
