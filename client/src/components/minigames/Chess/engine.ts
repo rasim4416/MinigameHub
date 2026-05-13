@@ -410,7 +410,7 @@ export function isSquareAttackedBy(
 
 const MERCENARY_ID_MARK = "mercenary";
 
-function isSquareAttackedByOrangeLostMerc(
+function isSquareAttackedByOrangeMercenaries(
   state: ChessState,
   r: number,
   c: number,
@@ -420,8 +420,7 @@ function isSquareAttackedByOrangeLostMerc(
     for (let pc = 0; pc < n; pc++) {
       const p = getPieceAt(state, pr, pc);
       if (
-        p?.type === "P" &&
-        p.color === "orange" &&
+        p?.color === "orange" &&
         p.id?.includes(MERCENARY_ID_MARK) &&
         attacksFrom(state, pr, pc, p).some(([ar, ac]) => ar === r && ac === c)
       )
@@ -430,7 +429,7 @@ function isSquareAttackedByOrangeLostMerc(
   return false;
 }
 
-/** Attacked by the opposite player or by an orange Lost Mercenary (for king safety). */
+/** Attacked by the opposite player or by an orange mercenary piece (for king safety). */
 export function isSquareAttackedByEnemyOrMercenary(
   state: ChessState,
   r: number,
@@ -439,7 +438,7 @@ export function isSquareAttackedByEnemyOrMercenary(
 ): boolean {
   return (
     isSquareAttackedBy(state, r, c, opp(kingColor)) ||
-    isSquareAttackedByOrangeLostMerc(state, r, c)
+    isSquareAttackedByOrangeMercenaries(state, r, c)
   );
 }
 
@@ -516,6 +515,7 @@ function pseudoMoves(
   }
 
   if (type === "N") {
+    if (color === "orange") return [];
     for (const [dr, dc] of [
       [-2, -1],
       [-2, 1],

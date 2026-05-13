@@ -15,6 +15,12 @@ import {
 
 export const MERCENARY_ID_MARKER = "mercenary";
 
+/** Lost Mercenary pawn ids — excluded from Death Note, etc. */
+export const MERCENARY_LOST_ID = "mercenary-event-lost";
+
+/** Mercenary Patrol knight ids */
+export const MERCENARY_PATROL_ID = "mercenary-event-patrol";
+
 /** True for orange mercenary pieces (Lost Mercenary event, future rentals). */
 export function isMercenaryPiece(p: Piece | null): boolean {
   return (
@@ -22,6 +28,28 @@ export function isMercenaryPiece(p: Piece | null): boolean {
     p.color === "orange" &&
     typeof p.id === "string" &&
     p.id.includes(MERCENARY_ID_MARKER)
+  );
+}
+
+/** Orange lost-mercenary pawn (Death Note cannot target). */
+export function isLostMercenaryPawn(p: Piece | null): boolean {
+  return (
+    !!p &&
+    p.type === "P" &&
+    p.color === "orange" &&
+    typeof p.id === "string" &&
+    p.id.includes(MERCENARY_LOST_ID)
+  );
+}
+
+/** Orange patrol knight(s) spawned by Mercenary Patrol event. */
+export function isMercenaryPatrolKnight(p: Piece | null): boolean {
+  return (
+    !!p &&
+    p.type === "N" &&
+    p.color === "orange" &&
+    typeof p.id === "string" &&
+    p.id.includes(MERCENARY_PATROL_ID)
   );
 }
 
@@ -204,7 +232,162 @@ export function spawnLostMercenaryOnBoard(
   if (empties.length === 0) return state;
   const [sr, sc] = empties[Math.floor(Math.random() * empties.length)]!;
   const nb = cloneBoard(board);
-  const id = `mercenary-event-lost-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const id = `${MERCENARY_LOST_ID}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   nb[sr][sc] = { type: "P", color: "orange", id };
   return recomputeChessStatus(syncStateFromBoard({ ...state, enPassantTarget: null }, nb));
+}
+
+const KNIGHT_OFFSETS: [number, number][] = [
+  [-2, -1],
+  [-2, 1],
+  [-1, -2],
+  [-1, 2],
+  [1, -2],
+  [1, 2],
+  [2, -1],
+  [2, 1],
+];
+
+function shufflePositions(a: [number, number][]): [number, number][] {
+  const copy = [...a];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+  }
+  return copy;
+}
+
+/** All mercenary patrol knight squares (in arbitrary scan order). */
+export function findMercenaryPatrolKnights(board: Board): [number, number][] {
+  const n = board.length;
+  const out: [number, number][] = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      if (isMercenaryPatrolKnight(board[r][c])) out.push([r, c]);
+    }
+  return out;
+}
+
+function patrolKnightLegalDestinations(
+  board: Board,
+  r: number,
+  c: number,
+  ctx: MercenaryStepContext,
+): [number, number][] {
+  const n = board.length;
+  const out: [number, number][] = [];
+  for (const [dr, dc] of KNIGHT_OFFSETS) {
+    const tr = r + dr,
+      tc = c + dc;
+    if (tr < 0 || tr >= n || tc < 0 || tc >= n) continue;
+    if (isWall(ctx, tr, tc)) continue;
+    const occ = board[tr][tc];
+    if (occ?.type === "M") continue;
+    if (!occ) {
+      out.push([tr, tc]);
+      continue;
+    }
+    if (occ.color === "orange") continue;
+    if (occ.type === "K") continue;
+    if (isBlessedSquare(ctx, tr, tc)) continue;
+    out.push([tr, tc]);
+  }
+  return out;
+}
+
+/**
+ * After a full move (black just moved), each patrol knight makes one random
+ * legal knight hop (walls, monoliths, blessed victims blocked; no king capture).
+ */
+export function applyMercenaryPatrolAfterFullMove(
+  state: ChessState,
+  ctx: MercenaryStepContext,
+): ChessState {
+  let board = getDerivedBoard(state);
+  let st: ChessState = state;
+  const positions = shufflePositions(findMercenaryPatrolKnights(board));
+
+  for (const [r, c] of positions) {
+    board = getDerivedBoard(st);
+    const piece = board[r][c];
+    if (!isMercenaryPatrolKnight(piece)) continue;
+    if (isMercenaryFrozen(ctx, r, c)) continue;
+    const dests = patrolKnightLegalDestinations(board, r, c, ctx);
+    if (dests.length === 0) continue;
+    const [tr, tc] = dests[Math.floor(Math.random() * dests.length)]!;
+    const nb = cloneBoard(board);
+    const merc = nb[r][c]!;
+    const victim = nb[tr][tc];
+    nb[r][c] = null;
+    nb[tr][tc] = merc;
+    const next: ChessState = { ...st, enPassantTarget: null };
+    if (victim) {
+      const cbw = [...st.capturedByWhite];
+      const cbb = [...st.capturedByBlack];
+      if (victim.color === "white") cbw.push(victim.type);
+      else if (victim.color === "black") cbb.push(victim.type);
+      st = recomputeChessStatus(
+        syncStateFromBoard({ ...next, capturedByWhite: cbw, capturedByBlack: cbb }, nb),
+      );
+    } else {
+      st = recomputeChessStatus(syncStateFromBoard(next, nb));
+    }
+  }
+  return st;
+}
+
+/**
+ * Spawn two orange patrol knights: one on the left flank file, one on the right
+ * (a-file / i-file on 10×10 with Domain Expansion padding). Skips a side if no
+ * empty square in that column. Does not remove existing mercenaries — stacks
+ * with repeated events.
+ */
+export function spawnMercenaryPatrolKnights(
+  state: ChessState,
+  wallSquares: { row: number; col: number }[] = [],
+): ChessState {
+  const board = getDerivedBoard(state);
+  const n = board.length;
+  const off = (n - 8) / 2;
+  const leftCol = Math.max(0, Math.min(n - 1, off));
+  const rightCol = Math.max(0, Math.min(n - 1, n - 1 - off));
+  const nb = cloneBoard(board);
+  const wallCtx: MercenaryStepContext = {
+    wallSquares,
+    frozenSquare: null,
+    coldWindsSquares: [],
+    coldWindsMovesLeft: 0,
+    blessedSquares: [],
+  };
+
+  const pickRow = (b: Board, col: number): number | null => {
+    const rows: number[] = [];
+    for (let row = 0; row < n; row++) {
+      if (!b[row][col] && !isWall(wallCtx, row, col)) rows.push(row);
+    }
+    if (rows.length === 0) return null;
+    return rows[Math.floor(Math.random() * rows.length)]!;
+  };
+
+  const ts = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const lr = pickRow(nb, leftCol);
+  if (lr !== null) {
+    nb[lr][leftCol] = {
+      type: "N",
+      color: "orange",
+      id: `${MERCENARY_PATROL_ID}-${ts}-L`,
+    };
+  }
+  const rr = pickRow(nb, rightCol);
+  if (rr !== null && (leftCol !== rightCol || lr !== rr)) {
+    nb[rr][rightCol] = {
+      type: "N",
+      color: "orange",
+      id: `${MERCENARY_PATROL_ID}-${ts}-R`,
+    };
+  }
+
+  return recomputeChessStatus(
+    syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
+  );
 }

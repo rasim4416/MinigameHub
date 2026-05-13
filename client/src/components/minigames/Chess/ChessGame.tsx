@@ -23,8 +23,11 @@ import {
 } from "./engine";
 import {
   applyLostMercenaryAfterFullMove,
+  applyMercenaryPatrolAfterFullMove,
   isMercenaryPiece,
+  isLostMercenaryPawn,
   spawnLostMercenaryOnBoard,
+  spawnMercenaryPatrolKnights,
 } from "./mercenaryMoves";
 import {
   Augment,
@@ -2991,9 +2994,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           movingColor === "white" ? setWhiteIlkkanId : setBlackIlkkanId;
         if (movingPieceId && movingPieceId === myIlkId) {
           if (
-            capturedType === "R" ||
-            capturedType === "B" ||
-            capturedType === "N"
+            !victimWasMercenary &&
+            (capturedType === "R" ||
+              capturedType === "B" ||
+              capturedType === "N")
           ) {
             // İlkkan pawn transforms into the captured piece — strip ID (no longer a pawn)
             const nb2 = cloneBoard(getDerivedBoard(newGame));
@@ -3022,25 +3026,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           setEnemyIlkId(null);
       }
 
-      // Internal Combustion
-      const opponentColor = opp(movingColor);
-      const opponentAugs =
-        opponentColor === "white" ? whiteAugments : blackAugments;
-      const icUsed = opponentColor === "white" ? whiteIcUsed : blackIcUsed;
-      if (
-        newGame.status === "check" &&
-        opponentAugs.some((a) => a.id === "internal-combustion") &&
-        !icUsed
-      ) {
-        const checker = findCheckingPiece(getDerivedBoard(newGame), opponentColor);
-        if (checker) {
-          const nb = cloneBoard(getDerivedBoard(newGame));
-          nb[checker[0]][checker[1]] = null;
-          newGame = recomputeStatus(syncStateFromBoard({ ...newGame }, nb));
-          if (opponentColor === "white") setWhiteIcUsed(true);
-          else setBlackIcUsed(true);
-        }
-      }
+      // Internal Combustion runs after mercenary ticks (see end of executeMove).
 
       // Gold from capture (1 gold per captured piece, blocked by peace treaty)
       if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
@@ -3194,9 +3180,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               ...prev,
               { row: bRow, col: bCol, movesLeft: 6 },
             ]);
-          } else if (event.id === "lost-mercenary") {
-            newGame = spawnLostMercenaryOnBoard(newGame, wallSquares);
-          } else if (event.id === "cold-winds") {
+        } else if (event.id === "lost-mercenary") {
+          newGame = spawnLostMercenaryOnBoard(newGame, wallSquares);
+        } else if (event.id === "mercenary-patrol") {
+          newGame = spawnMercenaryPatrolKnights(newGame, wallSquares);
+        } else if (event.id === "cold-winds") {
             const bs3 = getDerivedBoard(newGame).length;
             const wPcs: [number, number][] = [],
               blPcs: [number, number][] = [];
@@ -3309,14 +3297,37 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
       let boardAfterMerc = newGame;
       if (movingColor === "black") {
-        boardAfterMerc = applyLostMercenaryAfterFullMove(newGame, {
+        const mercCtx = {
           wallSquares,
           frozenSquare,
           coldWindsSquares,
           coldWindsMovesLeft,
           blessedSquares,
-        });
+        };
+        boardAfterMerc = applyLostMercenaryAfterFullMove(boardAfterMerc, mercCtx);
+        boardAfterMerc = applyMercenaryPatrolAfterFullMove(boardAfterMerc, mercCtx);
       }
+
+      const icSide = boardAfterMerc.turn;
+      const icAugs = icSide === "white" ? whiteAugments : blackAugments;
+      const icUsedNow = icSide === "white" ? whiteIcUsed : blackIcUsed;
+      if (
+        boardAfterMerc.status === "check" &&
+        icAugs.some((a) => a.id === "internal-combustion") &&
+        !icUsedNow
+      ) {
+        const checker = findCheckingPiece(getDerivedBoard(boardAfterMerc), icSide);
+        if (checker) {
+          const nbIc = cloneBoard(getDerivedBoard(boardAfterMerc));
+          nbIc[checker[0]][checker[1]] = null;
+          boardAfterMerc = recomputeStatus(
+            syncStateFromBoard({ ...boardAfterMerc }, nbIc),
+          );
+          if (icSide === "white") setWhiteIcUsed(true);
+          else setBlackIcUsed(true);
+        }
+      }
+
       setGame(boardAfterMerc);
 
       // Triggers
@@ -3336,7 +3347,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           });
         }
       }
-      if (capturedType && playerAugs.some((a) => a.id === "bloodlust") && !victimWasMercenary) {
+      if (capturedType && playerAugs.some((a) => a.id === "bloodlust")) {
         const newCount =
           (movingColor === "white" ? whiteCaptureCount : blackCaptureCount) + 1;
         if (movingColor === "white") setWhiteCaptureCount(newCount);
@@ -3348,7 +3359,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           else setBlackBloodlustNext((t) => t + 4);
           newTriggers.push({ color: movingColor, reason: "bloodlust" });
         }
-      } else if (capturedType && !victimWasMercenary) {
+      } else if (capturedType) {
         const newCount =
           (movingColor === "white" ? whiteCaptureCount : blackCaptureCount) + 1;
         if (movingColor === "white") setWhiteCaptureCount(newCount);
@@ -3939,8 +3950,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           piece.type !== "K" &&
           piece.type !== "Q" &&
           piece.type !== "M" &&
-          piece.color !== "orange" &&
-          !piece.id?.includes("mercenary")
+          !isLostMercenaryPawn(piece)
         ) {
           setDeathNoteTargets((prev) => [
             ...prev,

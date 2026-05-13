@@ -110,6 +110,15 @@ export const EVENT_POOL: GameEvent[] = [
     flavor: "\"Incoming!\"",
   },
   {
+    id: "mercenary-patrol",
+    name: "Mercenary Patrol",
+    rarity: "rare",
+    icon: "🐴",
+    description:
+      "Two orange mercenary knights appear on the left and right files (a and i on an expanded board). After each full round each makes a random legal knight move until captured. They cannot take a king or land on monoliths.",
+    flavor: "Hooves in the dark — no allegiance, no rest.",
+  },
+  {
     id: "red-wedding",
     name: "Red Wedding",
     rarity: "epic",
