@@ -2251,6 +2251,8 @@ export interface MpConfig {
   onSnapshot: (snap: Record<string, unknown>) => void;
   incomingSnapshot: Record<string, unknown> | null;
   opponentLeft: boolean;
+  /** True while the WebSocket is down and the client is attempting to resume the session. */
+  connectionLost?: boolean;
 }
 
 export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
@@ -4946,6 +4948,30 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             }}
           >
             ⏳ Opponent&apos;s turn…
+          </div>
+        )}
+
+        {mpConfig?.connectionLost && !mpConfig.opponentLeft && (
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 25,
+              pointerEvents: "none",
+              background: "rgba(234,179,8,0.15)",
+              border: "1px solid rgba(234,179,8,0.45)",
+              color: "#fcd34d",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "6px 14px",
+              borderRadius: 20,
+              letterSpacing: "0.04em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Connection lost — reconnecting…
           </div>
         )}
 
