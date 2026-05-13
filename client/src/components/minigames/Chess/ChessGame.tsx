@@ -19,6 +19,7 @@ import {
   getDerivedBoard,
   syncStateFromBoard,
   normalizeChessState,
+  castlingRightsAfterSwap,
 } from "./engine";
 import {
   Augment,
@@ -1875,6 +1876,9 @@ type SpellState = {
   sakoAvailable: boolean;
   sakoActive: boolean;
   onSako: () => void;
+  swapAvailable: boolean;
+  swapActive: boolean;
+  onSwap: () => void;
   royalHouseholdAvailable: boolean;
   royalHouseholdActive: boolean;
   onRoyalHousehold: () => void;
@@ -2076,6 +2080,15 @@ function PlayerBar({
             active={spells.sakoActive}
             onClick={spells.onSako}
             title="Teleport a piece to your half board (free action)"
+          />
+        )}
+        {canAct && spells.swapAvailable && (
+          <SpellButton
+            icon="🔀"
+            label="SWAP"
+            active={spells.swapActive}
+            onClick={spells.onSwap}
+            title="Exchange two of your pieces (free action, once per game)"
           />
         )}
         {canAct && spells.royalHouseholdAvailable && (
@@ -2355,6 +2368,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     null,
   );
 
+  const [whiteSwapUsed, setWhiteSwapUsed] = useState(false);
+  const [blackSwapUsed, setBlackSwapUsed] = useState(false);
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapFirst, setSwapFirst] = useState<[number, number] | null>(null);
+
   // Royal Household
   const [whiteRoyalHouseholdUsed, setWhiteRoyalHouseholdUsed] = useState(false);
   const [blackRoyalHouseholdUsed, setBlackRoyalHouseholdUsed] = useState(false);
@@ -2573,6 +2591,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackWhatUsed,
     whiteSakoUsed,
     blackSakoUsed,
+    whiteSwapUsed,
+    blackSwapUsed,
     whiteRoyalHouseholdUsed,
     blackRoyalHouseholdUsed,
     whiteDNUsed,
@@ -2646,6 +2666,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackWhatUsed(g.blackWhatUsed as boolean);
     setWhiteSakoUsed(g.whiteSakoUsed as boolean);
     setBlackSakoUsed(g.blackSakoUsed as boolean);
+    setWhiteSwapUsed((g.whiteSwapUsed as boolean) ?? false);
+    setBlackSwapUsed((g.blackSwapUsed as boolean) ?? false);
     setWhiteRoyalHouseholdUsed(g.whiteRoyalHouseholdUsed as boolean);
     setBlackRoyalHouseholdUsed(g.blackRoyalHouseholdUsed as boolean);
     setWhiteDNUsed(g.whiteDNUsed as boolean);
@@ -2715,6 +2737,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setNecroPlusMode(false);
     setNecroPlusChoice(null);
     setIlkkanMode(false);
+    setSwapMode(false);
+    setSwapFirst(null);
   };
 
   // MP: initialize augment effects on mount
@@ -3410,16 +3434,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes = () => {
+  const clearModes = (opts?: { preserveIlkkan?: boolean; preserveSwap?: boolean }) => {
     setFreezeMode(false);
     setNecroMode(false);
     setNecroPlusMode(false);
-    setIlkkanMode(false);
+    if (!opts?.preserveIlkkan) setIlkkanMode(false);
     setRoyalEdMode(false);
     setWhatMode(false);
     setWhatSelected(null);
     setSakoMode(false);
     setSakoSelected(null);
+    if (!opts?.preserveSwap) {
+      setSwapMode(false);
+      setSwapFirst(null);
+    }
     setRoyalHouseholdMode(false);
     setDeathNoteMode(false);
     setMonolithMode(null);
@@ -3474,6 +3502,36 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     clearModes();
     setSakoMode(e);
   }, [sakoMode]);
+  const handleToggleSwap = useCallback(() => {
+    const entering = !swapMode;
+    clearModes({ preserveSwap: true });
+    setSwapMode(entering);
+    if (entering) {
+      const bs = getDerivedBoard(game);
+      const isCw = (rr: number, cc: number) =>
+        coldWindsMovesLeft > 0 &&
+        coldWindsSquares.some(([fr, fc]) => fr === rr && fc === cc);
+      const sqBlocked = (rr: number, cc: number) => {
+        const p2 = bs[rr][cc];
+        if (!p2 || p2.color !== game.turn) return true;
+        if (frozenSquare?.[0] === rr && frozenSquare?.[1] === cc) return true;
+        if (isCw(rr, cc)) return true;
+        return false;
+      };
+      const own: [number, number][] = [];
+      bs.forEach((row, rr) =>
+        row.forEach((p, cc) => {
+          if (p && p.color === game.turn && !sqBlocked(rr, cc)) own.push([rr, cc]);
+        }),
+      );
+      if (own.length < 2) {
+        setSwapMode(false);
+        setValidMoves([]);
+        return;
+      }
+      setValidMoves(own);
+    }
+  }, [swapMode, game, frozenSquare, coldWindsMovesLeft, coldWindsSquares]);
   const handleToggleRoyalHousehold = useCallback(() => {
     const entering = !royalHouseholdMode;
     clearModes();
@@ -3506,7 +3564,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   }, [monolithMode]);
   const handleToggleIlkkan = useCallback(() => {
     const entering = !ilkkanMode;
-    clearModes();
+    clearModes({ preserveIlkkan: true });
     setIlkkanMode(entering);
     if (entering) {
       const pawns: [number, number][] = [];
@@ -3594,11 +3652,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     if (selected) setSelected([selected[0] + 1, selected[1] + 1]);
     if (sakoSelected)
       setSakoSelected([sakoSelected[0] + 1, sakoSelected[1] + 1]);
+    if (swapFirst)
+      setSwapFirst([swapFirst[0] + 1, swapFirst[1] + 1]);
     if (whatSelected)
       setWhatSelected([whatSelected[0] + 1, whatSelected[1] + 1]);
     setValidMoves((prev) => prev.map(([r, c]) => [r + 1, c + 1]));
     clearModes();
-  }, [game, boardExpanded, frozenSquare, selected, sakoSelected, whatSelected]);
+  }, [game, boardExpanded, frozenSquare, selected, sakoSelected, swapFirst, whatSelected]);
 
   // ── Square click ─────────────────────────────────────────────────────────
 
@@ -3936,6 +3996,109 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           else setBlackRoyalEdUsed(true);
         }
         setRoyalEdMode(false);
+        setSelected(null);
+        setValidMoves([]);
+        return;
+      }
+
+      if (swapMode) {
+        const bs = getDerivedBoard(game);
+        const isCwSq = (rr: number, cc: number) =>
+          coldWindsMovesLeft > 0 &&
+          coldWindsSquares.some(([fr, fc]) => fr === rr && fc === cc);
+        const isOwnBlocked = (rr: number, cc: number) => {
+          const p2 = bs[rr][cc];
+          if (!p2 || p2.color !== game.turn) return true;
+          if (frozenSquare?.[0] === rr && frozenSquare?.[1] === cc) return true;
+          if (isCwSq(rr, cc)) return true;
+          return false;
+        };
+
+        if (!swapFirst) {
+          if (piece && piece.color === game.turn && !isOwnBlocked(r, c)) {
+            const others: [number, number][] = [];
+            bs.forEach((row, rr) =>
+              row.forEach((p, cc) => {
+                if (
+                  p &&
+                  p.color === game.turn &&
+                  !(rr === r && cc === c) &&
+                  !isOwnBlocked(rr, cc)
+                )
+                  others.push([rr, cc]);
+              }),
+            );
+            if (others.length > 0) {
+              setSwapFirst([r, c]);
+              setSelected([r, c]);
+              setValidMoves(others);
+            } else {
+              setSwapMode(false);
+              setSwapFirst(null);
+              setSelected(null);
+              setValidMoves([]);
+            }
+          } else {
+            setSwapMode(false);
+            setSwapFirst(null);
+            setSelected(null);
+            setValidMoves([]);
+          }
+          return;
+        }
+
+        const [fr, fc] = swapFirst;
+        const isValidSecond = validMoves.some(([vr, vc]) => vr === r && vc === c);
+        if (isValidSecond && piece && piece.color === game.turn) {
+          const nb = cloneBoard(bs);
+          const pa = nb[fr][fc]!;
+          const pb = nb[r][c]!;
+          nb[fr][fc] = pb;
+          nb[r][c] = pa;
+          const cr = castlingRightsAfterSwap(game.castlingRights, nb);
+          const merged = recomputeStatus(
+            syncStateFromBoard(
+              { ...game, enPassantTarget: null, castlingRights: cr },
+              nb,
+            ),
+          );
+          if (!isInCheck(merged, game.turn)) {
+            setGame(merged);
+            if (game.turn === "white") setWhiteSwapUsed(true);
+            else setBlackSwapUsed(true);
+            requestSnapshot();
+            setSwapMode(false);
+            setSwapFirst(null);
+            setSelected(null);
+            setValidMoves([]);
+          }
+        } else if (
+          piece &&
+          piece.color === game.turn &&
+          !isOwnBlocked(r, c) &&
+          !(r === fr && c === fc)
+        ) {
+          const others: [number, number][] = [];
+          bs.forEach((row, rr) =>
+            row.forEach((p, cc) => {
+              if (
+                p &&
+                p.color === game.turn &&
+                !(rr === r && cc === c) &&
+                !isOwnBlocked(rr, cc)
+              )
+                others.push([rr, cc]);
+            }),
+          );
+          if (others.length > 0) {
+            setSwapFirst([r, c]);
+            setSelected([r, c]);
+            setValidMoves(others);
+            return;
+          }
+        }
+        setSwapMode(false);
+        setSwapFirst(null);
         setSelected(null);
         setValidMoves([]);
         return;
@@ -4304,6 +4467,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       ilkkanMode,
       whiteIlkkanId,
       blackIlkkanId,
+      swapMode,
+      swapFirst,
     ],
   );
 
@@ -4375,6 +4540,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackSakoUsed(false);
     setSakoMode(false);
     setSakoSelected(null);
+    setWhiteSwapUsed(false);
+    setBlackSwapUsed(false);
+    setSwapMode(false);
+    setSwapFirst(null);
     setWhiteRoyalHouseholdUsed(false);
     setBlackRoyalHouseholdUsed(false);
     setRoyalHouseholdMode(false);
@@ -4518,6 +4687,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           blackAugments.some((a) => a.id === "sako-bosphorus"),
     sakoActive: sakoMode && game.turn === color,
     onSako: spellGuard(handleToggleSako),
+    swapAvailable:
+      color === "white"
+        ? !whiteSwapUsed && whiteAugments.some((a) => a.id === "swap")
+        : !blackSwapUsed && blackAugments.some((a) => a.id === "swap"),
+    swapActive: swapMode && game.turn === color,
+    onSwap: spellGuard(handleToggleSwap),
     royalHouseholdAvailable:
       color === "white"
         ? !whiteRoyalHouseholdUsed &&
@@ -4630,6 +4805,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       };
     if (whatMode && whatSelected)
       return { text: "↔️ Click the destination square", color: "#f97316" };
+    if (swapMode && !swapFirst)
+      return {
+        text: "🔀 SWAP — Click your first piece (frozen pieces cannot swap)",
+        color: "#a78bfa",
+      };
+    if (swapMode && swapFirst)
+      return {
+        text: "🔀 SWAP — Click a second piece to trade squares (your king cannot end in check)",
+        color: "#a78bfa",
+      };
     if (sakoMode && !sakoSelected)
       return {
         text: "⚓ ŞAKO — Click any of your pieces to teleport anywhere",

@@ -32,6 +32,56 @@ export interface CastlingRights {
   black: { kingside: boolean; queenside: boolean };
 }
 
+/**
+ * After swapping two squares on the board (Swap augment), re-check K+R home
+ * corners. Rights never flip from false→true; a side clears if king or that
+ * rook no longer sits on the canonical castling homes (8×8 or padded 10×10).
+ */
+export function castlingRightsAfterSwap(
+  prior: CastlingRights,
+  board: Board,
+): CastlingRights {
+  const n = board.length;
+  const off = (n - 8) / 2;
+  const homes = {
+    white: {
+      k: [7 + off, 4 + off] as [number, number],
+      kr: [7 + off, 7 + off] as [number, number],
+      qr: [7 + off, 0 + off] as [number, number],
+    },
+    black: {
+      k: [0 + off, 4 + off] as [number, number],
+      kr: [0 + off, 7 + off] as [number, number],
+      qr: [0 + off, 0 + off] as [number, number],
+    },
+  };
+  const sideOk = (color: Color, kingside: boolean): boolean => {
+    const h = homes[color];
+    const [kr, kc] = h.k;
+    const [rr, rc] = kingside ? h.kr : h.qr;
+    const kp = board[kr]?.[kc];
+    const rp = board[rr]?.[rc];
+    return (
+      !!kp &&
+      kp.type === "K" &&
+      kp.color === color &&
+      !!rp &&
+      rp.type === "R" &&
+      rp.color === color
+    );
+  };
+  return {
+    white: {
+      kingside: prior.white.kingside && sideOk("white", true),
+      queenside: prior.white.queenside && sideOk("white", false),
+    },
+    black: {
+      kingside: prior.black.kingside && sideOk("black", true),
+      queenside: prior.black.queenside && sideOk("black", false),
+    },
+  };
+}
+
 export interface MoveRecord {
   from: [number, number];
   to: [number, number];
