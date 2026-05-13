@@ -62,7 +62,9 @@ export const PIECE_VALUE: Record<PieceType, number> = {
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-export const inB = (r: number, c: number) => r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+/** Bounds check; pass `n = board.length` for the active grid (may be 10×10 after domain expansion). */
+export const inB = (r: number, c: number, n: number = BOARD_SIZE) =>
+  r >= 0 && r < n && c >= 0 && c < n;
 export const opp = (color: Color): Color => color === "white" ? "black" : "white";
 
 export function cloneBoard(board: Board): Board {
@@ -82,6 +84,7 @@ export function findKing(board: Board, color: Color): [number, number] {
 /** All squares a piece at (r,c) attacks (for pawns: diagonals only). */
 function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number, number][] {
   const { type, color } = piece;
+  const n = board.length;
   const sq: [number, number][] = [];
 
   if (type === "M") return [];
@@ -89,19 +92,19 @@ function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number,
   if (type === "P") {
     const dir = color === "white" ? -1 : 1;
     for (const dc of [-1, 1])
-      if (inB(r + dir, c + dc)) sq.push([r + dir, c + dc]);
+      if (inB(r + dir, c + dc, n)) sq.push([r + dir, c + dc]);
     return sq;
   }
 
   if (type === "N") {
     for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
-      if (inB(r+dr, c+dc)) sq.push([r+dr, c+dc]);
+      if (inB(r + dr, c + dc, n)) sq.push([r + dr, c + dc]);
     return sq;
   }
 
   if (type === "K") {
     for (const [dr, dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
-      if (inB(r+dr, c+dc)) sq.push([r+dr, c+dc]);
+      if (inB(r + dr, c + dc, n)) sq.push([r + dr, c + dc]);
     return sq;
   }
 
@@ -110,7 +113,7 @@ function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number,
   if (type === "B" || type === "Q") dirs.push([1,1],[1,-1],[-1,1],[-1,-1]);
   for (const [dr, dc] of dirs) {
     let nr = r+dr, nc = c+dc;
-    while (inB(nr, nc)) {
+    while (inB(nr, nc, n)) {
       sq.push([nr, nc]);
       if (board[nr][nc]) break;
       nr += dr; nc += dc;
@@ -120,8 +123,9 @@ function attacksFrom(board: Board, r: number, c: number, piece: Piece): [number,
 }
 
 export function isSquareAttackedBy(board: Board, r: number, c: number, byColor: Color): boolean {
-  for (let pr = 0; pr < BOARD_SIZE; pr++)
-    for (let pc = 0; pc < BOARD_SIZE; pc++) {
+  const n = board.length;
+  for (let pr = 0; pr < n; pr++)
+    for (let pc = 0; pc < n; pc++) {
       const p = board[pr][pc];
       if (p && p.color === byColor)
         if (attacksFrom(board, pr, pc, p).some(([ar, ac]) => ar === r && ac === c))
@@ -145,20 +149,22 @@ function pseudoMoves(
   const piece = board[r][c];
   if (!piece) return [];
   const { type, color } = piece;
+  const n = board.length;
   const sq: [number, number][] = [];
 
   if (type === "M") return [];
 
   if (type === "P") {
     const dir = color === "white" ? -1 : 1;
-    const _off = (BOARD_SIZE - 8) / 2;
+    const _off = (n - 8) / 2;
     const startRow = color === "white" ? 6 + _off : 1 + _off;
-    if (inB(r+dir, c) && !board[r+dir][c]) {
-      sq.push([r+dir, c]);
-      if (r === startRow && !board[r+2*dir][c]) sq.push([r+2*dir, c]);
+    if (inB(r + dir, c, n) && !board[r + dir][c]) {
+      sq.push([r + dir, c]);
+      if (r === startRow && inB(r + 2 * dir, c, n) && !board[r + 2 * dir][c])
+        sq.push([r + 2 * dir, c]);
     }
     for (const dc of [-1, 1]) {
-      if (!inB(r+dir, c+dc)) continue;
+      if (!inB(r + dir, c + dc, n)) continue;
       const tgt = board[r+dir][c+dc];
       if (tgt && tgt.color !== color && tgt.type !== "M") sq.push([r+dir, c+dc]);
       if (enPassantTarget &&
@@ -172,7 +178,7 @@ function pseudoMoves(
     for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
       const nr = r+dr, nc = c+dc;
       const tgt = board[nr]?.[nc];
-      if (inB(nr, nc) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
     }
     return sq;
   }
@@ -181,7 +187,7 @@ function pseudoMoves(
     for (const [dr, dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
       const nr = r+dr, nc = c+dc;
       const tgt = board[nr]?.[nc];
-      if (inB(nr, nc) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
     }
     return sq;
   }
@@ -191,7 +197,7 @@ function pseudoMoves(
   if (type === "B" || type === "Q") dirs.push([1,1],[1,-1],[-1,1],[-1,-1]);
   for (const [dr, dc] of dirs) {
     let nr = r+dr, nc = c+dc;
-    while (inB(nr, nc)) {
+    while (inB(nr, nc, n)) {
       const tgt = board[nr][nc];
       if (tgt) {
         if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
@@ -223,13 +229,24 @@ export function applyMoveToBoard(
     nb[fr][tc] = null;
   }
 
-  nb[tr][tc] = promotion ? { type: promotion, color: piece.color } : { ...piece };
+  nb[tr][tc] = promotion
+    ? { type: promotion, color: piece.color, ...(piece.id ? { id: piece.id } : {}) }
+    : { ...piece };
   nb[fr][fc] = null;
 
-  // Castling: also move the rook
+  // Castling: also move the rook (offset when board is 10×10)
   if (piece.type === "K" && Math.abs(tc - fc) === 2) {
-    if (tc === 6) { nb[fr][5] = nb[fr][7]; nb[fr][7] = null; }
-    else          { nb[fr][3] = nb[fr][0]; nb[fr][0] = null; }
+    const n = nb.length;
+    const off = (n - 8) / 2;
+    if (tc > fc) {
+      const rk = off + 7;
+      nb[fr][off + 5] = nb[fr][rk];
+      nb[fr][rk] = null;
+    } else {
+      const rk = off;
+      nb[fr][off + 3] = nb[fr][rk];
+      nb[fr][rk] = null;
+    }
   }
 
   return nb;
@@ -251,21 +268,30 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 
   // Castling (added separately so applyMoveToBoard doesn't need to know the full state)
   if (piece.type === "K" && !isInCheck(state.board, piece.color)) {
-    const row = piece.color === "white" ? 7 : 0;
+    const n = state.board.length;
+    const off = (n - 8) / 2;
+    const row = piece.color === "white" ? 7 + off : off;
     const rights = state.castlingRights[piece.color];
 
-    if (rights.kingside
-        && !state.board[row][5] && !state.board[row][6]
-        && !isSquareAttackedBy(state.board, row, 5, opp(piece.color))
-        && !isSquareAttackedBy(state.board, row, 6, opp(piece.color))) {
-      legal.push([row, 6]);
+    if (
+      rights.kingside &&
+      !state.board[row][off + 5] &&
+      !state.board[row][off + 6] &&
+      !isSquareAttackedBy(state.board, row, off + 5, opp(piece.color)) &&
+      !isSquareAttackedBy(state.board, row, off + 6, opp(piece.color))
+    ) {
+      legal.push([row, off + 6]);
     }
 
-    if (rights.queenside
-        && !state.board[row][1] && !state.board[row][2] && !state.board[row][3]
-        && !isSquareAttackedBy(state.board, row, 3, opp(piece.color))
-        && !isSquareAttackedBy(state.board, row, 2, opp(piece.color))) {
-      legal.push([row, 2]);
+    if (
+      rights.queenside &&
+      !state.board[row][off + 1] &&
+      !state.board[row][off + 2] &&
+      !state.board[row][off + 3] &&
+      !isSquareAttackedBy(state.board, row, off + 3, opp(piece.color)) &&
+      !isSquareAttackedBy(state.board, row, off + 2, opp(piece.color))
+    ) {
+      legal.push([row, off + 2]);
     }
   }
 
@@ -273,8 +299,9 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 }
 
 export function hasAnyLegalMove(state: ChessState, color: Color): boolean {
-  for (let r = 0; r < BOARD_SIZE; r++)
-    for (let c = 0; c < BOARD_SIZE; c++)
+  const n = state.board.length;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++)
       if (state.board[r][c]?.color === color) {
         const tempState = { ...state, turn: color };
         if (getLegalMoves(tempState, r, c).length > 0) return true;
@@ -304,24 +331,30 @@ export function makeMove(
     white: { ...state.castlingRights.white },
     black: { ...state.castlingRights.black },
   };
+  const n = state.board.length;
+  const off = (n - 8) / 2;
+  const wBack = 7 + off;
+  const bBack = off;
+  const wRookQ = off;
+  const wRookK = off + 7;
+  const bRookQ = off;
+  const bRookK = off + 7;
+
   if (piece.type === "K") cr[piece.color] = { kingside: false, queenside: false };
-  if (piece.type === "R" || (fr === 7 && fc === 0)) cr.white.queenside = false;
-  if (piece.type === "R" || (fr === 7 && fc === 7)) cr.white.kingside = false;
-  if (piece.type === "R" || (fr === 0 && fc === 0)) cr.black.queenside = false;
-  if (piece.type === "R" || (fr === 0 && fc === 7)) cr.black.kingside = false;
-  // More precise rook tracking
+  if (piece.type === "R" || (fr === wBack && fc === wRookQ)) cr.white.queenside = false;
+  if (piece.type === "R" || (fr === wBack && fc === wRookK)) cr.white.kingside = false;
+  if (piece.type === "R" || (fr === bBack && fc === bRookQ)) cr.black.queenside = false;
+  if (piece.type === "R" || (fr === bBack && fc === bRookK)) cr.black.kingside = false;
   if (piece.type === "R") {
-    if (fr === 7 && fc === 0) cr.white.queenside = false;
-    else if (fr === 7 && fc === 7) cr.white.kingside = false;
-    else if (fr === 0 && fc === 0) cr.black.queenside = false;
-    else if (fr === 0 && fc === 7) cr.black.kingside = false;
+    if (fr === wBack && fc === wRookQ) cr.white.queenside = false;
+    else if (fr === wBack && fc === wRookK) cr.white.kingside = false;
+    else if (fr === bBack && fc === bRookQ) cr.black.queenside = false;
+    else if (fr === bBack && fc === bRookK) cr.black.kingside = false;
   }
-  if (piece.type === "K") cr[piece.color] = { kingside: false, queenside: false };
-  // Rook captured from its corner removes rights too
-  if (tr === 7 && tc === 0) cr.white.queenside = false;
-  if (tr === 7 && tc === 7) cr.white.kingside = false;
-  if (tr === 0 && tc === 0) cr.black.queenside = false;
-  if (tr === 0 && tc === 7) cr.black.kingside = false;
+  if (tr === wBack && tc === wRookQ) cr.white.queenside = false;
+  if (tr === wBack && tc === wRookK) cr.white.kingside = false;
+  if (tr === bBack && tc === bRookQ) cr.black.queenside = false;
+  if (tr === bBack && tc === bRookK) cr.black.kingside = false;
 
   // En passant target
   const newEP: [number, number] | null =
@@ -354,7 +387,7 @@ export function makeMove(
   const record: MoveRecord = {
     from, to, piece: { ...piece }, captured,
     promotion, enPassant: isEP || undefined,
-    castling: isCastling ? (tc === 6 ? "kingside" : "queenside") : undefined,
+    castling: isCastling ? (tc > fc ? "kingside" : "queenside") : undefined,
   };
 
   const nextTurn = opp(piece.color);
