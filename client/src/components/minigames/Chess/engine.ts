@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type PieceType = "K" | "Q" | "R" | "B" | "N" | "P" | "M";
-export type Color = "white" | "black";
+export type Color = "white" | "black" | "orange";
 export type PieceId = string;
 
 /** Authoritative piece data (extend for per-piece shenanigans). */
@@ -55,7 +55,7 @@ export function castlingRightsAfterSwap(
       qr: [0 + off, 0 + off] as [number, number],
     },
   };
-  const sideOk = (color: Color, kingside: boolean): boolean => {
+  const sideOk = (color: "white" | "black", kingside: boolean): boolean => {
     const h = homes[color];
     const [kr, kc] = h.k;
     const [rr, rc] = kingside ? h.kr : h.qr;
@@ -127,6 +127,7 @@ const BACK_RANK: PieceType[] = ["R", "N", "B", "Q", "K", "B", "N", "R"];
 export const PIECE_UNICODE: Record<Color, Record<PieceType, string>> = {
   white: { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙", M: "🗿" },
   black: { K: "♚", Q: "♛", R: "♜", B: "♝", N: "♞", P: "♟", M: "🗿" },
+  orange: { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "🟠", M: "🗿" },
 };
 
 export const PIECE_VALUE: Record<PieceType, number> = {
@@ -280,7 +281,8 @@ export function assertStateConsistent(state: ChessState): void {
 
 export const inB = (r: number, c: number) =>
   r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
-export const opp = (color: Color): Color => (color === "white" ? "black" : "white");
+export const opp = (color: Color): Color =>
+  color === "white" ? "black" : color === "black" ? "white" : "black";
 
 export function cloneBoard(board: Board): Board {
   return board.map((row) => [...row]);
@@ -331,6 +333,14 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
   if (type === "M") return [];
 
   if (type === "P") {
+    if (color === "orange") {
+      for (const [dr, dc] of [
+        [-1, 1],
+        [1, 1],
+      ] as [number, number][])
+        if (inB(r + dr, c + dc)) sq.push([r + dr, c + dc]);
+      return sq;
+    }
     const dir = color === "white" ? -1 : 1;
     for (const dc of [-1, 1]) if (inB(r + dir, c + dc)) sq.push([r + dir, c + dc]);
     return sq;
@@ -388,13 +398,49 @@ export function isSquareAttackedBy(
   c: number,
   byColor: Color,
 ): boolean {
-  for (let pr = 0; pr < BOARD_SIZE; pr++)
-    for (let pc = 0; pc < BOARD_SIZE; pc++) {
+  const n = state.occupancy.length;
+  for (let pr = 0; pr < n; pr++)
+    for (let pc = 0; pc < n; pc++) {
       const p = getPieceAt(state, pr, pc);
       if (p && p.color === byColor)
         if (attacksFrom(state, pr, pc, p).some(([ar, ac]) => ar === r && ac === c)) return true;
     }
   return false;
+}
+
+const MERCENARY_ID_MARK = "mercenary";
+
+function isSquareAttackedByOrangeLostMerc(
+  state: ChessState,
+  r: number,
+  c: number,
+): boolean {
+  const n = state.occupancy.length;
+  for (let pr = 0; pr < n; pr++)
+    for (let pc = 0; pc < n; pc++) {
+      const p = getPieceAt(state, pr, pc);
+      if (
+        p?.type === "P" &&
+        p.color === "orange" &&
+        p.id?.includes(MERCENARY_ID_MARK) &&
+        attacksFrom(state, pr, pc, p).some(([ar, ac]) => ar === r && ac === c)
+      )
+        return true;
+    }
+  return false;
+}
+
+/** Attacked by the opposite player or by an orange Lost Mercenary (for king safety). */
+export function isSquareAttackedByEnemyOrMercenary(
+  state: ChessState,
+  r: number,
+  c: number,
+  kingColor: "white" | "black",
+): boolean {
+  return (
+    isSquareAttackedBy(state, r, c, opp(kingColor)) ||
+    isSquareAttackedByOrangeLostMerc(state, r, c)
+  );
 }
 
 /** @deprecated Use isSquareAttackedBy(state, ...) */
@@ -421,8 +467,12 @@ function boardToMinimalState(board: Board): ChessState {
 }
 
 function isInCheckState(state: ChessState, color: Color): boolean {
+  if (color === "orange") return false;
   const [kr, kc] = findKingInState(state, color);
-  return kr !== -1 && isSquareAttackedBy(state, kr, kc, opp(color));
+  return (
+    kr !== -1 &&
+    isSquareAttackedByEnemyOrMercenary(state, kr, kc, color)
+  );
 }
 
 /** In-check from dual-layer state or from a derived `Board` grid. */
@@ -447,6 +497,7 @@ function pseudoMoves(
   if (type === "M") return [];
 
   if (type === "P") {
+    if (color === "orange") return [];
     const dir = color === "white" ? -1 : 1;
     const _off = (BOARD_SIZE - 8) / 2;
     const startRow = color === "white" ? 6 + _off : 1 + _off;
@@ -592,16 +643,17 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
     if (!isInCheck(nb, piece.color)) legal.push([tr, tc]);
   }
 
-  if (piece.type === "K" && !isInCheck(state, piece.color)) {
-    const row = piece.color === "white" ? 7 : 0;
-    const rights = state.castlingRights[piece.color];
+  if (piece.type === "K" && piece.color !== "orange" && !isInCheck(state, piece.color)) {
+    const side = piece.color as "white" | "black";
+    const row = side === "white" ? 7 : 0;
+    const rights = state.castlingRights[side];
 
     if (
       rights.kingside &&
       !state.occupancy[row][5] &&
       !state.occupancy[row][6] &&
-      !isSquareAttackedBy(state, row, 5, opp(piece.color)) &&
-      !isSquareAttackedBy(state, row, 6, opp(piece.color))
+      !isSquareAttackedByEnemyOrMercenary(state, row, 5, side) &&
+      !isSquareAttackedByEnemyOrMercenary(state, row, 6, side)
     ) {
       legal.push([row, 6]);
     }
@@ -611,8 +663,8 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
       !state.occupancy[row][1] &&
       !state.occupancy[row][2] &&
       !state.occupancy[row][3] &&
-      !isSquareAttackedBy(state, row, 3, opp(piece.color)) &&
-      !isSquareAttackedBy(state, row, 2, opp(piece.color))
+      !isSquareAttackedByEnemyOrMercenary(state, row, 3, side) &&
+      !isSquareAttackedByEnemyOrMercenary(state, row, 2, side)
     ) {
       legal.push([row, 2]);
     }
@@ -622,8 +674,10 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 }
 
 export function hasAnyLegalMove(state: ChessState, color: Color): boolean {
-  for (let r = 0; r < BOARD_SIZE; r++)
-    for (let c = 0; c < BOARD_SIZE; c++) {
+  if (color === "orange") return false;
+  const n = state.occupancy.length;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
       if (getPieceAt(state, r, c)?.color === color) {
         const tempState = { ...state, turn: color };
         if (getLegalMoves(tempState, r, c).length > 0) return true;
@@ -657,7 +711,9 @@ export function makeMove(
     white: { ...state.castlingRights.white },
     black: { ...state.castlingRights.black },
   };
-  if (piece.type === "K") cr[piece.color] = { kingside: false, queenside: false };
+  if (piece.type === "K" && (piece.color === "white" || piece.color === "black")) {
+    cr[piece.color] = { kingside: false, queenside: false };
+  }
   if (piece.type === "R" || (fr === 7 && fc === 0)) cr.white.queenside = false;
   if (piece.type === "R" || (fr === 7 && fc === 7)) cr.white.kingside = false;
   if (piece.type === "R" || (fr === 0 && fc === 0)) cr.black.queenside = false;
@@ -668,7 +724,6 @@ export function makeMove(
     else if (fr === 0 && fc === 0) cr.black.queenside = false;
     else if (fr === 0 && fc === 7) cr.black.kingside = false;
   }
-  if (piece.type === "K") cr[piece.color] = { kingside: false, queenside: false };
   if (tr === 7 && tc === 0) cr.white.queenside = false;
   if (tr === 7 && tc === 7) cr.white.kingside = false;
   if (tr === 0 && tc === 0) cr.black.queenside = false;
@@ -680,7 +735,8 @@ export function makeMove(
   const cbw = [...state.capturedByWhite];
   const cbb = [...state.capturedByBlack];
   if (captured) {
-    piece.color === "white" ? cbw.push(captured.type) : cbb.push(captured.type);
+    if (captured.color === "white") cbw.push(captured.type);
+    else if (captured.color === "black") cbb.push(captured.type);
   }
   if (isEP) {
     piece.color === "white" ? cbw.push("P") : cbb.push("P");
@@ -690,7 +746,8 @@ export function makeMove(
   let goldBlack = state.goldBlack;
   if (captured) {
     const gain = PIECE_VALUE[captured.type];
-    piece.color === "white" ? (goldWhite += gain) : (goldBlack += gain);
+    if (captured.color === "white") goldWhite += gain;
+    else if (captured.color === "black") goldBlack += gain;
   }
   if (isEP) {
     piece.color === "white" ? (goldWhite += 1) : (goldBlack += 1);
@@ -759,6 +816,22 @@ export function materialAdvantage(state: ChessState): { white: number; black: nu
   const w = sum(state.capturedByWhite);
   const b = sum(state.capturedByBlack);
   return { white: w - b, black: b - w };
+}
+
+/** Recompute playing / check / mate / stalemate after board mutations (e.g. mercenary). */
+export function recomputeChessStatus(g: ChessState): ChessState {
+  const [wkr] = findKing(g, "white");
+  const [bkr] = findKing(g, "black");
+  if (wkr === -1) return { ...g, status: "checkmate", turn: "black" };
+  if (bkr === -1) return { ...g, status: "checkmate", turn: "white" };
+  const nextTurn = g.turn;
+  const nextHasMove = hasAnyLegalMove(g, nextTurn);
+  let status: GameStatus = g.status;
+  if (!nextHasMove)
+    status = isInCheck(g, nextTurn) ? "checkmate" : "stalemate";
+  else if (isInCheck(g, nextTurn)) status = "check";
+  else status = "playing";
+  return { ...g, status };
 }
 
 /** @deprecated Engine no longer mutates a standalone Board — use syncStateFromBoard after cloneBoard(getDerivedBoard(state)). */

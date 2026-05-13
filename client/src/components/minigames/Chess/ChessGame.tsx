@@ -22,6 +22,11 @@ import {
   castlingRightsAfterSwap,
 } from "./engine";
 import {
+  applyLostMercenaryAfterFullMove,
+  isMercenaryPiece,
+  spawnLostMercenaryOnBoard,
+} from "./mercenaryMoves";
+import {
   Augment,
   AUGMENT_POOL,
   rollAugments,
@@ -155,13 +160,20 @@ function findCheckingPiece(
   board: Board,
   kingColor: Color,
 ): [number, number] | null {
+  if (kingColor === "orange") return null;
   const [kr, kc] = findKing(board, kingColor);
   if (kr === -1) return null;
   const bs = board.length;
   for (let r = 0; r < bs; r++)
     for (let c = 0; c < bs; c++) {
       const p = board[r][c];
-      if (p?.color === opp(kingColor)) {
+      if (!p) continue;
+      const isEnemy = p.color === opp(kingColor);
+      const isOrangeMerc =
+        p.color === "orange" &&
+        typeof p.id === "string" &&
+        p.id.includes("mercenary");
+      if (isEnemy || isOrangeMerc) {
         const test = cloneBoard(board);
         test[r][c] = null;
         if (!isInCheck(test, kingColor)) return [r, c];
@@ -2887,6 +2899,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       capturedType?: PieceType | null,
     ) => {
       const movingColor = game.turn;
+      const victimSquarePiece = getDerivedBoard(game)[to[0]][to[1]];
+      const victimWasMercenary = isMercenaryPiece(victimSquarePiece);
       setGameHistory((h) => [...h, game]);
       setAugmentHistory((h) => [...h, {
         frozenSquare, frozenExpireAfter,
@@ -2930,7 +2944,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       );
 
       // Jew
-      if (capturedType === "P") {
+      if (capturedType === "P" && !victimWasMercenary) {
         const victimColor = opp(movingColor);
         const victimAugs =
           victimColor === "white" ? whiteAugments : blackAugments;
@@ -2949,14 +2963,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       // Necromancer: track column at death, revive at home rank
-      if (capturedType === "P") {
+      if (capturedType === "P" && !victimWasMercenary) {
         const victimColor = opp(movingColor);
         if (victimColor === "white")
           setWhiteLostPawnCols((prev) => [...prev, to[1]]);
         else setBlackLostPawnCols((prev) => [...prev, to[1]]);
       }
       // Necromancer+: track lost knights/bishops
-      if (capturedType === "N" || capturedType === "B") {
+      if ((capturedType === "N" || capturedType === "B") && !victimWasMercenary) {
         const victimColor = opp(movingColor);
         if (victimColor === "white")
           setWhiteLostMinors((prev) => [...prev, capturedType]);
@@ -3023,7 +3037,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       // Gold from capture (1 gold per captured piece, blocked by peace treaty)
-      if (capturedType && peaceTreatyMovesLeft <= 0) {
+      if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
         newGame = {
           ...newGame,
           goldWhite:
@@ -3040,7 +3054,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       {
         const wCT = whiteContractTarget,
           bCT = blackContractTarget;
-        if (capturedType && capturedType !== "K") {
+        if (capturedType && capturedType !== "K" && !victimWasMercenary) {
           if (
             movingColor === "white" &&
             wCT &&
@@ -3175,6 +3189,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             ...prev,
             { row: bRow, col: bCol, movesLeft: 6 },
           ]);
+        } else if (event.id === "lost-mercenary") {
+          newGame = spawnLostMercenaryOnBoard(newGame, wallSquares);
         } else if (event.id === "cold-winds") {
           const bs3 = getDerivedBoard(newGame).length;
           const wPcs: [number, number][] = [],
@@ -3283,12 +3299,22 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setActivePuppetColor(null);
       }
 
-      setGame(newGame);
+      let boardAfterMerc = newGame;
+      if (movingColor === "black") {
+        boardAfterMerc = applyLostMercenaryAfterFullMove(newGame, {
+          wallSquares,
+          frozenSquare,
+          coldWindsSquares,
+          coldWindsMovesLeft,
+          blessedSquares,
+        });
+      }
+      setGame(boardAfterMerc);
 
       // Triggers
       const newTriggers: AugmentTrigger[] = [];
 
-      if (capturedType) {
+      if (capturedType && !victimWasMercenary) {
         const ms = movingColor === "white" ? whiteMilestones : blackMilestones;
         const triggered = checkNewMilestone(capturedType, ms);
         if (triggered) {
@@ -3302,7 +3328,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           });
         }
       }
-      if (capturedType && playerAugs.some((a) => a.id === "bloodlust")) {
+      if (capturedType && playerAugs.some((a) => a.id === "bloodlust") && !victimWasMercenary) {
         const newCount =
           (movingColor === "white" ? whiteCaptureCount : blackCaptureCount) + 1;
         if (movingColor === "white") setWhiteCaptureCount(newCount);
@@ -3314,7 +3340,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           else setBlackBloodlustNext((t) => t + 4);
           newTriggers.push({ color: movingColor, reason: "bloodlust" });
         }
-      } else if (capturedType) {
+      } else if (capturedType && !victimWasMercenary) {
         const newCount =
           (movingColor === "white" ? whiteCaptureCount : blackCaptureCount) + 1;
         if (movingColor === "white") setWhiteCaptureCount(newCount);
@@ -3360,9 +3386,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       nextEventTurn,
       activeNuke,
       coldWindsMovesLeft,
+      coldWindsSquares,
       whiteContractTarget,
       blackContractTarget,
       wallMovesLeft,
+      wallSquares,
+      blessedSquares,
       activePuppetColor,
       activePuppetSquare,
       eventInterval,
@@ -3842,6 +3871,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (
           piece &&
           piece.color !== game.turn &&
+          piece.color !== "orange" &&
           piece.type !== "K" &&
           piece.type !== "P" &&
           piece.type !== "M"
@@ -3874,6 +3904,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (
           piece &&
           piece.color !== game.turn &&
+          piece.color !== "orange" &&
           piece.type !== "K" &&
           piece.type !== "M"
         ) {
@@ -3894,7 +3925,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           piece.color !== game.turn &&
           piece.type !== "K" &&
           piece.type !== "Q" &&
-          piece.type !== "M"
+          piece.type !== "M" &&
+          piece.color !== "orange" &&
+          !piece.id?.includes("mercenary")
         ) {
           setDeathNoteTargets((prev) => [
             ...prev,

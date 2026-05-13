@@ -68,6 +68,15 @@ export const EVENT_POOL: GameEvent[] = [
     flavor: "The waters protect the chosen.",
   },
   {
+    id: "lost-mercenary",
+    name: "Lost Mercenary",
+    rarity: "uncommon",
+    icon: "🟠",
+    description:
+      "An orange mercenary pawn appears on the left flank. After each full move it marches east, or captures by sight (Q>R>N>B>P). It cannot take a king.",
+    flavor: "No banner, no master — only the next square.",
+  },
+  {
     id: "cold-winds",
     name: "Cold Winds",
     rarity: "uncommon",
