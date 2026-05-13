@@ -729,6 +729,8 @@ function SquareEl({
           <img
             src="/ilkkan.jpeg"
             alt="İlkkan"
+            decoding="async"
+            fetchPriority="high"
             style={{
               width: size * 0.78,
               height: size * 0.78,
@@ -2315,6 +2317,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   );
   const [mpReady, setMpReady] = useState(!mpConfig);
 
+  useEffect(() => {
+    const hasIlkkan =
+      whiteAugments.some((a) => a.id === "ilkkan") ||
+      blackAugments.some((a) => a.id === "ilkkan");
+    if (!hasIlkkan) return;
+    const img = new Image();
+    img.src = "/ilkkan.jpeg";
+  }, [whiteAugments, blackAugments]);
+
   const [augmentQueue, setAugmentQueue] = useState<AugmentTrigger[]>([]);
   const [currentTrigger, setCurrentTrigger] = useState<AugmentTrigger | null>(
     null,
@@ -3487,6 +3498,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
+  const clearModes = (opts?: { preserveIlkkan?: boolean }) => {
   const clearModes = (opts?: { preserveIlkkan?: boolean; preserveSwap?: boolean }) => {
     setFreezeMode(false);
     setNecroMode(false);
