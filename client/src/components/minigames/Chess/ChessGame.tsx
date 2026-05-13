@@ -72,8 +72,7 @@ type TierBought = {
   legendary: number;
 };
 type DeathNoteTarget = {
-  row: number;
-  col: number;
+  pieceId: string;
   turnsLeft: number;
   targetColor: Color;
 };
@@ -86,6 +85,8 @@ type AugmentSnapshot = {
   activePuppetColor: Color | null;
   whiteContractTarget: [number, number] | null;
   blackContractTarget: [number, number] | null;
+  whiteContractPieceId: string | null;
+  blackContractPieceId: string | null;
   whiteIlkkanId: string | null;
   blackIlkkanId: string | null;
   blessedSquares: { row: number; col: number; movesLeft: number }[];
@@ -138,6 +139,36 @@ const KNIGHT_OFFSETS: [number, number][] = [
   [2, -1],
   [2, 1],
 ];
+
+function findSquareByPieceId(
+  board: Board,
+  pieceId: string,
+): [number, number] | null {
+  for (let r = 0; r < board.length; r++)
+    for (let c = 0; c < board[r].length; c++)
+      if (board[r][c]?.id === pieceId) return [r, c];
+  return null;
+}
+
+function normalizeDeathNoteTargets(raw: unknown): DeathNoteTarget[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DeathNoteTarget[] = [];
+  for (const t of raw) {
+    if (!t || typeof t !== "object") continue;
+    const o = t as Record<string, unknown>;
+    if (
+      typeof o.pieceId === "string" &&
+      typeof o.turnsLeft === "number" &&
+      (o.targetColor === "white" || o.targetColor === "black")
+    )
+      out.push({
+        pieceId: o.pieceId,
+        turnsLeft: o.turnsLeft,
+        targetColor: o.targetColor as Color,
+      });
+  }
+  return out;
+}
 
 function checkNewMilestone(
   t: PieceType | null,
@@ -2467,6 +2498,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [blackContractTarget, setBlackContractTarget] = useState<
     [number, number] | null
   >(null);
+  const [whiteContractPieceId, setWhiteContractPieceId] = useState<
+    string | null
+  >(null);
+  const [blackContractPieceId, setBlackContractPieceId] = useState<
+    string | null
+  >(null);
   const [contractMode, setContractMode] = useState(false);
 
   // Necromancer+ (augment)
@@ -2475,7 +2512,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [whiteLostMinors, setWhiteLostMinors] = useState<PieceType[]>([]);
   const [blackLostMinors, setBlackLostMinors] = useState<PieceType[]>([]);
   const [necroPlusMode, setNecroPlusMode] = useState(false);
-  const [necroPlusChoice, setNecroPlusChoice] = useState<PieceType | null>(null);
 
   // Monolith permanent removal flag
   const [whiteMonolithPermRemoved, setWhiteMonolithPermRemoved] =
@@ -2645,6 +2681,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     coldWindsMovesLeft,
     whiteContractTarget,
     blackContractTarget,
+    whiteContractPieceId,
+    blackContractPieceId,
     whiteBlessedWaterCharges,
     blackBlessedWaterCharges,
     whiteTierBought,
@@ -2700,7 +2738,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackRoyalHouseholdUsed(g.blackRoyalHouseholdUsed as boolean);
     setWhiteDNUsed(g.whiteDNUsed as boolean);
     setBlackDNUsed(g.blackDNUsed as boolean);
-    setDeathNoteTargets(g.deathNoteTargets as DeathNoteTarget[]);
+    setDeathNoteTargets(normalizeDeathNoteTargets(g.deathNoteTargets));
     setBoardExpanded(g.boardExpanded as boolean);
     setWhiteDomainUsed(g.whiteDomainUsed as boolean);
     setBlackDomainUsed(g.blackDomainUsed as boolean);
@@ -2732,6 +2770,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setColdWindsMovesLeft(g.coldWindsMovesLeft as number);
     setWhiteContractTarget(g.whiteContractTarget as [number, number] | null);
     setBlackContractTarget(g.blackContractTarget as [number, number] | null);
+    setWhiteContractPieceId(
+      (g as { whiteContractPieceId?: string | null }).whiteContractPieceId ??
+        null,
+    );
+    setBlackContractPieceId(
+      (g as { blackContractPieceId?: string | null }).blackContractPieceId ??
+        null,
+    );
     setWhiteBlessedWaterCharges(g.whiteBlessedWaterCharges as number);
     setBlackBlessedWaterCharges(g.blackBlessedWaterCharges as number);
     setWhiteTierBought(g.whiteTierBought as TierBought);
@@ -2767,7 +2813,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setMonolithMode(null);
     setShopOpen(false);
     setNecroPlusMode(false);
-    setNecroPlusChoice(null);
     setIlkkanMode(false);
     setSwapMode(false);
     setSwapFirst(null);
@@ -2927,6 +2972,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         deathNoteTargets,
         activePuppetSquare, activePuppetColor,
         whiteContractTarget, blackContractTarget,
+        whiteContractPieceId, blackContractPieceId,
         whiteIlkkanId, blackIlkkanId,
         blessedSquares,
         coldWindsSquares, coldWindsMovesLeft,
@@ -3053,46 +3099,89 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       // Peace treaty countdown
       if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft((n) => n - 1);
 
-      // Contract Killer — fulfillment + position tracking
+      // Contract Killer — 4× payout when you capture the marked piece; consume augment once resolved
       {
-        const wCT = whiteContractTarget,
-          bCT = blackContractTarget;
-        if (capturedType && capturedType !== "K" && !victimWasMercenary) {
+        const lmCapId = newGame.lastMove?.capturedPieceId ?? null;
+        const settleWhiteContract = () => {
+          setWhiteContractTarget(null);
+          setWhiteContractPieceId(null);
+          setWhiteAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
+        };
+        const settleBlackContract = () => {
+          setBlackContractTarget(null);
+          setBlackContractPieceId(null);
+          setBlackAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
+        };
+        if (whiteContractPieceId) {
+          let cleared = false;
           if (
-            movingColor === "white" &&
-            wCT &&
-            wCT[0] === to[0] &&
-            wCT[1] === to[1]
+            capturedType &&
+            capturedType !== "K" &&
+            movingColor === "white"
           ) {
-            const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
-            newGame = { ...newGame, goldWhite: newGame.goldWhite + bonus };
-            setWhiteContractTarget(null);
+            const hitId = lmCapId === whiteContractPieceId;
+            const wCT = whiteContractTarget;
+            const hitSq =
+              wCT && wCT[0] === to[0] && wCT[1] === to[1];
+            if (hitId || hitSq) {
+              const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
+              newGame = { ...newGame, goldWhite: newGame.goldWhite + bonus };
+              settleWhiteContract();
+              cleared = true;
+            }
           }
           if (
-            movingColor === "black" &&
-            bCT &&
-            bCT[0] === to[0] &&
-            bCT[1] === to[1]
+            !cleared &&
+            lmCapId === whiteContractPieceId &&
+            movingColor === "black"
           ) {
-            const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
-            newGame = { ...newGame, goldBlack: newGame.goldBlack + bonus };
-            setBlackContractTarget(null);
+            settleWhiteContract();
+            cleared = true;
+          }
+          if (!cleared) {
+            const pos = findSquareByPieceId(
+              getDerivedBoard(newGame),
+              whiteContractPieceId,
+            );
+            if (pos) setWhiteContractTarget(pos);
+            else settleWhiteContract();
           }
         }
-        if (
-          movingColor === "black" &&
-          wCT &&
-          wCT[0] === from[0] &&
-          wCT[1] === from[1]
-        )
-          setWhiteContractTarget([to[0], to[1]]);
-        if (
-          movingColor === "white" &&
-          bCT &&
-          bCT[0] === from[0] &&
-          bCT[1] === from[1]
-        )
-          setBlackContractTarget([to[0], to[1]]);
+        if (blackContractPieceId) {
+          let cleared = false;
+          if (
+            capturedType &&
+            capturedType !== "K" &&
+            movingColor === "black"
+          ) {
+            const hitId = lmCapId === blackContractPieceId;
+            const bCT = blackContractTarget;
+            const hitSq =
+              bCT && bCT[0] === to[0] && bCT[1] === to[1];
+            if (hitId || hitSq) {
+              const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
+              newGame = { ...newGame, goldBlack: newGame.goldBlack + bonus };
+              settleBlackContract();
+              cleared = true;
+            }
+          }
+          if (
+            !cleared &&
+            lmCapId === blackContractPieceId &&
+            movingColor === "white"
+          ) {
+            settleBlackContract();
+            cleared = true;
+          }
+          if (!cleared) {
+            const pos = findSquareByPieceId(
+              getDerivedBoard(newGame),
+              blackContractPieceId,
+            );
+            if (pos) setBlackContractTarget(pos);
+            else settleBlackContract();
+          }
+        }
       }
 
       // ── Event trigger (full round = after black completes a half-move) ───
@@ -3228,16 +3317,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         }
       }
 
-      // Death Note: track piece movement, decrement timers, kill expired
+      // Death Note: timers tick each full move; kills target piece by ID when expired
       let updatedDN = deathNoteTargets;
-      if (newGame.lastMove) {
-        const { from, to } = newGame.lastMove;
-        updatedDN = updatedDN.map((dn) =>
-          dn.row === from[0] && dn.col === from[1]
-            ? { ...dn, row: to[0], col: to[1] }
-            : dn,
-        );
-      }
       updatedDN = updatedDN.map((dn) => ({
         ...dn,
         turnsLeft: dn.turnsLeft - 1,
@@ -3245,18 +3326,19 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       let dnBoard = getDerivedBoard(newGame);
       let dnChanged = false;
       updatedDN = updatedDN.filter((dn) => {
-        if (dn.turnsLeft <= 0) {
-          const p = dnBoard[dn.row]?.[dn.col];
-          if (p && p.color === dn.targetColor && p.type !== "K") {
-            if (!dnChanged) {
-              dnBoard = cloneBoard(dnBoard);
-              dnChanged = true;
-            }
-            dnBoard[dn.row][dn.col] = null;
+        if (dn.turnsLeft > 0) return true;
+        const pos = findSquareByPieceId(dnBoard, dn.pieceId);
+        if (!pos) return false;
+        const [rr, cc] = pos;
+        const p = dnBoard[rr]?.[cc];
+        if (p && p.color === dn.targetColor && p.type !== "K") {
+          if (!dnChanged) {
+            dnBoard = cloneBoard(dnBoard);
+            dnChanged = true;
           }
-          return false;
+          dnBoard[rr][cc] = null;
         }
-        return true;
+        return false;
       });
       if (dnChanged) newGame = recomputeStatus(syncStateFromBoard({ ...newGame }, dnBoard));
       setDeathNoteTargets(updatedDN);
@@ -3419,6 +3501,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       coldWindsSquares,
       whiteContractTarget,
       blackContractTarget,
+      whiteContractPieceId,
+      blackContractPieceId,
       wallMovesLeft,
       wallSquares,
       blessedSquares,
@@ -3448,11 +3532,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     if (augRestored) {
       setFrozenSquare(augRestored.frozenSquare);
       setFrozenExpireAfter(augRestored.frozenExpireAfter);
-      setDeathNoteTargets(augRestored.deathNoteTargets);
+      setDeathNoteTargets(normalizeDeathNoteTargets(augRestored.deathNoteTargets));
       setActivePuppetSquare(augRestored.activePuppetSquare);
       setActivePuppetColor(augRestored.activePuppetColor);
       setWhiteContractTarget(augRestored.whiteContractTarget);
       setBlackContractTarget(augRestored.blackContractTarget);
+      setWhiteContractPieceId(augRestored.whiteContractPieceId ?? null);
+      setBlackContractPieceId(augRestored.blackContractPieceId ?? null);
       setWhiteIlkkanId(augRestored.whiteIlkkanId);
       setBlackIlkkanId(augRestored.blackIlkkanId);
       setBlessedSquares(augRestored.blessedSquares);
@@ -3680,9 +3766,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     else setBlackDomainUsed(true);
     if (frozenSquare)
       setFrozenSquare([frozenSquare[0] + 1, frozenSquare[1] + 1]);
-    setDeathNoteTargets((prev) =>
-      prev.map((dn) => ({ ...dn, row: dn.row + 1, col: dn.col + 1 })),
-    );
     setActiveNuke((prev) =>
       prev
         ? { ...prev, topRow: prev.topRow + 1, leftCol: prev.leftCol + 1 }
@@ -3697,16 +3780,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setWallSquares((prev) =>
       prev.map((w) => ({ row: w.row + 1, col: w.col + 1 })),
     );
-    if (whiteContractTarget)
-      setWhiteContractTarget([
-        whiteContractTarget[0] + 1,
-        whiteContractTarget[1] + 1,
-      ]);
-    if (blackContractTarget)
-      setBlackContractTarget([
-        blackContractTarget[0] + 1,
-        blackContractTarget[1] + 1,
-      ]);
+    const expBoard = getDerivedBoard(expanded);
+    if (whiteContractPieceId) {
+      const p = findSquareByPieceId(expBoard, whiteContractPieceId);
+      if (p) setWhiteContractTarget(p);
+    }
+    if (blackContractPieceId) {
+      const p = findSquareByPieceId(expBoard, blackContractPieceId);
+      if (p) setBlackContractTarget(p);
+    }
     if (activePuppetSquare)
       setActivePuppetSquare([
         activePuppetSquare[0] + 1,
@@ -3723,7 +3805,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setWhatSelected([whatSelected[0] + 1, whatSelected[1] + 1]);
     setValidMoves((prev) => prev.map(([r, c]) => [r + 1, c + 1]));
     clearModes();
-  }, [game, boardExpanded, frozenSquare, selected, sakoSelected, swapFirst, whatSelected]);
+  }, [
+    game,
+    boardExpanded,
+    frozenSquare,
+    selected,
+    sakoSelected,
+    whatSelected,
+    whiteContractPieceId,
+    blackContractPieceId,
+  ]);
 
   // ── Square click ─────────────────────────────────────────────────────────
 
@@ -3754,6 +3845,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             deathNoteTargets,
             activePuppetSquare, activePuppetColor,
             whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
             whiteIlkkanId, blackIlkkanId,
             blessedSquares,
             coldWindsSquares, coldWindsMovesLeft,
@@ -3839,12 +3931,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const lostMinorsArr =
           playerColor === "white" ? whiteLostMinors : blackLostMinors;
         if (r === backRow && !getDerivedBoard(game)[r][c] && lostMinorsArr.length > 0) {
-          const pieceType =
-            necroPlusChoice && lostMinorsArr.includes(necroPlusChoice)
-              ? necroPlusChoice
-              : lostMinorsArr.includes("B")
-                ? "B"
-                : "N";
+          const pieceType = lostMinorsArr[lostMinorsArr.length - 1];
           const nb = cloneBoard(getDerivedBoard(game));
           nb[r][c] = { type: pieceType, color: playerColor };
           const newGState = recomputeStatus(
@@ -3862,6 +3949,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             deathNoteTargets,
             activePuppetSquare, activePuppetColor,
             whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
             whiteIlkkanId, blackIlkkanId,
             blessedSquares,
             coldWindsSquares, coldWindsMovesLeft,
@@ -3897,7 +3985,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           requestSnapshot();
         }
         setNecroPlusMode(false);
-        setNecroPlusChoice(null);
         setSelected(null);
         setValidMoves([]);
         return;
@@ -3910,12 +3997,17 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           piece.color !== "orange" &&
           piece.type !== "K" &&
           piece.type !== "P" &&
-          piece.type !== "M"
+          piece.type !== "M" &&
+          piece.id
         ) {
-          if (game.turn === "white") setWhiteContractTarget([r, c]);
-          else setBlackContractTarget([r, c]);
-          if (game.turn === "white") setWhiteAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
-          else setBlackAugments((prev) => prev.filter((a) => a.id !== "contract-killer"));
+          const cid = piece.id;
+          if (game.turn === "white") {
+            setWhiteContractTarget([r, c]);
+            setWhiteContractPieceId(cid);
+          } else {
+            setBlackContractTarget([r, c]);
+            setBlackContractPieceId(cid);
+          }
           setContractMode(false);
         }
         setSelected(null);
@@ -3962,11 +4054,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           piece.type !== "K" &&
           piece.type !== "Q" &&
           piece.type !== "M" &&
-          !isLostMercenaryPawn(piece)
+          piece.id
         ) {
+          const pid = piece.id;
           setDeathNoteTargets((prev) => [
             ...prev,
-            { row: r, col: c, turnsLeft: 10, targetColor: piece.color },
+            {
+              pieceId: pid,
+              turnsLeft: 16,
+              targetColor: piece.color,
+            },
           ]);
           if (game.turn === "white") setWhiteDNUsed(true);
           else setBlackDNUsed(true);
@@ -4017,6 +4114,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             deathNoteTargets,
             activePuppetSquare, activePuppetColor,
             whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
             whiteIlkkanId, blackIlkkanId,
             blessedSquares,
             coldWindsSquares, coldWindsMovesLeft,
@@ -4273,6 +4371,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             deathNoteTargets,
             activePuppetSquare, activePuppetColor,
             whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
             whiteIlkkanId, blackIlkkanId,
             blessedSquares,
             coldWindsSquares, coldWindsMovesLeft,
@@ -4635,6 +4734,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setChaosEventTiming(false);
     setWhiteContractTarget(null);
     setBlackContractTarget(null);
+    setWhiteContractPieceId(null);
+    setBlackContractPieceId(null);
     setContractMode(false);
     setWhiteBlessedWaterCharges(0);
     setBlackBlessedWaterCharges(0);
@@ -4813,8 +4914,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     onMonolithRemove: spellGuard(handleToggleMonolithRemove),
     contractAvailable:
       color === "white"
-        ? whiteAugments.some((a) => a.id === "contract-killer")
-        : blackAugments.some((a) => a.id === "contract-killer"),
+        ? whiteAugments.some((a) => a.id === "contract-killer") &&
+          !whiteContractPieceId
+        : blackAugments.some((a) => a.id === "contract-killer") &&
+          !blackContractPieceId,
     contractActive: contractMode && game.turn === color,
     onContract: spellGuard(handleToggleContract),
     contractTarget:
@@ -4853,7 +4956,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       };
     if (necroPlusMode)
       return {
-        text: "💀✨ Click your back rank to revive a captured knight/bishop",
+        text: "💀✨ Click your back rank to revive your last captured knight or bishop",
         color: "#c084fc",
       };
     if (ilkkanMode)
@@ -4900,7 +5003,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       };
     if (deathNoteMode)
       return {
-        text: "☠️ DEATH NOTE — Click an enemy piece (not king/queen) to doom it in 10 moves",
+        text: "☠️ DEATH NOTE — Click an enemy piece (not king/queen) to doom it in 16 turns (each move ticks)",
         color: "#dc2626",
       };
     if (monolithMode === "place")
@@ -4915,7 +5018,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       };
     if (contractMode)
       return {
-        text: "🎯 CONTRACT — Click an enemy piece (not king/pawn) to mark it",
+        text: "🎯 CONTRACT — Click an enemy piece (not king/pawn) to mark it (one contract per pick)",
         color: "#f59e0b",
       };
     if (blessedWaterMode)
@@ -5086,9 +5189,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                 frozenSquare[0] === r &&
                 frozenSquare[1] === c
               );
-              const dn = deathNoteTargets.find(
-                (d) => d.row === r && d.col === c,
-              );
+              const dn = piece?.id
+                ? deathNoteTargets.find((d) => d.pieceId === piece.id)
+                : undefined;
               const isNukeSquare = !!(
                 activeNuke &&
                 r >= activeNuke.topRow &&
