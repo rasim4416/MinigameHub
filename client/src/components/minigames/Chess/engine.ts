@@ -55,6 +55,7 @@ export function castlingRightsAfterSwap(
       qr: [0 + off, 0 + off] as [number, number],
     },
   };
+  const sideOk = (color: Color, kingside: boolean): boolean => {
   const sideOk = (color: "white" | "black", kingside: boolean): boolean => {
     const h = homes[color];
     const [kr, kc] = h.k;
