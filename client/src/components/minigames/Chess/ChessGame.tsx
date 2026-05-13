@@ -392,9 +392,12 @@ function SquareEl({
   isWall,
   isPuppet,
   isIlkkan,
+  viewFlipped,
 }: {
   row: number;
   col: number;
+  /** When true (black in online MP), rank/file labels sit on the rotated edges. */
+  viewFlipped?: boolean;
   size: number;
   piece: { type: PieceType; color: Color } | null;
   isSelected: boolean;
@@ -415,6 +418,7 @@ function SquareEl({
   isPuppet?: boolean;
   isIlkkan?: boolean;
 }) {
+  const vf = !!viewFlipped;
   const light = (row + col) % 2 === 0;
   let bg = light ? LIGHT_SQ : DARK_SQ;
   if (isCheckKing) bg = "#c82020";
@@ -439,12 +443,12 @@ function SquareEl({
         overflow: "hidden",
       }}
     >
-      {col === 0 && (
+      {(vf ? col === boardSize - 1 : col === 0) && (
         <span
           style={{
             position: "absolute",
             top: 2,
-            left: 3,
+            ...(vf ? { right: 3 } : { left: 3 }),
             fontSize: Math.max(9, size * 0.18),
             fontWeight: 700,
             color: light ? DARK_SQ : LIGHT_SQ,
@@ -455,11 +459,11 @@ function SquareEl({
           {getRankLabel(row, boardSize)}
         </span>
       )}
-      {row === boardSize - 1 && (
+      {(vf ? row === 0 : row === boardSize - 1) && (
         <span
           style={{
             position: "absolute",
-            bottom: 2,
+            ...(vf ? { top: 2 } : { bottom: 2 }),
             right: 3,
             fontSize: Math.max(9, size * 0.18),
             fontWeight: 700,
@@ -2468,6 +2472,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const centerSquares = showCenterMarkers
     ? getCenterSquares(boardSize)
     : new Set<string>();
+
+  /** Online black sees the board from their side (pieces at bottom); white unchanged. */
+  const mpViewFlipped = mpConfig?.myColor === "black";
 
   // Responsive board
   useEffect(() => {
@@ -4709,7 +4716,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
+        flexDirection: mpViewFlipped ? "column-reverse" : "column",
         width: "100%",
         height: "100%",
         background: "#030712",
@@ -4759,8 +4766,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             flexShrink: 0,
           }}
         >
-          {Array.from({ length: boardSize }, (_, r) =>
-            Array.from({ length: boardSize }, (_, c) => {
+          {Array.from({ length: boardSize }, (_, dr) =>
+            Array.from({ length: boardSize }, (_, dc) => {
+              const r = mpViewFlipped ? boardSize - 1 - dr : dr;
+              const c = mpViewFlipped ? boardSize - 1 - dc : dc;
               const piece = getDerivedBoard(game)[r]?.[c] ?? null;
               const isSel = selected?.[0] === r && selected?.[1] === c;
               const isVM = validMoves.some(([vr, vc]) => vr === r && vc === c);
@@ -4826,9 +4835,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               );
               return (
                 <SquareEl
-                  key={`${r}-${c}`}
+                  key={`${dr}-${dc}`}
                   row={r}
                   col={c}
+                  viewFlipped={mpViewFlipped}
                   size={sqSize}
                   piece={piece}
                   isSelected={isSel}
