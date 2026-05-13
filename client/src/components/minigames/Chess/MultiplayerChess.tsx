@@ -20,43 +20,181 @@ interface WsMsg {
   [key: string]: unknown;
 }
 
-// ─── WebSocket hook ───────────────────────────────────────────────────────────
+interface ResumeSession {
+  roomId: string;
+  color: Color;
+  sessionToken: string;
+}
+
+// ─── WebSocket hook (graceful reconnect + resume) ───────────────────────────
 
 function useChessSocket() {
   const wsRef = useRef<WebSocket | null>(null);
+  const closingIntentionallyRef = useRef(false);
+  const resumeSessionRef = useRef<ResumeSession | null>(null);
+  const resumeEnabledRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const pingIntervalRef = useRef<number | null>(null);
+
   const [connected, setConnected] = useState(false);
+  const [connectionLost, setConnectionLost] = useState(false);
   const [lastMsg, setLastMsg] = useState<WsMsg | null>(null);
 
-  const connect = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearPingInterval = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+  }, []);
+
+  const connectInnerRef = useRef<() => void>(() => {});
+
+  const connectInner = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    if (wsRef.current) {
+      const stale = wsRef.current;
+      closingIntentionallyRef.current = true;
+      stale.close();
+      closingIntentionallyRef.current = false;
+      if (wsRef.current === stale) wsRef.current = null;
+    }
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/chess-ws`);
     wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
-      setConnected(false);
-      if (wsRef.current === ws) wsRef.current = null;
+
+    ws.onopen = () => {
+      setConnected(true);
+      setConnectionLost(false);
+      reconnectAttemptRef.current = 0;
+      clearReconnectTimer();
+
+      const cred = resumeSessionRef.current;
+      if (cred && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "resume",
+            roomId: cred.roomId,
+            color: cred.color,
+            sessionToken: cred.sessionToken,
+          }),
+        );
+      }
+
+      clearPingInterval();
+      pingIntervalRef.current = window.setInterval(() => {
+        const w = wsRef.current;
+        if (w?.readyState === WebSocket.OPEN) {
+          w.send(JSON.stringify({ type: "ping" }));
+        }
+      }, 18_000);
     };
+
+    ws.onmessage = (e) => {
+      try {
+        setLastMsg(JSON.parse(e.data));
+      } catch {
+        /* ignore */
+      }
+    };
+
     ws.onerror = () => {
       setConnected(false);
+    };
+
+    ws.onclose = () => {
+      clearPingInterval();
+      setConnected(false);
       if (wsRef.current === ws) wsRef.current = null;
+
+      const intentional = closingIntentionallyRef.current;
+      closingIntentionallyRef.current = false;
+
+      if (intentional) return;
+
+      if (resumeEnabledRef.current && resumeSessionRef.current) {
+        setConnectionLost(true);
+        const attempt = reconnectAttemptRef.current;
+        reconnectAttemptRef.current = attempt + 1;
+        const delay = Math.min(24_000, 350 * Math.pow(2, Math.min(attempt, 7)));
+        clearReconnectTimer();
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null;
+          if (!resumeEnabledRef.current) return;
+          if (wsRef.current?.readyState === WebSocket.OPEN) return;
+          connectInnerRef.current();
+        }, delay);
+      }
     };
-    ws.onmessage = (e) => {
-      try { setLastMsg(JSON.parse(e.data)); } catch {}
-    };
-  }, []);
+  }, [clearPingInterval, clearReconnectTimer]);
+
+  connectInnerRef.current = connectInner;
+
+  const connect = useCallback(() => {
+    reconnectAttemptRef.current = 0;
+    connectInner();
+  }, [connectInner]);
 
   const disconnect = useCallback(() => {
-    wsRef.current?.close();
-    wsRef.current = null;
-  }, []);
+    clearReconnectTimer();
+    clearPingInterval();
+    resumeEnabledRef.current = false;
+    resumeSessionRef.current = null;
+    reconnectAttemptRef.current = 0;
+    setConnectionLost(false);
+
+    const w = wsRef.current;
+    if (w) {
+      closingIntentionallyRef.current = true;
+      w.close();
+      closingIntentionallyRef.current = false;
+      if (wsRef.current === w) wsRef.current = null;
+    }
+    setConnected(false);
+  }, [clearPingInterval, clearReconnectTimer]);
 
   const send = useCallback((msg: object) => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    const w = wsRef.current;
+    if (w?.readyState === WebSocket.OPEN) w.send(JSON.stringify(msg));
   }, []);
 
-  return { connected, lastMsg, connect, disconnect, send };
+  const setResumeSession = useCallback((session: ResumeSession | null) => {
+    resumeSessionRef.current = session;
+  }, []);
+
+  const setResumeEnabled = useCallback((enabled: boolean) => {
+    resumeEnabledRef.current = enabled;
+    if (!enabled) {
+      clearReconnectTimer();
+      reconnectAttemptRef.current = 0;
+      setConnectionLost(false);
+    }
+  }, [clearReconnectTimer]);
+
+  const clearConnectionLost = useCallback(() => {
+    setConnectionLost(false);
+  }, []);
+
+  return {
+    connected,
+    connectionLost,
+    lastMsg,
+    connect,
+    disconnect,
+    send,
+    setResumeSession,
+    setResumeEnabled,
+    clearConnectionLost,
+  };
 }
 
 // ─── Small UI helpers ─────────────────────────────────────────────────────────
@@ -117,7 +255,17 @@ function AugmentCard({ aug, onPick }: { aug: Augment; onPick: () => void }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
-  const { connected, lastMsg, connect, disconnect, send } = useChessSocket();
+  const {
+    connected,
+    connectionLost,
+    lastMsg,
+    connect,
+    disconnect,
+    send,
+    setResumeSession,
+    setResumeEnabled,
+    clearConnectionLost,
+  } = useChessSocket();
   const [lobbyPhase, setLobbyPhase] = useState<LobbyPhase>("menu");
   const [roomId, setRoomId] = useState("");
   const [joinInput, setJoinInput] = useState("");
@@ -140,16 +288,33 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (!lastMsg) return;
     switch (lastMsg.type) {
-      case "created":
-        setRoomId(lastMsg.roomId as string);
+      case "created": {
+        const rid = lastMsg.roomId as string;
+        const token = typeof lastMsg.sessionToken === "string" ? lastMsg.sessionToken : "";
+        setRoomId(rid);
         setMyColor("white");
+        if (token) {
+          setResumeSession({ roomId: rid, color: "white", sessionToken: token });
+          setResumeEnabled(true);
+        }
         setLobbyPhase("waiting_opponent");
         break;
-      case "joined":
-        setRoomId(lastMsg.roomId as string);
+      }
+      case "joined": {
+        const rid = lastMsg.roomId as string;
+        const token = typeof lastMsg.sessionToken === "string" ? lastMsg.sessionToken : "";
+        setRoomId(rid);
         setMyColor("black");
+        if (token) {
+          setResumeSession({ roomId: rid, color: "black", sessionToken: token });
+          setResumeEnabled(true);
+        }
         setOfferedAugs(rollAugments(3));
         setLobbyPhase("picking_augment");
+        break;
+      }
+      case "resumed":
+        clearConnectionLost();
         break;
       case "opponent_joined":
         // White now picks their augment
@@ -163,6 +328,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
         setLobbyPhase("playing");
         break;
       case "move": {
+        clearConnectionLost();
         const snap = lastMsg.snapshot as Record<string, unknown>;
         const newSnap = { ...snap, _ts: Date.now() };
         incomingRef.current = newSnap;
@@ -170,13 +336,21 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
         break;
       }
       case "opponent_left":
+        setResumeEnabled(false);
+        setResumeSession(null);
         setOpponentLeft(true);
         break;
-      case "error":
-        setJoinError(lastMsg.msg as string);
+      case "error": {
+        const m = String(lastMsg.msg ?? "");
+        setJoinError(m);
+        if (/resume|session|Room no longer|not exist/i.test(m)) {
+          setResumeEnabled(false);
+          setResumeSession(null);
+        }
         break;
+      }
     }
-  }, [lastMsg]);
+  }, [lastMsg, setResumeSession, setResumeEnabled, clearConnectionLost]);
 
   const handleCreate = () => {
     setJoinError("");
@@ -215,6 +389,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
     onSnapshot: handleSnapshot,
     incomingSnapshot,
     opponentLeft,
+    connectionLost,
   } : undefined;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -292,6 +467,11 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
           <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 16px" }}>
             Waiting for opponent to join…
           </p>
+          {connectionLost && (
+            <p style={{ color: "#fbbf24", fontSize: 12, margin: "0 0 12px", textAlign: "center" }}>
+              Connection lost — reconnecting to the room…
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 16 }}>
             {[0,1,2].map(i => (
               <div key={i} style={{
@@ -300,7 +480,15 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
               }} />
             ))}
           </div>
-          <Btn variant="secondary" onClick={() => { disconnect(); connect(); setLobbyPhase("menu"); }}>
+          <Btn variant="secondary" onClick={() => {
+            disconnect();
+            connect();
+            setLobbyPhase("menu");
+            setRoomId("");
+            setJoinError("");
+            setOpponentAugmentId(null);
+            setMyAugment(null);
+          }}>
             Cancel
           </Btn>
         </Card>
@@ -321,6 +509,11 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
             <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>
               Choose your starting augment
             </p>
+            {connectionLost && (
+              <p style={{ color: "#fbbf24", fontSize: 12, marginTop: 10 }}>
+                Connection lost — reconnecting…
+              </p>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {offeredAugs.map(aug => (
@@ -346,6 +539,11 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
           <p style={{ color: "#9ca3af", fontSize: 13, margin: "0 0 16px" }}>
             Waiting for your opponent to pick their augment…
           </p>
+          {connectionLost && (
+            <p style={{ color: "#fbbf24", fontSize: 12, margin: "0 0 12px" }}>
+              Connection lost — reconnecting…
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
             {[0,1,2].map(i => (
               <div key={i} style={{
