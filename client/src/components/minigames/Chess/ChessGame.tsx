@@ -291,9 +291,10 @@ function getRoyalEdMoves(
     const nr = kr + dr,
       nc = kc + dc;
     if (nr < 0 || nr >= bs || nc < 0 || nc >= bs) continue;
-    if (game.board[nr][nc]?.color === color) continue;
-    const test = cloneBoard(game.board);
-    const k = game.board[kr][kc];
+    const db = getDerivedBoard(game);
+    if (db[nr][nc]?.color === color) continue;
+    const test = cloneBoard(db);
+    const k = db[kr][kc];
     test[kr][kc] = null;
     test[nr][nc] = k ? { ...k } : { type: "K", color };
     if (!isInCheck(test, color)) dests.push([nr, nc]);
@@ -353,7 +354,7 @@ function getRoyalHouseholdDests(
       const nb = cloneBoard(getDerivedBoard(game));
       nb[kr][kc] = null;
       for (let t = 1; t <= s; t++) nb[kr + dr * t][kc + dc * t] = null;
-      const k = game.board[kr][kc];
+      const k = getDerivedBoard(game)[kr][kc];
       nb[nr][nc] = k ? { ...k } : { type: "K", color };
       if (!isInCheck(nb, color)) dests.push([nr, nc]);
     }
@@ -2334,9 +2335,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [game, setGame] = useState<ChessState>(createInitialState);
 
   useEffect(() => {
-    const n = game.board.length;
+    const n = game.occupancy.length;
     if (n >= 8 && n <= 16) setBoardSize(n);
-  }, [game.board.length]);
+  }, [game.occupancy.length]);
 
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
@@ -2712,7 +2713,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const applySnapshot = (s: Record<string, unknown>) => {
     const g = s as ReturnType<typeof buildSnapshot>;
     setGame(g.game as ChessState);
-    setBoardSize((g.game as ChessState).board.length);
+    setBoardSize((g.game as ChessState).occupancy.length);
     setWhiteTurnCount(g.whiteTurnCount as number);
     setBlackTurnCount(g.blackTurnCount as number);
     setWhiteAugments(g.whiteAugments as Augment[]);
@@ -3147,7 +3148,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           }
           if (!cleared) {
             const pos = findSquareByPieceId(
-              newGame.board,
+              getDerivedBoard(newGame),
               whiteContractPieceId,
             );
             if (pos) setWhiteContractTarget(pos);
@@ -3182,7 +3183,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           }
           if (!cleared) {
             const pos = findSquareByPieceId(
-              newGame.board,
+              getDerivedBoard(newGame),
               blackContractPieceId,
             );
             if (pos) setBlackContractTarget(pos);
@@ -3534,7 +3535,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setBoardSize(8);
     }
     setGame(restored);
-    setBoardSize(restored.board.length);
+    setBoardSize(restored.occupancy.length);
     setGameHistory((h) => h.slice(0, -2));
     setAugmentHistory((h) => h.slice(0, -2));
     if (augRestored) {
@@ -3592,7 +3593,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
-  const clearModes = (opts?: { preserveIlkkan?: boolean }) => {
   const clearModes = (opts?: { preserveIlkkan?: boolean; preserveSwap?: boolean }) => {
     setFreezeMode(false);
     setNecroMode(false);
@@ -3774,7 +3774,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     else setBlackDomainUsed(true);
     if (frozenSquare)
       setFrozenSquare([frozenSquare[0] + 1, frozenSquare[1] + 1]);
-    const expBoard = expanded.board;
+    const expBoard = getDerivedBoard(expanded);
     if (whiteContractPieceId) {
       const p = findSquareByPieceId(expBoard, whiteContractPieceId);
       if (p) setWhiteContractTarget(p);
@@ -3866,16 +3866,17 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
           }]);
-          let newGState: ChessState = {
-            ...game,
-            board: nb,
-            turn: opp(movingColor),
-            enPassantTarget: null,
-            lastMove: {
-              from: [r, c] as [number, number],
-              to: [r, c] as [number, number],
-              piece: { type: "M" as const, color: movingColor },
-              captured: null,
+          let newGState: ChessState = syncStateFromBoard(
+            {
+              ...game,
+              turn: opp(movingColor),
+              enPassantTarget: null,
+              lastMove: {
+                from: [r, c] as [number, number],
+                to: [r, c] as [number, number],
+                piece: { type: "M" as const, color: movingColor },
+                captured: null,
+              },
             },
             nb,
           );
@@ -3937,9 +3938,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const backRow = playerColor === "white" ? 7 + _off : _off;
         const lostMinorsArr =
           playerColor === "white" ? whiteLostMinors : blackLostMinors;
-        if (r === backRow && !game.board[r][c] && lostMinorsArr.length > 0) {
+        if (r === backRow && !getDerivedBoard(game)[r][c] && lostMinorsArr.length > 0) {
           const pieceType = lostMinorsArr[lostMinorsArr.length - 1];
-          const nb = cloneBoard(game.board);
+          const nb = cloneBoard(getDerivedBoard(game));
           nb[r][c] = { type: pieceType, color: playerColor };
           const newGState = recomputeStatus(
             syncStateFromBoard(
@@ -4061,7 +4062,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           piece.type !== "K" &&
           piece.type !== "Q" &&
           piece.type !== "M" &&
-          piece.id
+          piece.id &&
           !isLostMercenaryPawn(piece)
         ) {
           const pid = piece.id;
@@ -4372,7 +4373,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             nb[cur[0]][cur[1]] = null;
             cur = [cur[0] + dr, cur[1] + dc];
           }
-          const kingMoved = game.board[kr][kc];
+          const kingMoved = getDerivedBoard(game)[kr][kc];
           nb[r][c] = kingMoved ? { ...kingMoved } : { type: "K", color: movingColor };
           setGameHistory((h) => [...h, game]);
           setAugmentHistory((h) => [...h, {
@@ -4400,29 +4401,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           else setBlackTurnCount(newTurnCount);
           const playerAugsNow =
             movingColor === "white" ? whiteAugments : blackAugments;
-          let newGame: ChessState = {
-            ...game,
-            board: nb,
-            turn: opp(movingColor),
-            enPassantTarget: null,
-            castlingRights: {
-              ...game.castlingRights,
-              white:
-                movingColor === "white"
-                  ? { kingside: false, queenside: false }
-                  : game.castlingRights.white,
-              black:
-                movingColor === "black"
-                  ? { kingside: false, queenside: false }
-                  : game.castlingRights.black,
-            },
-            lastMove: {
-              from: [kr, kc],
-              to: [r, c],
-              piece: kingMoved
-                ? { ...kingMoved }
-                : { type: "K", color: movingColor },
-              captured: null,
           let newGame: ChessState = syncStateFromBoard(
             {
               ...game,
@@ -4442,7 +4420,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               lastMove: {
                 from: [kr, kc],
                 to: [r, c],
-                piece: { type: "K", color: movingColor },
+                piece: kingMoved
+                  ? { ...kingMoved }
+                  : { type: "K", color: movingColor },
                 captured: null,
               },
             },
