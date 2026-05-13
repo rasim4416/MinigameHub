@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Events system — random board events every 15 full turns (30 half-moves)
+// Events system — random board events every 5–13 full rounds (white+black),
+// rescheduled at game start and after each event. Just Chaos fixes spacing at 5.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type EventRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
@@ -121,7 +122,8 @@ export const EVENT_POOL: GameEvent[] = [
     name: "Just Chaos",
     rarity: "legendary",
     icon: "🌀",
-    description: "Events now trigger every 5 rounds instead of 15, for the rest of the game.",
+    description:
+      "Board events now fire every 5 full rounds (instead of 5–13 at random) for the rest of the game.",
     flavor: "\"Let the world burn.\"",
   },
 ];
@@ -149,7 +151,14 @@ export function rollEvent(): GameEvent {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Returns 30 half-moves (15 full turns) between events (default). */
-export function nextEventInterval(): number {
-  return 30;
+function randIntInclusive(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+/**
+ * How many full rounds (white then black) until the next board event.
+ * After Just Chaos, this is always 5 for the rest of the game.
+ */
+export function rollFullRoundsUntilNextEvent(justChaosActive: boolean): number {
+  return justChaosActive ? 5 : randIntInclusive(5, 13);
 }
