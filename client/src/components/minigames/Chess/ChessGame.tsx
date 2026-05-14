@@ -75,7 +75,7 @@ type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
 type AugmentTrigger = {
   color: Color;
-  reason: "milestone" | "bloodlust" | "blind-rage";
+  reason: "milestone" | "bloodlust";
   milestoneType?: PieceType;
 };
 type TierBought = {
@@ -129,6 +129,8 @@ type AugmentSnapshot = {
   augmentSpellBlockedFor: Color | null;
   whitePawnShopBuys: number;
   blackPawnShopBuys: number;
+  blindRagePickColor: Color | null;
+  blindRageOffered: Augment[];
 };
 
 const EMPTY_MILESTONES: Milestones = {
@@ -1775,18 +1777,20 @@ function AugmentSelector({
   offered,
   onSelect,
   trigger,
+  pickMode = "normal",
 }: {
   playerColor: Color;
   offered: Augment[];
   onSelect: (aug: Augment) => void;
   trigger?: AugmentTrigger | null;
+  pickMode?: "normal" | "blind-rage";
 }) {
   const isWhite = playerColor === "white";
   const badgeLabel =
-    trigger?.reason === "bloodlust"
-      ? "🩸 Bloodlust Bonus!"
-      : trigger?.reason === "blind-rage"
-        ? "😤 Blind Rage!"
+    pickMode === "blind-rage"
+      ? "😤 Blind Rage — bonus pick!"
+      : trigger?.reason === "bloodlust"
+        ? "🩸 Bloodlust Bonus!"
         : trigger?.milestoneType
           ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
           : null;
@@ -1795,7 +1799,7 @@ function AugmentSelector({
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: 80,
+        zIndex: pickMode === "blind-rage" ? 90 : 80,
         background: "linear-gradient(160deg,#030712 0%,#080e1f 100%)",
         display: "flex",
         flexDirection: "column",
@@ -1814,15 +1818,21 @@ function AugmentSelector({
               padding: "4px 14px",
               borderRadius: 20,
               background: "linear-gradient(135deg,#1c1f2e,#2d2f45)",
-              border: `1px solid ${trigger?.reason === "bloodlust" ? "#dc2626" : trigger?.reason === "blind-rage" ? "#ea580c" : "#4f46e5"}`,
+              border: `1px solid ${
+                pickMode === "blind-rage"
+                  ? "#ea580c"
+                  : trigger?.reason === "bloodlust"
+                    ? "#dc2626"
+                    : "#4f46e5"
+              }`,
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: "0.1em",
               color:
-                trigger?.reason === "bloodlust"
-                  ? "#fca5a5"
-                  : trigger?.reason === "blind-rage"
-                    ? "#fdba74"
+                pickMode === "blind-rage"
+                  ? "#fdba74"
+                  : trigger?.reason === "bloodlust"
+                    ? "#fca5a5"
                     : "#818cf8",
               textTransform: "uppercase",
             }}
@@ -1862,7 +1872,22 @@ function AugmentSelector({
             {playerColor.toUpperCase()}
           </h2>
         </div>
-        {!badgeLabel && (
+        {pickMode === "blind-rage" && (
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#94a3b8",
+              margin: "8px 0 0",
+              maxWidth: 320,
+              lineHeight: 1.45,
+            }}
+          >
+            Knight captured before both sides have finished four moves each
+            (four full rounds).
+          </p>
+        )}
+        {!badgeLabel && pickMode !== "blind-rage" && (
           <p
             style={{
               fontSize: 10,
@@ -2481,6 +2506,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     null,
   );
   const [midGameOffered, setMidGameOffered] = useState<Augment[]>([]);
+  const [blindRagePickColor, setBlindRagePickColor] = useState<Color | null>(
+    null,
+  );
+  const [blindRageOffered, setBlindRageOffered] = useState<Augment[]>([]);
 
   const [whiteMilestones, setWhiteMilestones] =
     useState<Milestones>(EMPTY_MILESTONES);
@@ -2761,6 +2790,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // ── MP: snapshot infrastructure ──────────────────────────────────────────
 
   const snapshotRef = useRef(false);
+  const triggersAfterBlindRageRef = useRef<AugmentTrigger[]>([]);
   const requestSnapshot = useCallback(() => {
     snapshotRef.current = true;
   }, []);
@@ -2850,6 +2880,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whitePawnShopBuys,
     blackPawnShopBuys,
     pawnPlaceFor,
+    blindRagePickColor,
+    blindRageOffered,
   });
 
   // Apply a snapshot received from the opponent
@@ -2968,6 +3000,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     );
     setWhitePawnShopBuys((g as { whitePawnShopBuys?: number }).whitePawnShopBuys ?? 0);
     setBlackPawnShopBuys((g as { blackPawnShopBuys?: number }).blackPawnShopBuys ?? 0);
+    setBlindRagePickColor(
+      (g as { blindRagePickColor?: Color | null }).blindRagePickColor ?? null,
+    );
+    setBlindRageOffered(
+      (g as { blindRageOffered?: Augment[] }).blindRageOffered ?? [],
+    );
     setPawnPlaceFor(
       (g as { pawnPlaceFor?: Color | null }).pawnPlaceFor ?? null,
     );
@@ -3102,12 +3140,53 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     ],
   );
 
+  const handleBlindRagePick = useCallback(
+    (aug: Augment) => {
+      const color = blindRagePickColor;
+      if (!color) return;
+      let newWAugs = whiteAugments,
+        newBAugs = blackAugments;
+      if (color === "white") {
+        newWAugs = [...whiteAugments, aug];
+        setWhiteAugments(newWAugs);
+      } else {
+        newBAugs = [...blackAugments, aug];
+        setBlackAugments(newBAugs);
+      }
+      grantPickedEffects(aug, color);
+      setBlindRagePickColor(null);
+      setBlindRageOffered([]);
+      const pending = triggersAfterBlindRageRef.current;
+      triggersAfterBlindRageRef.current = [];
+      if (pending.length > 0) {
+        const [first, ...rest] = pending;
+        setCurrentTrigger(first);
+        const pAugs = first.color === "white" ? newWAugs : newBAugs;
+        setMidGameOffered(
+          rollAugments(
+            pickAugmentCount(pAugs),
+            getExcludeForPlayer(pAugs),
+            getWeightsForPlayer(pAugs),
+          ),
+        );
+        setAugmentQueue(rest);
+      }
+      requestSnapshot();
+    },
+    [
+      blindRagePickColor,
+      whiteAugments,
+      blackAugments,
+      grantPickedEffects,
+      requestSnapshot,
+    ],
+  );
+
   // ── Shop buy ─────────────────────────────────────────────────────────────
 
   const handleBuy = useCallback(
     (aug: Augment) => {
       const color = game.turn;
-      if (augmentSpellBlockedFor === color) return;
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const ownedCount = playerAugs.filter((a) => a.id === aug.id).length;
       if (ownedCount >= (MAX_STACK[aug.id] ?? 1)) return;
@@ -3140,7 +3219,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       blackTierBought,
       grantPickedEffects,
       requestSnapshot,
-      augmentSpellBlockedFor,
     ],
   );
 
@@ -3156,6 +3234,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const movingColor = game.turn;
       const startGoldWhite = game.goldWhite;
       const startGoldBlack = game.goldBlack;
+      const roundsSoFar = Math.min(whiteTurnCount, blackTurnCount);
       const victimSquarePiece = getDerivedBoard(game)[to[0]][to[1]];
       const victimWasMercenary = isMercenaryPiece(victimSquarePiece);
       setGameHistory((h) => [...h, game]);
@@ -3185,6 +3264,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         augmentSpellBlockedFor,
         whitePawnShopBuys,
         blackPawnShopBuys,
+        blindRagePickColor,
+        blindRageOffered,
       }]);
       setShopOpen(false);
 
@@ -3286,19 +3367,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
       // Internal Combustion runs after mercenary ticks (see end of executeMove).
 
-      // Gold from capture (blocked by peace treaty; Prize Money / Efficient)
+      // Gold from capture (blocked by peace treaty; Efficient)
       if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
         let captureBonus = 1;
         if (playerAugs.some((a) => a.id === "efficient")) captureBonus += 1;
-        const prizeDone =
-          movingColor === "white"
-            ? whitePrizeFirstCaptureDone
-            : blackPrizeFirstCaptureDone;
-        if (playerAugs.some((a) => a.id === "prize-money") && !prizeDone) {
-          captureBonus *= 2;
-          if (movingColor === "white") setWhitePrizeFirstCaptureDone(true);
-          else setBlackPrizeFirstCaptureDone(true);
-        }
         newGame = {
           ...newGame,
           goldWhite:
@@ -3676,6 +3748,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               : finalGame.goldBlack,
         };
       }
+
       const oppC = opp(movingColor);
       const oppGoldStart =
         oppC === "white" ? startGoldWhite : startGoldBlack;
@@ -3701,29 +3774,48 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           }
         }
       }
+
+      const moverGoldStart =
+        movingColor === "white" ? startGoldWhite : startGoldBlack;
+      if (
+        capturedType &&
+        !victimWasMercenary &&
+        playerAugs.some((a) => a.id === "prize-money")
+      ) {
+        const prizeDone =
+          movingColor === "white"
+            ? whitePrizeFirstCaptureDone
+            : blackPrizeFirstCaptureDone;
+        if (!prizeDone) {
+          const moverNow =
+            movingColor === "white"
+              ? finalGame.goldWhite
+              : finalGame.goldBlack;
+          const d = moverNow - moverGoldStart;
+          if (d !== 0) {
+            finalGame = {
+              ...finalGame,
+              goldWhite:
+                movingColor === "white"
+                  ? finalGame.goldWhite + d
+                  : finalGame.goldWhite,
+              goldBlack:
+                movingColor === "black"
+                  ? finalGame.goldBlack + d
+                  : finalGame.goldBlack,
+            };
+          }
+          if (movingColor === "white") setWhitePrizeFirstCaptureDone(true);
+          else setBlackPrizeFirstCaptureDone(true);
+        }
+      }
+
       if (augmentSpellBlockedFor && movingColor === augmentSpellBlockedFor)
         setAugmentSpellBlockedFor(null);
 
       setGame(finalGame);
 
-      // Triggers
-      const newTriggers: AugmentTrigger[] = [];
-
-      if (
-        capturedType === "N" &&
-        !victimWasMercenary &&
-        newTurnCount <= 4 &&
-        playerAugs.some((a) => a.id === "blind-rage")
-      ) {
-        const brDone =
-          movingColor === "white" ? whiteBlindRageDone : blackBlindRageDone;
-        if (!brDone) {
-          newTriggers.push({ color: movingColor, reason: "blind-rage" });
-          if (movingColor === "white") setWhiteBlindRageDone(true);
-          else setBlackBlindRageDone(true);
-        }
-      }
-
+      const milestoneTriggers: AugmentTrigger[] = [];
       if (capturedType && !victimWasMercenary) {
         const ms = movingColor === "white" ? whiteMilestones : blackMilestones;
         const triggered = checkNewMilestone(capturedType, ms);
@@ -3731,7 +3823,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           const newMs = applyMilestone(triggered, ms);
           if (movingColor === "white") setWhiteMilestones(newMs);
           else setBlackMilestones(newMs);
-          newTriggers.push({
+          milestoneTriggers.push({
             color: movingColor,
             reason: "milestone",
             milestoneType: triggered,
@@ -3748,7 +3840,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (newCount >= nextThreshold) {
           if (movingColor === "white") setWhiteBloodlustNext((t) => t + 4);
           else setBlackBloodlustNext((t) => t + 4);
-          newTriggers.push({ color: movingColor, reason: "bloodlust" });
+          milestoneTriggers.push({ color: movingColor, reason: "bloodlust" });
         }
       } else if (capturedType) {
         const newCount =
@@ -3757,8 +3849,32 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         else setBlackCaptureCount(newCount);
       }
 
-      if (newTriggers.length > 0) {
-        const [first, ...rest] = newTriggers;
+      const blindEligible =
+        capturedType === "N" &&
+        !victimWasMercenary &&
+        roundsSoFar < 4 &&
+        playerAugs.some((a) => a.id === "blind-rage");
+      const brDone =
+        movingColor === "white" ? whiteBlindRageDone : blackBlindRageDone;
+      if (blindEligible && !brDone) {
+        if (movingColor === "white") setWhiteBlindRageDone(true);
+        else setBlackBlindRageDone(true);
+        triggersAfterBlindRageRef.current = [...milestoneTriggers];
+        const wAugs0 =
+          movingColor === "white" ? [...whiteAugments] : whiteAugments;
+        const bAugs0 =
+          movingColor === "black" ? [...blackAugments] : blackAugments;
+        const pAugsForRoll = movingColor === "white" ? wAugs0 : bAugs0;
+        setBlindRagePickColor(movingColor);
+        setBlindRageOffered(
+          rollAugments(
+            pickAugmentCount(pAugsForRoll),
+            getExcludeForPlayer(pAugsForRoll),
+            getWeightsForPlayer(pAugsForRoll),
+          ),
+        );
+      } else if (milestoneTriggers.length > 0) {
+        const [first, ...rest] = milestoneTriggers;
         const wAugs =
           movingColor === "white" ? [...whiteAugments] : whiteAugments;
         const bAugs =
@@ -3819,6 +3935,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       augmentSpellBlockedFor,
       whitePawnShopBuys,
       blackPawnShopBuys,
+      blindRagePickColor,
+      blindRageOffered,
     ],
   );
 
@@ -3837,6 +3955,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBoardSize(restored.occupancy.length);
     setGameHistory((h) => h.slice(0, -2));
     setAugmentHistory((h) => h.slice(0, -2));
+    triggersAfterBlindRageRef.current = [];
     if (augRestored) {
       setFrozenSquare(augRestored.frozenSquare);
       setFrozenExpireAfter(augRestored.frozenExpireAfter);
@@ -3902,6 +4021,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       );
       setBlackPawnShopBuys(
         (augRestored as { blackPawnShopBuys?: number }).blackPawnShopBuys ?? 0,
+      );
+      setBlindRagePickColor(
+        (augRestored as { blindRagePickColor?: Color | null })
+          .blindRagePickColor ?? null,
+      );
+      setBlindRageOffered(
+        (augRestored as { blindRageOffered?: Augment[] }).blindRageOffered ?? [],
       );
     }
     setSelected(null);
@@ -4162,7 +4288,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   const handleSquareClick = useCallback(
     (r: number, c: number) => {
-      if (phase !== "playing" || currentTrigger !== null) return;
+      if (phase !== "playing" || currentTrigger !== null || blindRagePickColor)
+        return;
       if (!isMyTurn) return;
       if (game.status === "checkmate" || game.status === "stalemate") return;
       if (promotionPending) return;
@@ -4231,6 +4358,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             augmentSpellBlockedFor,
             whitePawnShopBuys,
             blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
           }]);
           let newGState: ChessState = syncStateFromBoard(
             {
@@ -4347,6 +4476,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             augmentSpellBlockedFor,
             whitePawnShopBuys,
             blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4527,6 +4658,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             augmentSpellBlockedFor,
             whitePawnShopBuys,
             blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4794,6 +4927,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             augmentSpellBlockedFor,
             whitePawnShopBuys,
             blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
           }]);
           setShopOpen(false);
           const newTurnCount =
@@ -5050,6 +5185,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       swapMode,
       swapFirst,
       pawnPlaceFor,
+      blindRagePickColor,
     ],
   );
 
@@ -5180,6 +5316,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setWhitePawnShopBuys(0);
     setBlackPawnShopBuys(0);
     setPawnPlaceFor(null);
+    setBlindRagePickColor(null);
+    setBlindRageOffered([]);
+    triggersAfterBlindRageRef.current = [];
     setWhiteIlkkanId(null);
     setBlackIlkkanId(null);
     setWhiteIlkkanChosen(false);
@@ -5250,7 +5389,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   const handleBuyPawn = useCallback(() => {
     const color = game.turn;
-    if (augmentSpellBlockedFor === color) return;
     const augs = color === "white" ? whiteAugments : blackAugments;
     if (!augs.some((a) => a.id === "pawn-shop")) return;
     const bought = color === "white" ? whitePawnShopBuys : blackPawnShopBuys;
@@ -5275,9 +5413,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackAugments,
     whitePawnShopBuys,
     blackPawnShopBuys,
-    augmentSpellBlockedFor,
     requestSnapshot,
   ]);
+
+  const turnGuard = (fn: () => void) => () => {
+    if (!isMyTurn && mpConfig) return;
+    fn();
+  };
 
   const spellGuard = (fn: () => void) => () => {
     if (!isMyTurn && mpConfig) return;
@@ -5417,7 +5559,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         ? whiteAugments.some((a) => a.id === "bloodlust")
         : blackAugments.some((a) => a.id === "bloodlust"),
     shopOpen: shopOpen && game.turn === color,
-    onToggleShop: spellGuard(handleToggleShop),
+    onToggleShop: turnGuard(handleToggleShop),
   });
 
   const modeBanner = (() => {
@@ -5984,6 +6126,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           offered={midGameOffered}
           onSelect={handleMidGamePick}
           trigger={currentTrigger}
+        />
+      )}
+      {phase === "playing" && blindRagePickColor && (
+        <AugmentSelector
+          pickMode="blind-rage"
+          playerColor={blindRagePickColor}
+          offered={blindRageOffered}
+          onSelect={handleBlindRagePick}
         />
       )}
     </div>
