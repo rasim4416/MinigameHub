@@ -251,13 +251,22 @@ export default function BlackjackGame() {
   }, []);
 
   const runDealerTurn = useCallback((dk: Card[], dd: Card[], pd: Card[], eff: number) => {
-    let d = dd.map(c => ({ ...c, hidden: false }));
+    let d: Card[] = dd.map((c) => ({ ...c, hidden: false }));
     let ddk = [...dk];
     setDealerHand([...d]);
 
     const step = () => {
       if (handTotal(d) < 17) {
-        const [card, rest] = ddk.length > 0 ? [ddk[0], ddk.slice(1)] : (() => { const f = createDeck(); return [f[0], f.slice(1)]; })();
+        let card: Card;
+        let rest: Card[];
+        if (ddk.length > 0) {
+          card = ddk[0]!;
+          rest = ddk.slice(1);
+        } else {
+          const f = createDeck();
+          card = f[0]!;
+          rest = f.slice(1);
+        }
         d = [...d, card]; ddk = rest;
         setDealerHand([...d]);
         timerRef.current = setTimeout(step, 650);

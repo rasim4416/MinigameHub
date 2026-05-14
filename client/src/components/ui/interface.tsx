@@ -15,7 +15,7 @@ export function Interface() {
   useEffect(() => {
     if (phase === "ready") {
       const handleClick = () => {
-        document.activeElement?.blur(); // Remove focus from any button
+        (document.activeElement as HTMLElement | null)?.blur?.();
         const event = new KeyboardEvent("keydown", { code: "Space" });
         window.dispatchEvent(event);
       };
