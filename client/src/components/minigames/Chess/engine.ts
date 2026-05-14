@@ -119,6 +119,9 @@ export interface ChessState {
   /** Little Big Man — pawn id moves like a queen until UI clears this field. */
   littleBigManWhiteId?: PieceId | null;
   littleBigManBlackId?: PieceId | null;
+  /** Full rounds completed (`min(white,black turn counts)`) when Little Big Man buff ends. */
+  littleBigManWhiteExpiresAtFullRound?: number | null;
+  littleBigManBlackExpiresAtFullRound?: number | null;
 }
 
 // ─── Board size (mutable for Domain Expansion) ───────────────────────────────
@@ -902,6 +905,10 @@ export function makeMove(
       : [],
     littleBigManWhiteId: state.littleBigManWhiteId ?? null,
     littleBigManBlackId: state.littleBigManBlackId ?? null,
+    littleBigManWhiteExpiresAtFullRound:
+      state.littleBigManWhiteExpiresAtFullRound ?? null,
+    littleBigManBlackExpiresAtFullRound:
+      state.littleBigManBlackExpiresAtFullRound ?? null,
   };
 
   const nextHasMove = hasAnyLegalMove(nextState, nextTurn);

@@ -205,7 +205,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"double-gold", name:"Double Gold", rarity:"rare", icon:"💰💰", description:"For the next 5 full rounds, all gold you gain is doubled (captures, events, augments, shop sells, etc.). Cannot be purchased in shop." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive your most recently lost knight or bishop to any empty square on your home rank." },
-  { id:"horde", name:"Horde", rarity:"epic", icon:"🐺", description:"When acquired, every pawn on the board tries to step one square forward into an empty square (no captures)." },
+  { id:"horde", name:"Horde", rarity:"epic", icon:"🐺", description:"When acquired, each of your pawns tries to step one square forward into an empty square (no captures)." },
   { id:"bloodbending", name:"Bloodbending", rarity:"epic", icon:"🩸🧙", description:"Spell: flip one enemy pawn to your color (respects blessed/frozen rules)." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
   { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
