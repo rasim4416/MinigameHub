@@ -74,7 +74,7 @@ export const EVENT_POOL: GameEvent[] = [
     rarity: "uncommon",
     icon: "🟠",
     description:
-      "An orange mercenary pawn appears on the left flank. After each full move it marches east, or captures by sight (Q>R>N>B>P). It cannot take a king.",
+      "An orange mercenary pawn appears on the left flank. After each full move it marches east, or captures by sight (Q>R>N>B>P). It cannot take a king. After it reaches the last file, it departs on the next full move.",
     flavor: "No banner, no master — only the next square.",
   },
   {
