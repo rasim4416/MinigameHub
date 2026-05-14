@@ -26,19 +26,24 @@ import {
   applyMercenaryPatrolAfterFullMove,
   isMercenaryPiece,
   isLostMercenaryPawn,
+  MERCENARY_ID_MARKER,
   spawnLostMercenaryOnBoard,
   spawnMercenaryPatrolKnights,
+  spawnMercenarySiegePatrol,
+  spawnMercenaryCrusaders,
 } from "./mercenaryMoves";
 import {
   Augment,
   AUGMENT_POOL,
+  augmentExcludedByPrereq,
+  getRollExcludeIds,
+  MAX_STACK,
   rollAugments,
   RARITY_META,
   RarityWeights,
   getWeightsForPlayer,
   BASE_COST,
   getShopCost,
-  MAX_STACK,
   NON_PURCHASABLE,
   pickAugmentCount,
 } from "./augments";
@@ -49,11 +54,8 @@ import {
   rollFullRoundsUntilNextEvent,
 } from "./events";
 
-/** Augments the player already holds at their max stack count — exclude from future rolls. */
 function getExcludeForPlayer(augments: Augment[]): string[] {
-  const counts: Record<string, number> = {};
-  for (const a of augments) counts[a.id] = (counts[a.id] || 0) + 1;
-  return Object.keys(counts).filter((id) => counts[id] >= (MAX_STACK[id] ?? 1));
+  return getRollExcludeIds(augments);
 }
 
 /** Empty original pawn rank square for Pawn Shop / spawn rules (8×8 or 10×10). */
@@ -67,6 +69,12 @@ function isOriginalPawnSpawnSquare(
   const pawnRow = color === "white" ? 6 + off : 1 + off;
   if (r !== pawnRow) return false;
   return c >= off && c < off + 8;
+}
+
+function isPermaFrostSquare(state: ChessState, r: number, c: number): boolean {
+  return (
+    state.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -120,8 +128,7 @@ type AugmentSnapshot = {
   blackLostMinors: PieceType[];
   nextEventTurn: number;
   chaosEventTiming: boolean;
-  whitePrizeFirstCaptureDone: boolean;
-  blackPrizeFirstCaptureDone: boolean;
+  prizeFirstCaptureOfGameDone: boolean;
   whiteBlindRageDone: boolean;
   blackBlindRageDone: boolean;
   whiteEvadeCharges: number;
@@ -131,6 +138,14 @@ type AugmentSnapshot = {
   blackPawnShopBuys: number;
   blindRagePickColor: Color | null;
   blindRageOffered: Augment[];
+  whiteDoubleGoldFullRoundsLeft: number;
+  blackDoubleGoldFullRoundsLeft: number;
+  whiteBloodbendingCharges: number;
+  blackBloodbendingCharges: number;
+  whiteBloodbendingPlusCharges: number;
+  blackBloodbendingPlusCharges: number;
+  whiteNecroPPCharges: number;
+  blackNecroPPCharges: number;
 };
 
 const EMPTY_MILESTONES: Milestones = {
@@ -260,6 +275,10 @@ function applyEndOfTurnEffects(
   color: Color,
   augments: Augment[],
   turn: number,
+  whiteAugments: Augment[],
+  blackAugments: Augment[],
+  whiteDGRounds: number,
+  blackDGRounds: number,
 ): ChessState {
   let delta = 0;
   for (const aug of augments) {
@@ -280,11 +299,15 @@ function applyEndOfTurnEffects(
   }
   delta += invExtra;
   if (!delta) return g;
-  return {
-    ...g,
-    goldWhite: color === "white" ? g.goldWhite + delta : g.goldWhite,
-    goldBlack: color === "black" ? g.goldBlack + delta : g.goldBlack,
-  };
+  return creditGoldWithAugments(
+    g,
+    color,
+    delta,
+    whiteAugments,
+    blackAugments,
+    whiteDGRounds,
+    blackDGRounds,
+  );
 }
 
 function getAlternativeMoves(
@@ -309,6 +332,116 @@ function getAlternativeMoves(
       return [];
     return [[sr + 3, c]];
   }
+}
+
+/** Alternative+: any pawn's first move may advance up to 3 squares if path clear. */
+function getAlternativePlusMoves(
+  game: ChessState,
+  r: number,
+  c: number,
+): [number, number][] {
+  const piece = getDerivedBoard(game)[r][c];
+  const bs = getDerivedBoard(game).length;
+  const off = (bs - 8) / 2;
+  if (!piece || piece.type !== "P" || piece.color === "orange") return [];
+  const dir = piece.color === "white" ? -1 : 1;
+  const startRow = piece.color === "white" ? 6 + off : 1 + off;
+  if (r !== startRow) return [];
+  const out: [number, number][] = [];
+  for (let step = 1; step <= 3; step++) {
+    const tr = r + dir * step;
+    if (tr < 0 || tr >= bs) break;
+    if (getDerivedBoard(game)[tr][c]) break;
+    out.push([tr, c]);
+  }
+  return out;
+}
+
+/** Horde augment — the owner's pawns each try one forward step into an empty square. */
+function applyHordeEffect(g: ChessState, owner: "white" | "black"): ChessState {
+  const nb = cloneBoard(getDerivedBoard(g));
+  const n = nb.length;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const p = nb[r][c];
+      if (!p || p.type !== "P" || p.color !== owner) continue;
+      const dir = p.color === "white" ? -1 : 1;
+      const tr = r + dir;
+      if (tr < 0 || tr >= n) continue;
+      if (nb[tr][c]) continue;
+      const moved = nb[r][c]!;
+      nb[r][c] = null;
+      nb[tr][c] = moved;
+    }
+  return recomputeStatus(syncStateFromBoard({ ...g }, nb));
+}
+
+/** Add gold to one side; positive amounts respect Double Gold rounds + stacks. */
+function creditGoldWithAugments(
+  g: ChessState,
+  beneficiary: "white" | "black",
+  delta: number,
+  whiteAugments: Augment[],
+  blackAugments: Augment[],
+  whiteDGRounds: number,
+  blackDGRounds: number,
+): ChessState {
+  if (delta === 0) return g;
+  const augs = beneficiary === "white" ? whiteAugments : blackAugments;
+  const rounds = beneficiary === "white" ? whiteDGRounds : blackDGRounds;
+  const adj =
+    delta > 0
+      ? applyDoubleGoldToPositiveDelta(beneficiary, delta, augs, rounds)
+      : delta;
+  return {
+    ...g,
+    goldWhite: beneficiary === "white" ? g.goldWhite + adj : g.goldWhite,
+    goldBlack: beneficiary === "black" ? g.goldBlack + adj : g.goldBlack,
+  };
+}
+
+/** After any half-move, clear Little Big Man if its 4 full-round timer has elapsed. */
+function expireLittleBigManAfterHalfMove(
+  g: ChessState,
+  movingColor: Color,
+  newTurnCount: number,
+  curWhiteTurns: number,
+  curBlackTurns: number,
+): ChessState {
+  const nextWT = movingColor === "white" ? newTurnCount : curWhiteTurns;
+  const nextBT = movingColor === "black" ? newTurnCount : curBlackTurns;
+  const fullR = Math.min(nextWT, nextBT);
+  let out = g;
+  if (
+    out.littleBigManWhiteExpiresAtFullRound != null &&
+    fullR >= out.littleBigManWhiteExpiresAtFullRound
+  )
+    out = {
+      ...out,
+      littleBigManWhiteId: null,
+      littleBigManWhiteExpiresAtFullRound: null,
+    };
+  if (
+    out.littleBigManBlackExpiresAtFullRound != null &&
+    fullR >= out.littleBigManBlackExpiresAtFullRound
+  )
+    out = {
+      ...out,
+      littleBigManBlackId: null,
+      littleBigManBlackExpiresAtFullRound: null,
+    };
+  return out;
+}
+
+function applyDoubleGoldToPositiveDelta(
+  color: "white" | "black",
+  delta: number,
+  augments: Augment[],
+  roundsLeft: number,
+): number {
+  if (delta <= 0 || roundsLeft <= 0) return delta;
+  if (!augments.some((a) => a.id === "double-gold")) return delta;
+  return delta * 2;
 }
 
 function getRoyalEdMoves(
@@ -450,6 +583,33 @@ const LIGHT_SQ = "#f0d9b5",
   LAST_LIGHT = "#cdd16f",
   LAST_DARK = "#aaa23a";
 
+/** SVG for orange mercenary pieces (id contains mercenary marker). */
+function orangeMercenaryPieceImage(
+  piece: { type: PieceType; color: Color; id?: string } | null,
+): string | null {
+  if (
+    !piece ||
+    piece.color !== "orange" ||
+    typeof piece.id !== "string" ||
+    !piece.id.includes(MERCENARY_ID_MARKER)
+  )
+    return null;
+  switch (piece.type) {
+    case "P":
+      return "/chess-orange-mercenary-pawn.svg";
+    case "N":
+      return "/chess-orange-mercenary-knight.svg";
+    case "R":
+      return "/chess-orange-mercenary-rook.svg";
+    case "B":
+      return "/chess-orange-mercenary-bishop.svg";
+    case "Q":
+      return "/chess-orange-mercenary-queen.svg";
+    default:
+      return null;
+  }
+}
+
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
 function SquareEl({
@@ -463,6 +623,7 @@ function SquareEl({
   isCheckKing,
   isCenter,
   isFrozen,
+  isPermaWinter = false,
   onClick,
   boardSize,
   deathNoteCount,
@@ -488,6 +649,7 @@ function SquareEl({
   isCheckKing: boolean;
   isCenter: boolean;
   isFrozen: boolean;
+  isPermaWinter?: boolean;
   onClick: () => void;
   boardSize: number;
   deathNoteCount?: number;
@@ -503,20 +665,14 @@ function SquareEl({
   const vf = !!viewFlipped;
   const light = (row + col) % 2 === 0;
   let bg = light ? LIGHT_SQ : DARK_SQ;
-  if (isCheckKing) bg = "#c82020";
+  if (isPermaWinter) bg = light ? "#dbeafe" : "#7dd3fc";
+  else if (isCheckKing) bg = "#c82020";
   else if (isSelected) bg = light ? SEL_LIGHT : SEL_DARK;
   else if (isLastMove) bg = light ? LAST_LIGHT : LAST_DARK;
   const dot = size * 0.3,
     ring = size * 0.07;
   const isMonolith = piece?.type === "M";
-  const orangeMercenaryImg =
-    piece &&
-    piece.color === "orange" &&
-    (piece.type === "P" || piece.type === "N")
-      ? piece.type === "P"
-        ? "/chess-orange-mercenary-pawn.svg"
-        : "/chess-orange-mercenary-knight.svg"
-      : null;
+  const orangeMercenaryImg = orangeMercenaryPieceImage(piece);
   return (
     <div
       onClick={onClick}
@@ -1422,10 +1578,18 @@ function ShopPanel({
     "epic",
     "legendary",
   ];
+  const counts: Record<string, number> = {};
+  for (const a of playerAugments) counts[a.id] = (counts[a.id] || 0) + 1;
+  const ownedIds = Object.keys(counts);
+  const atMax = (id: string) => (counts[id] ?? 0) >= (MAX_STACK[id] ?? 1);
   const grouped = RARITY_ORDER.map((r) => ({
     rarity: r,
     augments: AUGMENT_POOL.filter(
-      (a) => a.rarity === r && !NON_PURCHASABLE.has(a.id),
+      (a) =>
+        a.rarity === r &&
+        !NON_PURCHASABLE.has(a.id) &&
+        !atMax(a.id) &&
+        !augmentExcludedByPrereq(a.id, ownedIds),
     ),
   })).filter((g) => g.augments.length > 0);
 
@@ -2037,6 +2201,16 @@ type SpellState = {
   necroPlusActive: boolean;
   hasNecroPlusTargets: boolean;
   onNecroPlus: () => void;
+  bloodbendingCharges: number;
+  bloodbendingActive: boolean;
+  onBloodbending: () => void;
+  bloodbendingPlusCharges: number;
+  bloodbendingPlusActive: boolean;
+  onBloodbendingPlus: () => void;
+  necroPPCharges: number;
+  necroPPActive: boolean;
+  hasNecroPPTargets: boolean;
+  onNecroPP: () => void;
   ilkkanAvailable: boolean;
   ilkkanActive: boolean;
   onIlkkan: () => void;
@@ -2220,6 +2394,37 @@ function PlayerBar({
               active={spells.necroPlusActive}
               onClick={spells.onNecroPlus}
               title="Revive a captured knight or bishop to your home rank"
+            />
+          )}
+        {canAct && spells.bloodbendingCharges > 0 && (
+          <SpellButton
+            icon="🩸"
+            label="BLOOD"
+            active={spells.bloodbendingActive}
+            count={spells.bloodbendingCharges}
+            onClick={spells.onBloodbending}
+            title="Flip an enemy pawn to your color"
+          />
+        )}
+        {canAct && spells.bloodbendingPlusCharges > 0 && (
+          <SpellButton
+            icon="🩸✨"
+            label="BLOOD+"
+            active={spells.bloodbendingPlusActive}
+            count={spells.bloodbendingPlusCharges}
+            onClick={spells.onBloodbendingPlus}
+            title="Flip an enemy knight, bishop, or rook to your color"
+          />
+        )}
+        {canAct &&
+          spells.necroPPCharges > 0 &&
+          spells.hasNecroPPTargets && (
+            <SpellButton
+              icon="💀💫"
+              label="REVIVE++"
+              active={spells.necroPPActive}
+              onClick={spells.onNecroPP}
+              title="Place a revived queen on an empty square of your back rank"
             />
           )}
         {canAct && spells.ilkkanAvailable && (
@@ -2534,6 +2739,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     null,
   );
   const [freezeMode, setFreezeMode] = useState(false);
+  const [bloodbendingMode, setBloodbendingMode] = useState(false);
+  const [bloodbendingPlusMode, setBloodbendingPlusMode] = useState(false);
 
   // Necromancer
   const [whiteNecroCharges, setWhiteNecroCharges] = useState(0);
@@ -2660,6 +2867,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [whiteLostMinors, setWhiteLostMinors] = useState<PieceType[]>([]);
   const [blackLostMinors, setBlackLostMinors] = useState<PieceType[]>([]);
   const [necroPlusMode, setNecroPlusMode] = useState(false);
+  const [necroPPMode, setNecroPPMode] = useState(false);
   const [whiteMonolithPermRemoved, setWhiteMonolithPermRemoved] =
     useState(false);
   const [blackMonolithPermRemoved, setBlackMonolithPermRemoved] =
@@ -2688,10 +2896,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [blackPawnShopBuys, setBlackPawnShopBuys] = useState(0);
 
   // Prize Money / Blind Rage
-  const [whitePrizeFirstCaptureDone, setWhitePrizeFirstCaptureDone] =
+  const [prizeFirstCaptureOfGameDone, setPrizeFirstCaptureOfGameDone] =
     useState(false);
-  const [blackPrizeFirstCaptureDone, setBlackPrizeFirstCaptureDone] =
-    useState(false);
+  const [whiteDoubleGoldFullRoundsLeft, setWhiteDoubleGoldFullRoundsLeft] =
+    useState(0);
+  const [blackDoubleGoldFullRoundsLeft, setBlackDoubleGoldFullRoundsLeft] =
+    useState(0);
+  const [whiteBloodbendingCharges, setWhiteBloodbendingCharges] = useState(0);
+  const [blackBloodbendingCharges, setBlackBloodbendingCharges] = useState(0);
+  const [whiteBloodbendingPlusCharges, setWhiteBloodbendingPlusCharges] =
+    useState(0);
+  const [blackBloodbendingPlusCharges, setBlackBloodbendingPlusCharges] =
+    useState(0);
+  const [whiteNecroPPCharges, setWhiteNecroPPCharges] = useState(0);
+  const [blackNecroPPCharges, setBlackNecroPPCharges] = useState(0);
   const [whiteBlindRageDone, setWhiteBlindRageDone] = useState(false);
   const [blackBlindRageDone, setBlackBlindRageDone] = useState(false);
 
@@ -2745,47 +2963,115 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Grant effects ────────────────────────────────────────────────────────
 
-  const grantPickedEffects = useCallback((aug: Augment, color: Color) => {
-    if (aug.id === "oops") {
-      if (color === "white") setWhiteUndosLeft((u) => u + 1);
-      else setBlackUndosLeft((u) => u + 1);
-    }
-    if (aug.id === "frost") {
-      if (color === "white") setWhiteFreezeCharges((n) => n + 1);
-      else setBlackFreezeCharges((n) => n + 1);
-    }
-    if (aug.id === "blessed-water-spell") {
-      if (color === "white") setWhiteBlessedWaterCharges((n) => n + 1);
-      else setBlackBlessedWaterCharges((n) => n + 1);
-    }
-    if (aug.id === "necromancer") {
-      if (color === "white") setWhiteNecroCharges((n) => n + 1);
-      else setBlackNecroCharges((n) => n + 1);
-    }
-    if (aug.id === "necromancer-plus") {
-      if (color === "white") setWhiteNecroPlusCharges((n) => n + 1);
-      else setBlackNecroPlusCharges((n) => n + 1);
-    }
-    if (aug.id === "royal-education") {
-      if (color === "white") setWhiteRoyalEdUsed(false);
-      else setBlackRoyalEdUsed(false);
-    }
-    if (aug.id === "what") {
-      if (color === "white") setWhiteWhatUsed(false);
-      else setBlackWhatUsed(false);
-    }
-    if (aug.id === "instant-cash") {
-      setGame((g) => ({
-        ...g,
-        goldWhite: color === "white" ? g.goldWhite + 10 : g.goldWhite,
-        goldBlack: color === "black" ? g.goldBlack + 10 : g.goldBlack,
-      }));
-    }
-    if (aug.id === "evade") {
-      if (color === "white") setWhiteEvadeCharges((n) => n + 1);
-      else setBlackEvadeCharges((n) => n + 1);
-    }
-  }, []);
+  const grantPickedEffects = useCallback(
+    (
+      aug: Augment,
+      color: Color,
+      afterWhite?: Augment[],
+      afterBlack?: Augment[],
+    ) => {
+      const wA = afterWhite ?? whiteAugments;
+      const bA = afterBlack ?? blackAugments;
+      if (aug.id === "oops") {
+        if (color === "white") setWhiteUndosLeft((u) => u + 1);
+        else setBlackUndosLeft((u) => u + 1);
+      }
+      if (aug.id === "frost") {
+        if (color === "white") setWhiteFreezeCharges((n) => n + 1);
+        else setBlackFreezeCharges((n) => n + 1);
+      }
+      if (aug.id === "blessed-water-spell") {
+        if (color === "white") setWhiteBlessedWaterCharges((n) => n + 1);
+        else setBlackBlessedWaterCharges((n) => n + 1);
+      }
+      if (aug.id === "necromancer") {
+        if (color === "white") setWhiteNecroCharges((n) => n + 1);
+        else setBlackNecroCharges((n) => n + 1);
+      }
+      if (aug.id === "necromancer-plus") {
+        if (color === "white") setWhiteNecroPlusCharges((n) => n + 1);
+        else setBlackNecroPlusCharges((n) => n + 1);
+      }
+      if (aug.id === "necromancer-plus-plus") {
+        if (color === "white") setWhiteNecroPPCharges((n) => n + 1);
+        else setBlackNecroPPCharges((n) => n + 1);
+      }
+      if (aug.id === "royal-education") {
+        if (color === "white") setWhiteRoyalEdUsed(false);
+        else setBlackRoyalEdUsed(false);
+      }
+      if (aug.id === "what") {
+        if (color === "white") setWhiteWhatUsed(false);
+        else setBlackWhatUsed(false);
+      }
+      if (aug.id === "instant-cash") {
+        setGame((g) =>
+          creditGoldWithAugments(
+            g,
+            color,
+            10,
+            wA,
+            bA,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+          ),
+        );
+      }
+      if (aug.id === "evade") {
+        if (color === "white") setWhiteEvadeCharges((n) => n + 1);
+        else setBlackEvadeCharges((n) => n + 1);
+      }
+      if (aug.id === "double-gold") {
+        if (color === "white") setWhiteDoubleGoldFullRoundsLeft(5);
+        else setBlackDoubleGoldFullRoundsLeft(5);
+      }
+      if (aug.id === "horde") {
+        setGame((g) => applyHordeEffect(g, color));
+      }
+      if (aug.id === "bloodbending") {
+        if (color === "white") setWhiteBloodbendingCharges((n) => n + 1);
+        else setBlackBloodbendingCharges((n) => n + 1);
+      }
+      if (aug.id === "bloodbending-plus") {
+        if (color === "white") setWhiteBloodbendingPlusCharges((n) => n + 1);
+        else setBlackBloodbendingPlusCharges((n) => n + 1);
+      }
+      if (aug.id === "little-big-man") {
+        const fullR = Math.min(whiteTurnCount, blackTurnCount) + 4;
+        setGame((g) => {
+          const b = getDerivedBoard(g);
+          const n = b.length;
+          const off = (n - 8) / 2;
+          const row = color === "white" ? 6 + off : 1 + off;
+          for (let ci = 0; ci < n; ci++) {
+            const p = b[row][ci];
+            if (p?.type === "P" && p.color === color && p.id) {
+              return color === "white"
+                ? {
+                    ...g,
+                    littleBigManWhiteId: p.id,
+                    littleBigManWhiteExpiresAtFullRound: fullR,
+                  }
+                : {
+                    ...g,
+                    littleBigManBlackId: p.id,
+                    littleBigManBlackExpiresAtFullRound: fullR,
+                  };
+            }
+          }
+          return g;
+        });
+      }
+    },
+    [
+      whiteAugments,
+      blackAugments,
+      whiteTurnCount,
+      blackTurnCount,
+      whiteDoubleGoldFullRoundsLeft,
+      blackDoubleGoldFullRoundsLeft,
+    ],
+  );
 
   // ── MP: snapshot infrastructure ──────────────────────────────────────────
 
@@ -2870,8 +3156,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackIlkkanId,
     whiteIlkkanChosen,
     blackIlkkanChosen,
-    whitePrizeFirstCaptureDone,
-    blackPrizeFirstCaptureDone,
+    prizeFirstCaptureOfGameDone,
     whiteBlindRageDone,
     blackBlindRageDone,
     whiteEvadeCharges,
@@ -2882,6 +3167,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     pawnPlaceFor,
     blindRagePickColor,
     blindRageOffered,
+    whiteDoubleGoldFullRoundsLeft,
+    blackDoubleGoldFullRoundsLeft,
+    whiteBloodbendingCharges,
+    blackBloodbendingCharges,
+    whiteBloodbendingPlusCharges,
+    blackBloodbendingPlusCharges,
+    whiteNecroPPCharges,
+    blackNecroPPCharges,
   });
 
   // Apply a snapshot received from the opponent
@@ -2978,13 +3271,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackIlkkanId(g.blackIlkkanId as string | null);
     setWhiteIlkkanChosen(g.whiteIlkkanChosen as boolean);
     setBlackIlkkanChosen(g.blackIlkkanChosen as boolean);
-    setWhitePrizeFirstCaptureDone(
-      (g as { whitePrizeFirstCaptureDone?: boolean }).whitePrizeFirstCaptureDone ??
-        false,
-    );
-    setBlackPrizeFirstCaptureDone(
-      (g as { blackPrizeFirstCaptureDone?: boolean }).blackPrizeFirstCaptureDone ??
-        false,
+    setPrizeFirstCaptureOfGameDone(
+      (g as { prizeFirstCaptureOfGameDone?: boolean })
+        .prizeFirstCaptureOfGameDone ?? false,
     );
     setWhiteBlindRageDone(
       (g as { whiteBlindRageDone?: boolean }).whiteBlindRageDone ?? false,
@@ -3005,6 +3294,34 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     );
     setBlindRageOffered(
       (g as { blindRageOffered?: Augment[] }).blindRageOffered ?? [],
+    );
+    setWhiteDoubleGoldFullRoundsLeft(
+      (g as { whiteDoubleGoldFullRoundsLeft?: number })
+        .whiteDoubleGoldFullRoundsLeft ?? 0,
+    );
+    setBlackDoubleGoldFullRoundsLeft(
+      (g as { blackDoubleGoldFullRoundsLeft?: number })
+        .blackDoubleGoldFullRoundsLeft ?? 0,
+    );
+    setWhiteBloodbendingCharges(
+      (g as { whiteBloodbendingCharges?: number }).whiteBloodbendingCharges ?? 0,
+    );
+    setBlackBloodbendingCharges(
+      (g as { blackBloodbendingCharges?: number }).blackBloodbendingCharges ?? 0,
+    );
+    setWhiteBloodbendingPlusCharges(
+      (g as { whiteBloodbendingPlusCharges?: number })
+        .whiteBloodbendingPlusCharges ?? 0,
+    );
+    setBlackBloodbendingPlusCharges(
+      (g as { blackBloodbendingPlusCharges?: number })
+        .blackBloodbendingPlusCharges ?? 0,
+    );
+    setWhiteNecroPPCharges(
+      (g as { whiteNecroPPCharges?: number }).whiteNecroPPCharges ?? 0,
+    );
+    setBlackNecroPPCharges(
+      (g as { blackNecroPPCharges?: number }).blackNecroPPCharges ?? 0,
     );
     setPawnPlaceFor(
       (g as { pawnPlaceFor?: Color | null }).pawnPlaceFor ?? null,
@@ -3027,6 +3344,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setMonolithMode(null);
     setShopOpen(false);
     setNecroPlusMode(false);
+    setBloodbendingMode(false);
+    setBloodbendingPlusMode(false);
+    setNecroPPMode(false);
     setIlkkanMode(false);
     setSwapMode(false);
     setSwapFirst(null);
@@ -3037,8 +3357,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     if (!mpConfig) return;
     setWhiteAugments([mpConfig.initialWhiteAugment]);
     setBlackAugments([mpConfig.initialBlackAugment]);
-    grantPickedEffects(mpConfig.initialWhiteAugment, "white");
-    grantPickedEffects(mpConfig.initialBlackAugment, "black");
+    grantPickedEffects(mpConfig.initialWhiteAugment, "white", [
+      mpConfig.initialWhiteAugment,
+    ], []);
+    grantPickedEffects(
+      mpConfig.initialBlackAugment,
+      "black",
+      [mpConfig.initialWhiteAugment],
+      [mpConfig.initialBlackAugment],
+    );
     setPhase("playing");
     setMpReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3078,13 +3405,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   };
   const handleWhitePick = (aug: Augment) => {
     setWhiteAugments([aug]);
-    grantPickedEffects(aug, "white");
+    grantPickedEffects(aug, "white", [aug], []);
     setOfferedToBlack(rollAugments(pickAugmentCount([aug]), [aug.id]));
     setPhase("black-augment");
   };
   const handleBlackPick = (aug: Augment) => {
     setBlackAugments([aug]);
-    grantPickedEffects(aug, "black");
+    grantPickedEffects(aug, "black", whiteAugments, [aug]);
     setPhase("playing");
   };
 
@@ -3118,7 +3445,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         newBAugs = [...blackAugments, aug];
         setBlackAugments(newBAugs);
       }
-      grantPickedEffects(aug, color);
+      grantPickedEffects(aug, color, newWAugs, newBAugs);
       if (augmentQueue.length > 0) {
         const [next, ...rest] = augmentQueue;
         setAugmentQueue(rest);
@@ -3153,7 +3480,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         newBAugs = [...blackAugments, aug];
         setBlackAugments(newBAugs);
       }
-      grantPickedEffects(aug, color);
+      grantPickedEffects(aug, color, newWAugs, newBAugs);
       setBlindRagePickColor(null);
       setBlindRageOffered([]);
       const pending = triggersAfterBlindRageRef.current;
@@ -3205,7 +3532,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       // Add augment
       if (color === "white") setWhiteAugments((prev) => [...prev, aug]);
       else setBlackAugments((prev) => [...prev, aug]);
-      grantPickedEffects(aug, color);
+      grantPickedEffects(
+        aug,
+        color,
+        color === "white" ? [...whiteAugments, aug] : whiteAugments,
+        color === "black" ? [...blackAugments, aug] : blackAugments,
+      );
 
       // Increment tier bought counter
       const setter =
@@ -3217,6 +3549,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       game,
       whiteTierBought,
       blackTierBought,
+      whiteAugments,
+      blackAugments,
       grantPickedEffects,
       requestSnapshot,
     ],
@@ -3255,8 +3589,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         whiteBloodlustNext, blackBloodlustNext,
         whiteLostMinors, blackLostMinors,
         nextEventTurn, chaosEventTiming,
-        whitePrizeFirstCaptureDone,
-        blackPrizeFirstCaptureDone,
+        prizeFirstCaptureOfGameDone,
         whiteBlindRageDone,
         blackBlindRageDone,
         whiteEvadeCharges,
@@ -3266,6 +3599,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         blackPawnShopBuys,
         blindRagePickColor,
         blindRageOffered,
+        whiteDoubleGoldFullRoundsLeft,
+        blackDoubleGoldFullRoundsLeft,
+        whiteBloodbendingCharges,
+        blackBloodbendingCharges,
+        whiteBloodbendingPlusCharges,
+        blackBloodbendingPlusCharges,
+        whiteNecroPPCharges,
+        blackNecroPPCharges,
       }]);
       setShopOpen(false);
 
@@ -3289,6 +3630,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         movingColor,
         playerAugs,
         newTurnCount,
+        whiteAugments,
+        blackAugments,
+        whiteDoubleGoldFullRoundsLeft,
+        blackDoubleGoldFullRoundsLeft,
       );
 
       // Jew
@@ -3297,17 +3642,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const victimAugs =
           victimColor === "white" ? whiteAugments : blackAugments;
         if (victimAugs.some((a) => a.id === "jew"))
-          newGame = {
-            ...newGame,
-            goldWhite:
-              victimColor === "white"
-                ? newGame.goldWhite + 2
-                : newGame.goldWhite,
-            goldBlack:
-              victimColor === "black"
-                ? newGame.goldBlack + 2
-                : newGame.goldBlack,
-          };
+          newGame = creditGoldWithAugments(
+            newGame,
+            victimColor,
+            2,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+          );
       }
 
       // Necromancer: track column at death, revive at home rank
@@ -3371,6 +3714,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
         let captureBonus = 1;
         if (playerAugs.some((a) => a.id === "efficient")) captureBonus += 1;
+        captureBonus = applyDoubleGoldToPositiveDelta(
+          movingColor,
+          captureBonus,
+          playerAugs,
+          movingColor === "white"
+            ? whiteDoubleGoldFullRoundsLeft
+            : blackDoubleGoldFullRoundsLeft,
+        );
         newGame = {
           ...newGame,
           goldWhite:
@@ -3413,7 +3764,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               wCT && wCT[0] === to[0] && wCT[1] === to[1];
             if (hitId || hitSq) {
               const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
-              newGame = { ...newGame, goldWhite: newGame.goldWhite + bonus };
+              newGame = creditGoldWithAugments(
+                newGame,
+                "white",
+                bonus,
+                whiteAugments,
+                blackAugments,
+                whiteDoubleGoldFullRoundsLeft,
+                blackDoubleGoldFullRoundsLeft,
+              );
               settleWhiteContract();
               cleared = true;
             }
@@ -3448,7 +3807,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               bCT && bCT[0] === to[0] && bCT[1] === to[1];
             if (hitId || hitSq) {
               const bonus = (PIECE_VALUE[capturedType] ?? 1) * 4;
-              newGame = { ...newGame, goldBlack: newGame.goldBlack + bonus };
+              newGame = creditGoldWithAugments(
+                newGame,
+                "black",
+                bonus,
+                whiteAugments,
+                blackAugments,
+                whiteDoubleGoldFullRoundsLeft,
+                blackDoubleGoldFullRoundsLeft,
+              );
               settleBlackContract();
               cleared = true;
             }
@@ -3477,11 +3844,24 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const fullRoundsCompleted = newTurnCount;
         if (fullRoundsCompleted >= nextEventTurn) {
           const event = rollEvent();
+          const permaSq = newGame.permaFrozenSquares ?? [];
           if (event.id === "golden-age") {
+            const wAdd = applyDoubleGoldToPositiveDelta(
+              "white",
+              10,
+              whiteAugments,
+              whiteDoubleGoldFullRoundsLeft,
+            );
+            const bAdd = applyDoubleGoldToPositiveDelta(
+              "black",
+              10,
+              blackAugments,
+              blackDoubleGoldFullRoundsLeft,
+            );
             newGame = {
               ...newGame,
-              goldWhite: newGame.goldWhite + 10,
-              goldBlack: newGame.goldBlack + 10,
+              goldWhite: newGame.goldWhite + wAdd,
+              goldBlack: newGame.goldBlack + bAdd,
             };
           } else if (event.id === "stock-crash") {
             let nw = newGame.goldWhite - 10;
@@ -3575,9 +3955,50 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               { row: bRow, col: bCol, movesLeft: 6 },
             ]);
         } else if (event.id === "lost-mercenary") {
-          newGame = spawnLostMercenaryOnBoard(newGame, wallSquares);
+          newGame = spawnLostMercenaryOnBoard(newGame, wallSquares, permaSq);
         } else if (event.id === "mercenary-patrol") {
-          newGame = spawnMercenaryPatrolKnights(newGame, wallSquares);
+          newGame = spawnMercenaryPatrolKnights(newGame, wallSquares, permaSq);
+        } else if (event.id === "siege-patrol") {
+          newGame = spawnMercenarySiegePatrol(newGame, wallSquares, permaSq);
+        } else if (event.id === "crusaders") {
+          newGame = spawnMercenaryCrusaders(newGame, wallSquares, permaSq);
+        } else if (event.id === "winter-has-come") {
+          const nb = getDerivedBoard(newGame);
+          const bs = nb.length;
+          const empties: [number, number][] = [];
+          for (let rr = 0; rr < bs; rr++)
+            for (let cc = 0; cc < bs; cc++) {
+              if (!nb[rr][cc]) empties.push([rr, cc]);
+            }
+          if (empties.length > 0) {
+            const pick = empties[Math.floor(Math.random() * empties.length)]!;
+            const prev = newGame.permaFrozenSquares ?? [];
+            newGame = {
+              ...newGame,
+              permaFrozenSquares: [
+                ...prev,
+                { row: pick[0], col: pick[1] },
+              ],
+            };
+          }
+        } else if (event.id === "valar-morghulis") {
+          const nb = cloneBoard(getDerivedBoard(newGame));
+          const bs = nb.length;
+          let lostW = false;
+          let lostB = false;
+          for (let rr = 0; rr < bs; rr++)
+            for (let cc = 0; cc < bs; cc++) {
+              const p = nb[rr][cc];
+              if (!p || p.type !== "P") continue;
+              if (p.color === "orange") continue;
+              const pid = p.id;
+              nb[rr][cc] = null;
+              if (pid && whiteIlkkanId && pid === whiteIlkkanId) lostW = true;
+              if (pid && blackIlkkanId && pid === blackIlkkanId) lostB = true;
+            }
+          if (lostW) setWhiteIlkkanId(null);
+          if (lostB) setBlackIlkkanId(null);
+          newGame = recomputeStatus(syncStateFromBoard({ ...newGame }, nb));
         } else if (event.id === "cold-winds") {
             const bs3 = getDerivedBoard(newGame).length;
             const wPcs: [number, number][] = [],
@@ -3684,12 +4105,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
       let boardAfterMerc = newGame;
       if (movingColor === "black") {
+        setWhiteDoubleGoldFullRoundsLeft((n) => Math.max(0, n - 1));
+        setBlackDoubleGoldFullRoundsLeft((n) => Math.max(0, n - 1));
         const mercCtx = {
           wallSquares,
           frozenSquare,
           coldWindsSquares,
           coldWindsMovesLeft,
           blessedSquares,
+          permaFrozenSquares: boardAfterMerc.permaFrozenSquares ?? [],
         };
         boardAfterMerc = applyLostMercenaryAfterFullMove(boardAfterMerc, mercCtx);
         boardAfterMerc = applyMercenaryPatrolAfterFullMove(boardAfterMerc, mercCtx);
@@ -3721,32 +4145,28 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           .length;
         if (dangerStacks > 0) {
           const g = 4 * dangerStacks;
-          finalGame = {
-            ...finalGame,
-            goldWhite:
-              movingColor === "white"
-                ? finalGame.goldWhite + g
-                : finalGame.goldWhite,
-            goldBlack:
-              movingColor === "black"
-                ? finalGame.goldBlack + g
-                : finalGame.goldBlack,
-          };
+          finalGame = creditGoldWithAugments(
+            finalGame,
+            movingColor,
+            g,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+          );
         }
       }
       const thiefStacks = playerAugs.filter((a) => a.id === "thief").length;
       if (thiefStacks > 0 && Math.random() < 0.01 * thiefStacks) {
-        finalGame = {
-          ...finalGame,
-          goldWhite:
-            movingColor === "white"
-              ? finalGame.goldWhite + 50
-              : finalGame.goldWhite,
-          goldBlack:
-            movingColor === "black"
-              ? finalGame.goldBlack + 50
-              : finalGame.goldBlack,
-        };
+        finalGame = creditGoldWithAugments(
+          finalGame,
+          movingColor,
+          50,
+          whiteAugments,
+          blackAugments,
+          whiteDoubleGoldFullRoundsLeft,
+          blackDoubleGoldFullRoundsLeft,
+        );
       }
 
       const oppC = opp(movingColor);
@@ -3760,58 +4180,53 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (taxStacks > 0) {
           const tg = Math.floor(oppDelta / 10) * taxStacks;
           if (tg > 0) {
-            finalGame = {
-              ...finalGame,
-              goldWhite:
-                movingColor === "white"
-                  ? finalGame.goldWhite + tg
-                  : finalGame.goldWhite,
-              goldBlack:
-                movingColor === "black"
-                  ? finalGame.goldBlack + tg
-                  : finalGame.goldBlack,
-            };
+            finalGame = creditGoldWithAugments(
+              finalGame,
+              movingColor,
+              tg,
+              whiteAugments,
+              blackAugments,
+              whiteDoubleGoldFullRoundsLeft,
+              blackDoubleGoldFullRoundsLeft,
+            );
           }
         }
       }
 
       const moverGoldStart =
         movingColor === "white" ? startGoldWhite : startGoldBlack;
-      if (
-        capturedType &&
-        !victimWasMercenary &&
-        playerAugs.some((a) => a.id === "prize-money")
-      ) {
-        const prizeDone =
-          movingColor === "white"
-            ? whitePrizeFirstCaptureDone
-            : blackPrizeFirstCaptureDone;
-        if (!prizeDone) {
+      if (capturedType && !victimWasMercenary && !prizeFirstCaptureOfGameDone) {
+        if (playerAugs.some((a) => a.id === "prize-money")) {
           const moverNow =
             movingColor === "white"
               ? finalGame.goldWhite
               : finalGame.goldBlack;
           const d = moverNow - moverGoldStart;
           if (d !== 0) {
-            finalGame = {
-              ...finalGame,
-              goldWhite:
-                movingColor === "white"
-                  ? finalGame.goldWhite + d
-                  : finalGame.goldWhite,
-              goldBlack:
-                movingColor === "black"
-                  ? finalGame.goldBlack + d
-                  : finalGame.goldBlack,
-            };
+            finalGame = creditGoldWithAugments(
+              finalGame,
+              movingColor,
+              d,
+              whiteAugments,
+              blackAugments,
+              whiteDoubleGoldFullRoundsLeft,
+              blackDoubleGoldFullRoundsLeft,
+            );
           }
-          if (movingColor === "white") setWhitePrizeFirstCaptureDone(true);
-          else setBlackPrizeFirstCaptureDone(true);
         }
+        setPrizeFirstCaptureOfGameDone(true);
       }
 
       if (augmentSpellBlockedFor && movingColor === augmentSpellBlockedFor)
         setAugmentSpellBlockedFor(null);
+
+      finalGame = expireLittleBigManAfterHalfMove(
+        finalGame,
+        movingColor,
+        newTurnCount,
+        whiteTurnCount,
+        blackTurnCount,
+      );
 
       setGame(finalGame);
 
@@ -3926,8 +4341,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       requestSnapshot,
       whiteIlkkanId,
       blackIlkkanId,
-      whitePrizeFirstCaptureDone,
-      blackPrizeFirstCaptureDone,
+      prizeFirstCaptureOfGameDone,
+      whiteDoubleGoldFullRoundsLeft,
+      blackDoubleGoldFullRoundsLeft,
       whiteBlindRageDone,
       blackBlindRageDone,
       whiteEvadeCharges,
@@ -3990,13 +4406,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           ? (augRestored as { chaosEventTiming: boolean }).chaosEventTiming
           : (augRestored as { eventInterval?: number }).eventInterval === 10,
       );
-      setWhitePrizeFirstCaptureDone(
-        (augRestored as { whitePrizeFirstCaptureDone?: boolean })
-          .whitePrizeFirstCaptureDone ?? false,
-      );
-      setBlackPrizeFirstCaptureDone(
-        (augRestored as { blackPrizeFirstCaptureDone?: boolean })
-          .blackPrizeFirstCaptureDone ?? false,
+      setPrizeFirstCaptureOfGameDone(
+        (augRestored as { prizeFirstCaptureOfGameDone?: boolean })
+          .prizeFirstCaptureOfGameDone ?? false,
       );
       setWhiteBlindRageDone(
         (augRestored as { whiteBlindRageDone?: boolean }).whiteBlindRageDone ??
@@ -4029,11 +4441,47 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setBlindRageOffered(
         (augRestored as { blindRageOffered?: Augment[] }).blindRageOffered ?? [],
       );
+      setWhiteDoubleGoldFullRoundsLeft(
+        (augRestored as { whiteDoubleGoldFullRoundsLeft?: number })
+          .whiteDoubleGoldFullRoundsLeft ?? 0,
+      );
+      setBlackDoubleGoldFullRoundsLeft(
+        (augRestored as { blackDoubleGoldFullRoundsLeft?: number })
+          .blackDoubleGoldFullRoundsLeft ?? 0,
+      );
+      setWhiteBloodbendingCharges(
+        (augRestored as { whiteBloodbendingCharges?: number })
+          .whiteBloodbendingCharges ?? 0,
+      );
+      setBlackBloodbendingCharges(
+        (augRestored as { blackBloodbendingCharges?: number })
+          .blackBloodbendingCharges ?? 0,
+      );
+      setWhiteBloodbendingPlusCharges(
+        (augRestored as { whiteBloodbendingPlusCharges?: number })
+          .whiteBloodbendingPlusCharges ?? 0,
+      );
+      setBlackBloodbendingPlusCharges(
+        (augRestored as { blackBloodbendingPlusCharges?: number })
+          .blackBloodbendingPlusCharges ?? 0,
+      );
+      setWhiteNecroPPCharges(
+        (augRestored as { whiteNecroPPCharges?: number })
+          .whiteNecroPPCharges ?? 0,
+      );
+      setBlackNecroPPCharges(
+        (augRestored as { blackNecroPPCharges?: number })
+          .blackNecroPPCharges ?? 0,
+      );
     }
     setSelected(null);
     setValidMoves([]);
     setFreezeMode(false);
     setNecroMode(false);
+    setNecroPlusMode(false);
+    setNecroPPMode(false);
+    setBloodbendingMode(false);
+    setBloodbendingPlusMode(false);
     setRoyalEdMode(false);
     setWhatMode(false);
     setWhatSelected(null);
@@ -4054,6 +4502,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setFreezeMode(false);
     setNecroMode(false);
     setNecroPlusMode(false);
+    setBloodbendingMode(false);
     if (!opts?.preserveIlkkan) setIlkkanMode(false);
     setRoyalEdMode(false);
     setWhatMode(false);
@@ -4071,8 +4520,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlessedWaterMode(false);
     setPuppetMode(false);
     setPawnPlaceFor(null);
-    setSelected(null);
-    setValidMoves([]);
+    setBloodbendingPlusMode(false);
+    setNecroPPMode(false);
   };
 
   const handleToggleFreeze = useCallback(() => {
@@ -4080,6 +4529,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     clearModes();
     setFreezeMode(e);
   }, [freezeMode]);
+  const handleToggleBloodbending = useCallback(() => {
+    const e = !bloodbendingMode;
+    clearModes();
+    setBloodbendingMode(e);
+  }, [bloodbendingMode]);
+  const handleToggleBloodbendingPlus = useCallback(() => {
+    const e = !bloodbendingPlusMode;
+    clearModes();
+    setBloodbendingPlusMode(e);
+  }, [bloodbendingPlusMode]);
   const handleToggleNecro = useCallback(() => {
     const entering = !necroMode;
     clearModes();
@@ -4207,6 +4666,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setValidMoves(validSquares);
     }
   }, [necroPlusMode, game]);
+  const handleToggleNecroPP = useCallback(() => {
+    const entering = !necroPPMode;
+    clearModes();
+    setNecroPPMode(entering);
+    if (entering) {
+      const _bs = getDerivedBoard(game).length;
+      const _off = (_bs - 8) / 2;
+      const backRow = game.turn === "white" ? 7 + _off : _off;
+      const validSquares: [number, number][] = [];
+      for (let c = 0; c < _bs; c++)
+        if (!getDerivedBoard(game)[backRow]?.[c]) validSquares.push([backRow, c]);
+      setValidMoves(validSquares);
+    }
+  }, [necroPPMode, game]);
   const handleToggleContract = useCallback(() => {
     const e = !contractMode;
     clearModes();
@@ -4304,7 +4777,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             c,
             pawnPlaceFor,
             getDerivedBoard(game).length,
-          )
+          ) &&
+          !isPermaFrostSquare(game, r, c)
         ) {
           const nb = cloneBoard(getDerivedBoard(game));
           nb[r][c] = { type: "P", color: pawnPlaceFor };
@@ -4321,7 +4795,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       if (monolithMode === "place") {
-        if (!piece) {
+        if (!piece && !isPermaFrostSquare(game, r, c)) {
           const movingColor = game.turn;
           const nb = cloneBoard(getDerivedBoard(game));
           nb[r][c] = { type: "M", color: movingColor };
@@ -4349,8 +4823,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
-            whitePrizeFirstCaptureDone,
-            blackPrizeFirstCaptureDone,
+            prizeFirstCaptureOfGameDone,
             whiteBlindRageDone,
             blackBlindRageDone,
             whiteEvadeCharges,
@@ -4360,6 +4833,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackPawnShopBuys,
             blindRagePickColor,
             blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
           }]);
           let newGState: ChessState = syncStateFromBoard(
             {
@@ -4380,8 +4861,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             movingColor,
             playerAugsNow,
             newTurnCount,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
           );
-          newGState = recomputeStatus(newGState);
+          newGState = recomputeStatus(
+            expireLittleBigManAfterHalfMove(
+              newGState,
+              movingColor,
+              newTurnCount,
+              whiteTurnCount,
+              blackTurnCount,
+            ),
+          );
           if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft((n) => n - 1);
           setGame(newGState);
         }
@@ -4429,6 +4922,71 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         return;
       }
 
+      if (necroPPMode) {
+        const playerColor = game.turn;
+        const _bs = getDerivedBoard(game).length;
+        const _off = (_bs - 8) / 2;
+        const backRow = playerColor === "white" ? 7 + _off : _off;
+        if (r === backRow && !getDerivedBoard(game)[r][c]) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          nb[r][c] = { type: "Q", color: playerColor };
+          const newGState = recomputeStatus(
+            syncStateFromBoard(
+              {
+                ...game,
+                turn: opp(playerColor),
+              },
+              nb,
+            ),
+          );
+          setGameHistory((h) => [...h, game]);
+          setAugmentHistory((h) => [...h, {
+            frozenSquare, frozenExpireAfter,
+            deathNoteTargets,
+            activePuppetSquare, activePuppetColor,
+            whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
+            whiteIlkkanId, blackIlkkanId,
+            blessedSquares,
+            coldWindsSquares, coldWindsMovesLeft,
+            wallSquares, wallMovesLeft,
+            activeNuke,
+            peaceTreatyMovesLeft,
+            whiteLostPawnCols, blackLostPawnCols,
+            whiteCaptureCount, blackCaptureCount,
+            whiteBloodlustNext, blackBloodlustNext,
+            whiteLostMinors, blackLostMinors,
+            nextEventTurn, chaosEventTiming,
+            prizeFirstCaptureOfGameDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
+          }]);
+          setGame(newGState);
+          if (playerColor === "white") setWhiteNecroPPCharges((n) => n - 1);
+          else setBlackNecroPPCharges((n) => n - 1);
+          requestSnapshot();
+        }
+        setNecroPPMode(false);
+        setSelected(null);
+        setValidMoves([]);
+        return;
+      }
+
       if (necroPlusMode) {
         const playerColor = game.turn;
         const _bs = getDerivedBoard(game).length;
@@ -4467,8 +5025,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
-            whitePrizeFirstCaptureDone,
-            blackPrizeFirstCaptureDone,
+            prizeFirstCaptureOfGameDone,
             whiteBlindRageDone,
             blackBlindRageDone,
             whiteEvadeCharges,
@@ -4478,6 +5035,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackPawnShopBuys,
             blindRagePickColor,
             blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4596,6 +5161,126 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         return;
       }
 
+      if (bloodbendingPlusMode) {
+        if (
+          piece &&
+          piece.color !== game.turn &&
+          piece.color !== "orange" &&
+          (piece.type === "N" || piece.type === "B" || piece.type === "R") &&
+          !blessedSquares.some((b) => b.row === r && b.col === c)
+        ) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          const flipped = { ...piece!, color: game.turn };
+          nb[r][c] = flipped;
+          const newG = recomputeStatus(syncStateFromBoard({ ...game }, nb));
+          setGameHistory((h) => [...h, game]);
+          setAugmentHistory((h) => [...h, {
+            frozenSquare, frozenExpireAfter,
+            deathNoteTargets,
+            activePuppetSquare, activePuppetColor,
+            whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
+            whiteIlkkanId, blackIlkkanId,
+            blessedSquares,
+            coldWindsSquares, coldWindsMovesLeft,
+            wallSquares, wallMovesLeft,
+            activeNuke,
+            peaceTreatyMovesLeft,
+            whiteLostPawnCols, blackLostPawnCols,
+            whiteCaptureCount, blackCaptureCount,
+            whiteBloodlustNext, blackBloodlustNext,
+            whiteLostMinors, blackLostMinors,
+            nextEventTurn, chaosEventTiming,
+            prizeFirstCaptureOfGameDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
+          }]);
+          setGame(newG);
+          if (game.turn === "white") setWhiteBloodbendingPlusCharges((n) => n - 1);
+          else setBlackBloodbendingPlusCharges((n) => n - 1);
+          requestSnapshot();
+        }
+        setBloodbendingPlusMode(false);
+        setSelected(null);
+        setValidMoves([]);
+        return;
+      }
+
+      if (bloodbendingMode) {
+        if (
+          piece &&
+          piece.color !== game.turn &&
+          piece.color !== "orange" &&
+          piece.type === "P" &&
+          !blessedSquares.some((b) => b.row === r && b.col === c)
+        ) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          const flipped = { ...piece!, color: game.turn };
+          nb[r][c] = flipped;
+          const newG = recomputeStatus(syncStateFromBoard({ ...game }, nb));
+          setGameHistory((h) => [...h, game]);
+          setAugmentHistory((h) => [...h, {
+            frozenSquare, frozenExpireAfter,
+            deathNoteTargets,
+            activePuppetSquare, activePuppetColor,
+            whiteContractTarget, blackContractTarget,
+            whiteContractPieceId, blackContractPieceId,
+            whiteIlkkanId, blackIlkkanId,
+            blessedSquares,
+            coldWindsSquares, coldWindsMovesLeft,
+            wallSquares, wallMovesLeft,
+            activeNuke,
+            peaceTreatyMovesLeft,
+            whiteLostPawnCols, blackLostPawnCols,
+            whiteCaptureCount, blackCaptureCount,
+            whiteBloodlustNext, blackBloodlustNext,
+            whiteLostMinors, blackLostMinors,
+            nextEventTurn, chaosEventTiming,
+            prizeFirstCaptureOfGameDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
+            blindRagePickColor,
+            blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
+          }]);
+          setGame(newG);
+          if (game.turn === "white") setWhiteBloodbendingCharges((n) => n - 1);
+          else setBlackBloodbendingCharges((n) => n - 1);
+          requestSnapshot();
+        }
+        setBloodbendingMode(false);
+        setSelected(null);
+        setValidMoves([]);
+        return;
+      }
+
       if (freezeMode) {
         if (piece && piece.color !== game.turn && piece.type !== "K") {
           setFrozenSquare([r, c]);
@@ -4649,8 +5334,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
-            whitePrizeFirstCaptureDone,
-            blackPrizeFirstCaptureDone,
+            prizeFirstCaptureOfGameDone,
             whiteBlindRageDone,
             blackBlindRageDone,
             whiteEvadeCharges,
@@ -4660,6 +5344,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackPawnShopBuys,
             blindRagePickColor,
             blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4918,8 +5610,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
-            whitePrizeFirstCaptureDone,
-            blackPrizeFirstCaptureDone,
+            prizeFirstCaptureOfGameDone,
             whiteBlindRageDone,
             blackBlindRageDone,
             whiteEvadeCharges,
@@ -4929,6 +5620,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackPawnShopBuys,
             blindRagePickColor,
             blindRageOffered,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            whiteBloodbendingCharges,
+            blackBloodbendingCharges,
+            whiteBloodbendingPlusCharges,
+            blackBloodbendingPlusCharges,
+            whiteNecroPPCharges,
+            blackNecroPPCharges,
           }]);
           setShopOpen(false);
           const newTurnCount =
@@ -4969,8 +5668,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             movingColor,
             playerAugsNow,
             newTurnCount,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
           );
-          newGame = recomputeStatus(newGame);
+          newGame = recomputeStatus(
+            expireLittleBigManAfterHalfMove(
+              newGame,
+              movingColor,
+              newTurnCount,
+              whiteTurnCount,
+              blackTurnCount,
+            ),
+          );
           // Instant win if rampage killed the enemy king
           if (enemyKingInPath) newGame = { ...newGame, status: "checkmate" };
           setGame(newGame);
@@ -5025,6 +5736,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const playerAugsNow =
         game.turn === "white" ? whiteAugments : blackAugments;
       const hasAlternative = playerAugsNow.some((a) => a.id === "alternative");
+      const hasAlternativePlus = playerAugsNow.some(
+        (a) => a.id === "alternative-plus",
+      );
       const isColdWindFrozen = (row: number, col: number) =>
         coldWindsMovesLeft > 0 &&
         coldWindsSquares.some(([fr, fc]) => fr === row && fc === col);
@@ -5038,16 +5752,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const computeMoves = (pr: number, pc: number): [number, number][] => {
         if (isColdWindFrozen(pr, pc)) return [];
         // Inject wall squares as M-pieces so rays/movement are properly blocked
+        const db0 = getDerivedBoard(game);
+        const perm = game.permaFrozenSquares ?? [];
         const gameForMoves =
-          wallSquares.length > 0
+          wallSquares.length > 0 || perm.length > 0
             ? syncStateFromBoard(
                 { ...game },
-                getDerivedBoard(game).map((row2, ri) =>
-                  row2.map((sq, ci) =>
-                    wallSquares.some((w) => w.row === ri && w.col === ci)
-                      ? { type: "M" as PieceType, color: "white" as Color }
-                      : sq,
-                  ),
+                db0.map((row2, ri) =>
+                  row2.map((sq, ci) => {
+                    if (wallSquares.some((w) => w.row === ri && w.col === ci))
+                      return { type: "M" as PieceType, color: "white" as Color };
+                    if (perm.some((p) => p.row === ri && p.col === ci))
+                      return { type: "M" as PieceType, color: "white" as Color };
+                    return sq;
+                  }),
                 ),
               )
             : game;
@@ -5055,6 +5773,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const p = getDerivedBoard(game)[pr][pc];
         if (hasAlternative && p?.type === "P")
           for (const [er, ec] of getAlternativeMoves(game, pr, pc))
+            if (!moves.some(([mr, mc]) => mr === er && mc === ec))
+              moves.push([er, ec]);
+        if (hasAlternativePlus && p?.type === "P")
+          for (const [er, ec] of getAlternativePlusMoves(game, pr, pc))
             if (!moves.some(([mr, mc]) => mr === er && mc === ec))
               moves.push([er, ec]);
         // Filter out captures of blessed pieces
@@ -5151,7 +5873,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       promotionPending,
       isMyTurn,
       freezeMode,
+      bloodbendingMode,
+      bloodbendingPlusMode,
       necroMode,
+      necroPPMode,
       royalEdMode,
       whatMode,
       whatSelected,
@@ -5186,6 +5911,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       swapFirst,
       pawnPlaceFor,
       blindRagePickColor,
+      whiteDoubleGoldFullRoundsLeft,
+      blackDoubleGoldFullRoundsLeft,
+      whiteBloodbendingCharges,
+      blackBloodbendingCharges,
+      whiteBloodbendingPlusCharges,
+      blackBloodbendingPlusCharges,
+      whiteNecroPPCharges,
+      blackNecroPPCharges,
     ],
   );
 
@@ -5232,9 +5965,18 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackTurnCount(0);
     setWhiteFreezeCharges(0);
     setBlackFreezeCharges(0);
+    setWhiteBloodbendingCharges(0);
+    setBlackBloodbendingCharges(0);
+    setWhiteBloodbendingPlusCharges(0);
+    setBlackBloodbendingPlusCharges(0);
+    setWhiteNecroPPCharges(0);
+    setBlackNecroPPCharges(0);
     setFrozenSquare(null);
     setFrozenExpireAfter(null);
     setFreezeMode(false);
+    setBloodbendingMode(false);
+    setBloodbendingPlusMode(false);
+    setNecroPPMode(false);
     setWhiteNecroCharges(0);
     setBlackNecroCharges(0);
     setWhiteLostPawnCols([]);
@@ -5306,8 +6048,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setNecroPlusMode(false);
     setWhiteMonolithPermRemoved(false);
     setBlackMonolithPermRemoved(false);
-    setWhitePrizeFirstCaptureDone(false);
-    setBlackPrizeFirstCaptureDone(false);
+    setPrizeFirstCaptureOfGameDone(false);
+    setWhiteDoubleGoldFullRoundsLeft(0);
+    setBlackDoubleGoldFullRoundsLeft(0);
     setWhiteBlindRageDone(false);
     setBlackBlindRageDone(false);
     setWhiteEvadeCharges(0);
@@ -5369,6 +6112,26 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const blackHasNecroTargets = blackLostPawnCols.some(
     (col) => getDerivedBoard(game)[blackNecroRow] && !getDerivedBoard(game)[blackNecroRow][col],
   );
+
+  const dbN = getDerivedBoard(game);
+  const bsN = dbN.length;
+  const offN = (bsN - 8) / 2;
+  const backRw = 7 + offN;
+  const backRb = offN;
+  let wEmptyBack = false;
+  let bEmptyBack = false;
+  for (let c = 0; c < bsN; c++) {
+    if (!dbN[backRw][c]) wEmptyBack = true;
+    if (!dbN[backRb][c]) bEmptyBack = true;
+  }
+  const whiteHasNecroPPTargets =
+    whiteAugments.some((a) => a.id === "necromancer-plus-plus") &&
+    whiteNecroPPCharges > 0 &&
+    wEmptyBack;
+  const blackHasNecroPPTargets =
+    blackAugments.some((a) => a.id === "necromancer-plus-plus") &&
+    blackNecroPPCharges > 0 &&
+    bEmptyBack;
 
   const handleEvade = useCallback(() => {
     if (game.turn === "white") {
@@ -5444,6 +6207,22 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         ? whiteLostMinors.length > 0
         : blackLostMinors.length > 0,
     onNecroPlus: spellGuard(handleToggleNecroPlus),
+    bloodbendingCharges:
+      color === "white" ? whiteBloodbendingCharges : blackBloodbendingCharges,
+    bloodbendingActive: bloodbendingMode && game.turn === color,
+    onBloodbending: spellGuard(handleToggleBloodbending),
+    bloodbendingPlusCharges:
+      color === "white"
+        ? whiteBloodbendingPlusCharges
+        : blackBloodbendingPlusCharges,
+    bloodbendingPlusActive: bloodbendingPlusMode && game.turn === color,
+    onBloodbendingPlus: spellGuard(handleToggleBloodbendingPlus),
+    necroPPCharges:
+      color === "white" ? whiteNecroPPCharges : blackNecroPPCharges,
+    necroPPActive: necroPPMode && game.turn === color,
+    hasNecroPPTargets:
+      color === "white" ? whiteHasNecroPPTargets : blackHasNecroPPTargets,
+    onNecroPP: spellGuard(handleToggleNecroPP),
     ilkkanAvailable:
       color === "white"
         ? whiteAugments.some((a) => a.id === "ilkkan") && !whiteIlkkanChosen
@@ -5563,6 +6342,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   });
 
   const modeBanner = (() => {
+    if (bloodbendingPlusMode)
+      return {
+        text: "🩸✨ Bloodbending+ — click an enemy knight, bishop, or rook (not on blessed)",
+        color: "#b91c1c",
+      };
+    if (bloodbendingMode)
+      return {
+        text: "🩸 Bloodbending — click an enemy pawn (not on a blessed square)",
+        color: "#dc2626",
+      };
     if (freezeMode)
       return {
         text: "❄️ Click an enemy piece to freeze it (not king)",
@@ -5572,6 +6361,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       return {
         text: "💀 Click a home-rank square to revive a pawn",
         color: "#a855f7",
+      };
+    if (necroPPMode)
+      return {
+        text: "💀💫 Necromancer++ — click an empty square on your back rank to place a queen",
+        color: "#e879f9",
       };
     if (necroPlusMode)
       return {
@@ -5862,6 +6656,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                 piece?.id &&
                 (piece.id === whiteIlkkanId || piece.id === blackIlkkanId)
               );
+              const isPermaWinter = isPermaFrostSquare(game, r, c);
               return (
                 <SquareEl
                   key={`${dr}-${dc}`}
@@ -5876,6 +6671,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                   isCheckKing={isCK}
                   isCenter={isCenter}
                   isFrozen={isFrozen}
+                  isPermaWinter={isPermaWinter}
                   onClick={() => handleSquareClick(r, c)}
                   boardSize={boardSize}
                   deathNoteCount={dn?.turnsLeft}

@@ -127,6 +127,15 @@ export const EVENT_POOL: GameEvent[] = [
     flavor: "\"The Lannisters send their regards.\"",
   },
   {
+    id: "siege-patrol",
+    name: "Siege Patrol",
+    rarity: "epic",
+    icon: "🏰",
+    description:
+      "An orange mercenary knight and rook appear on the left and right flank files. After each full round they each make one random legal move like other mercenaries.",
+    flavor: "Engines of war — no banner, no master.",
+  },
+  {
     id: "just-chaos",
     name: "Just Chaos",
     rarity: "legendary",
@@ -134,6 +143,33 @@ export const EVENT_POOL: GameEvent[] = [
     description:
       "Board events now fire every 5 full rounds (instead of 5–13 at random) for the rest of the game.",
     flavor: "\"Let the world burn.\"",
+  },
+  {
+    id: "crusaders",
+    name: "Crusaders",
+    rarity: "legendary",
+    icon: "⚔️",
+    description:
+      "Four orange mercenaries — queen, bishop, knight, and rook — appear on random inner squares. Deus Vult.",
+    flavor: "Deus Vult.",
+  },
+  {
+    id: "winter-has-come",
+    name: "Winter Has Come",
+    rarity: "legendary",
+    icon: "❄️",
+    description:
+      "A random empty square is frozen forever. No piece may move onto or through it; pawn shop and similar placements are blocked.",
+    flavor: "The cold remembers.",
+  },
+  {
+    id: "valar-morghulis",
+    name: "Valar Morghulis",
+    rarity: "legendary",
+    icon: "💀",
+    description:
+      "All normal white and black pawns are removed from the board. Orange mercenary pawns are spared. İlkkan is cleared if it was a pawn.",
+    flavor: "All men must die.",
   },
 ];
 
