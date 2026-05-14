@@ -111,6 +111,9 @@ export interface ChessState {
   halfMoveClock: number;
   fullMoveNumber: number;
   moveHistory: MoveRecord[];
+  /** Augment: Free Passage — king may castle while in check. */
+  freePassageWhite?: boolean;
+  freePassageBlack?: boolean;
 }
 
 // ─── Board size (mutable for Domain Expansion) ───────────────────────────────
@@ -251,6 +254,8 @@ function createEmptyChessStateShell(): ChessState {
     halfMoveClock: 0,
     fullMoveNumber: 1,
     moveHistory: [],
+    freePassageWhite: false,
+    freePassageBlack: false,
   };
 }
 
@@ -652,7 +657,18 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
     if (!isInCheck(nb, piece.color)) legal.push([tr, tc]);
   }
 
-  if (piece.type === "K" && (piece.color === "white" || piece.color === "black") && !isInCheck(state, piece.color)) {
+  const allowCastleFromCheck =
+    piece.type === "K" &&
+    (piece.color === "white"
+      ? !!state.freePassageWhite
+      : piece.color === "black"
+        ? !!state.freePassageBlack
+        : false);
+  if (
+    piece.type === "K" &&
+    (piece.color === "white" || piece.color === "black") &&
+    (!isInCheck(state, piece.color) || allowCastleFromCheck)
+  ) {
     const side = piece.color;
     const n = state.occupancy.length;
     const off = (n - 8) / 2;
@@ -796,6 +812,8 @@ export function makeMove(
     halfMoveClock: piece.type === "P" || !!captured || isEP ? 0 : state.halfMoveClock + 1,
     fullMoveNumber: piece.color === "black" ? state.fullMoveNumber + 1 : state.fullMoveNumber,
     moveHistory: [...state.moveHistory, record],
+    freePassageWhite: state.freePassageWhite ?? false,
+    freePassageBlack: state.freePassageBlack ?? false,
   };
 
   const nextHasMove = hasAnyLegalMove(nextState, nextTurn);

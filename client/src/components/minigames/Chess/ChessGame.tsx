@@ -40,6 +40,7 @@ import {
   getShopCost,
   MAX_STACK,
   NON_PURCHASABLE,
+  pickAugmentCount,
 } from "./augments";
 import {
   GameEvent,
@@ -55,13 +56,26 @@ function getExcludeForPlayer(augments: Augment[]): string[] {
   return Object.keys(counts).filter((id) => counts[id] >= (MAX_STACK[id] ?? 1));
 }
 
+/** Empty original pawn rank square for Pawn Shop / spawn rules (8×8 or 10×10). */
+function isOriginalPawnSpawnSquare(
+  r: number,
+  c: number,
+  color: "white" | "black",
+  boardSize: number,
+): boolean {
+  const off = (boardSize - 8) / 2;
+  const pawnRow = color === "white" ? 6 + off : 1 + off;
+  if (r !== pawnRow) return false;
+  return c >= off && c < off + 8;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
 type AugmentTrigger = {
   color: Color;
-  reason: "milestone" | "bloodlust";
+  reason: "milestone" | "bloodlust" | "blind-rage";
   milestoneType?: PieceType;
 };
 type TierBought = {
@@ -106,6 +120,15 @@ type AugmentSnapshot = {
   blackLostMinors: PieceType[];
   nextEventTurn: number;
   chaosEventTiming: boolean;
+  whitePrizeFirstCaptureDone: boolean;
+  blackPrizeFirstCaptureDone: boolean;
+  whiteBlindRageDone: boolean;
+  blackBlindRageDone: boolean;
+  whiteEvadeCharges: number;
+  blackEvadeCharges: number;
+  augmentSpellBlockedFor: Color | null;
+  whitePawnShopBuys: number;
+  blackPawnShopBuys: number;
 };
 
 const EMPTY_MILESTONES: Milestones = {
@@ -247,6 +270,13 @@ function applyEndOfTurnEffects(
       }
     }
   }
+  const curGold = color === "white" ? g.goldWhite : g.goldBlack;
+  const afterPassive = curGold + delta;
+  let invExtra = 0;
+  for (const _ of augments.filter((a) => a.id === "investment")) {
+    if (afterPassive + invExtra > 20) invExtra += 1;
+  }
+  delta += invExtra;
   if (!delta) return g;
   return {
     ...g,
@@ -1369,6 +1399,9 @@ function ShopPanel({
   playerAugments,
   onBuy,
   onClose,
+  pawnShopNextPrice,
+  onBuyPawn,
+  pawnPlacePending,
 }: {
   playerColor: Color;
   gold: number;
@@ -1376,6 +1409,9 @@ function ShopPanel({
   playerAugments: Augment[];
   onBuy: (aug: Augment) => void;
   onClose: () => void;
+  pawnShopNextPrice: number | null;
+  onBuyPawn: (() => void) | null;
+  pawnPlacePending: boolean;
 }) {
   const RARITY_ORDER: Array<Augment["rarity"]> = [
     "common",
@@ -1538,6 +1574,37 @@ function ShopPanel({
             </div>
           );
         })}
+        {pawnShopNextPrice != null &&
+          onBuyPawn &&
+          playerAugments.some((a) => a.id === "pawn-shop") &&
+          !pawnPlacePending && (
+            <div style={{ padding: "8px 10px", borderTop: "1px solid #1f2937" }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: "0.14em",
+                  color: "#64748b",
+                  marginBottom: 6,
+                }}
+              >
+                PAWN SHOP
+              </div>
+              <ShopRow
+                augment={{
+                  id: "pawn-shop-buy",
+                  name: "Buy pawn",
+                  description: "Place on an empty original pawn square",
+                  rarity: "rare",
+                  icon: "♙",
+                }}
+                cost={pawnShopNextPrice}
+                canAfford={gold >= pawnShopNextPrice}
+                isMaxed={false}
+                onBuy={onBuyPawn}
+              />
+            </div>
+          )}
       </div>
     </div>
   );
@@ -1718,9 +1785,11 @@ function AugmentSelector({
   const badgeLabel =
     trigger?.reason === "bloodlust"
       ? "🩸 Bloodlust Bonus!"
-      : trigger?.milestoneType
-        ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
-        : null;
+      : trigger?.reason === "blind-rage"
+        ? "😤 Blind Rage!"
+        : trigger?.milestoneType
+          ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
+          : null;
   return (
     <div
       style={{
@@ -1745,11 +1814,16 @@ function AugmentSelector({
               padding: "4px 14px",
               borderRadius: 20,
               background: "linear-gradient(135deg,#1c1f2e,#2d2f45)",
-              border: `1px solid ${trigger?.reason === "bloodlust" ? "#dc2626" : "#4f46e5"}`,
+              border: `1px solid ${trigger?.reason === "bloodlust" ? "#dc2626" : trigger?.reason === "blind-rage" ? "#ea580c" : "#4f46e5"}`,
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: "0.1em",
-              color: trigger?.reason === "bloodlust" ? "#fca5a5" : "#818cf8",
+              color:
+                trigger?.reason === "bloodlust"
+                  ? "#fca5a5"
+                  : trigger?.reason === "blind-rage"
+                    ? "#fdba74"
+                    : "#818cf8",
               textTransform: "uppercase",
             }}
           >
@@ -1976,6 +2050,9 @@ type SpellState = {
   puppetAvailable: boolean;
   puppetActive: boolean;
   onPuppet: () => void;
+  evadeCharges: number;
+  evadeActive: boolean;
+  onEvade: () => void;
   canUndo: boolean;
   onUndo: () => void;
   captureCount: number;
@@ -2235,6 +2312,16 @@ function PlayerBar({
             active={spells.puppetActive}
             onClick={spells.onPuppet}
             title="Force the opponent to move a specific piece on their next turn"
+          />
+        )}
+        {canAct && spells.evadeCharges > 0 && (
+          <SpellButton
+            icon="💨"
+            label="EVADE"
+            active={spells.evadeActive}
+            count={spells.evadeCharges}
+            onClick={spells.onEvade}
+            title="Opponent cannot use augment spells or shop on their next turn"
           />
         )}
         {canAct && (
@@ -2566,6 +2653,25 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     null,
   );
 
+  // Pawn Shop — buy count + pending placement (same turn, no extra move cost)
+  const [pawnPlaceFor, setPawnPlaceFor] = useState<Color | null>(null);
+  const [whitePawnShopBuys, setWhitePawnShopBuys] = useState(0);
+  const [blackPawnShopBuys, setBlackPawnShopBuys] = useState(0);
+
+  // Prize Money / Blind Rage
+  const [whitePrizeFirstCaptureDone, setWhitePrizeFirstCaptureDone] =
+    useState(false);
+  const [blackPrizeFirstCaptureDone, setBlackPrizeFirstCaptureDone] =
+    useState(false);
+  const [whiteBlindRageDone, setWhiteBlindRageDone] = useState(false);
+  const [blackBlindRageDone, setBlackBlindRageDone] = useState(false);
+
+  // Evade — charges + opponent spell/shop lock for one of their turns
+  const [whiteEvadeCharges, setWhiteEvadeCharges] = useState(0);
+  const [blackEvadeCharges, setBlackEvadeCharges] = useState(0);
+  const [augmentSpellBlockedFor, setAugmentSpellBlockedFor] =
+    useState<Color | null>(null);
+
   // Shop
   const [shopOpen, setShopOpen] = useState(false);
   const [whiteTierBought, setWhiteTierBought] = useState<TierBought>({
@@ -2645,6 +2751,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         goldWhite: color === "white" ? g.goldWhite + 10 : g.goldWhite,
         goldBlack: color === "black" ? g.goldBlack + 10 : g.goldBlack,
       }));
+    }
+    if (aug.id === "evade") {
+      if (color === "white") setWhiteEvadeCharges((n) => n + 1);
+      else setBlackEvadeCharges((n) => n + 1);
     }
   }, []);
 
@@ -2730,6 +2840,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackIlkkanId,
     whiteIlkkanChosen,
     blackIlkkanChosen,
+    whitePrizeFirstCaptureDone,
+    blackPrizeFirstCaptureDone,
+    whiteBlindRageDone,
+    blackBlindRageDone,
+    whiteEvadeCharges,
+    blackEvadeCharges,
+    augmentSpellBlockedFor,
+    whitePawnShopBuys,
+    blackPawnShopBuys,
+    pawnPlaceFor,
   });
 
   // Apply a snapshot received from the opponent
@@ -2826,6 +2946,31 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackIlkkanId(g.blackIlkkanId as string | null);
     setWhiteIlkkanChosen(g.whiteIlkkanChosen as boolean);
     setBlackIlkkanChosen(g.blackIlkkanChosen as boolean);
+    setWhitePrizeFirstCaptureDone(
+      (g as { whitePrizeFirstCaptureDone?: boolean }).whitePrizeFirstCaptureDone ??
+        false,
+    );
+    setBlackPrizeFirstCaptureDone(
+      (g as { blackPrizeFirstCaptureDone?: boolean }).blackPrizeFirstCaptureDone ??
+        false,
+    );
+    setWhiteBlindRageDone(
+      (g as { whiteBlindRageDone?: boolean }).whiteBlindRageDone ?? false,
+    );
+    setBlackBlindRageDone(
+      (g as { blackBlindRageDone?: boolean }).blackBlindRageDone ?? false,
+    );
+    setWhiteEvadeCharges((g as { whiteEvadeCharges?: number }).whiteEvadeCharges ?? 0);
+    setBlackEvadeCharges((g as { blackEvadeCharges?: number }).blackEvadeCharges ?? 0);
+    setAugmentSpellBlockedFor(
+      (g as { augmentSpellBlockedFor?: Color | null }).augmentSpellBlockedFor ??
+        null,
+    );
+    setWhitePawnShopBuys((g as { whitePawnShopBuys?: number }).whitePawnShopBuys ?? 0);
+    setBlackPawnShopBuys((g as { blackPawnShopBuys?: number }).blackPawnShopBuys ?? 0);
+    setPawnPlaceFor(
+      (g as { pawnPlaceFor?: Color | null }).pawnPlaceFor ?? null,
+    );
     // Clear any active interaction mode on opponent's turn
     setSelected(null);
     setValidMoves([]);
@@ -2875,16 +3020,28 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     mpConfig.onSnapshot(buildSnapshot());
   });
 
+  // Sync Free Passage augment flags into engine state for castling legality
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const fw = whiteAugments.some((a) => a.id === "free-passage");
+    const fb = blackAugments.some((a) => a.id === "free-passage");
+    setGame((g) =>
+      (g.freePassageWhite ?? false) === fw && (g.freePassageBlack ?? false) === fb
+        ? g
+        : { ...g, freePassageWhite: fw, freePassageBlack: fb },
+    );
+  }, [whiteAugments, blackAugments]);
+
   // ── Pre-game picks ───────────────────────────────────────────────────────
 
   const handleStart = () => {
-    setOfferedToWhite(rollAugments(3));
+    setOfferedToWhite(rollAugments(pickAugmentCount([])));
     setPhase("white-augment");
   };
   const handleWhitePick = (aug: Augment) => {
     setWhiteAugments([aug]);
     grantPickedEffects(aug, "white");
-    setOfferedToBlack(rollAugments(3, [aug.id]));
+    setOfferedToBlack(rollAugments(pickAugmentCount([aug]), [aug.id]));
     setPhase("black-augment");
   };
   const handleBlackPick = (aug: Augment) => {
@@ -2901,7 +3058,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const playerAugs = trigger.color === "white" ? wAugs : bAugs;
       setMidGameOffered(
         rollAugments(
-          3,
+          pickAugmentCount(playerAugs),
           getExcludeForPlayer(playerAugs),
           getWeightsForPlayer(playerAugs),
         ),
@@ -2950,6 +3107,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const handleBuy = useCallback(
     (aug: Augment) => {
       const color = game.turn;
+      if (augmentSpellBlockedFor === color) return;
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const ownedCount = playerAugs.filter((a) => a.id === aug.id).length;
       if (ownedCount >= (MAX_STACK[aug.id] ?? 1)) return;
@@ -2982,6 +3140,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       blackTierBought,
       grantPickedEffects,
       requestSnapshot,
+      augmentSpellBlockedFor,
     ],
   );
 
@@ -2995,6 +3154,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       capturedType?: PieceType | null,
     ) => {
       const movingColor = game.turn;
+      const startGoldWhite = game.goldWhite;
+      const startGoldBlack = game.goldBlack;
       const victimSquarePiece = getDerivedBoard(game)[to[0]][to[1]];
       const victimWasMercenary = isMercenaryPiece(victimSquarePiece);
       setGameHistory((h) => [...h, game]);
@@ -3015,6 +3176,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         whiteBloodlustNext, blackBloodlustNext,
         whiteLostMinors, blackLostMinors,
         nextEventTurn, chaosEventTiming,
+        whitePrizeFirstCaptureDone,
+        blackPrizeFirstCaptureDone,
+        whiteBlindRageDone,
+        blackBlindRageDone,
+        whiteEvadeCharges,
+        blackEvadeCharges,
+        augmentSpellBlockedFor,
+        whitePawnShopBuys,
+        blackPawnShopBuys,
       }]);
       setShopOpen(false);
 
@@ -3050,11 +3220,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             ...newGame,
             goldWhite:
               victimColor === "white"
-                ? newGame.goldWhite + 1
+                ? newGame.goldWhite + 2
                 : newGame.goldWhite,
             goldBlack:
               victimColor === "black"
-                ? newGame.goldBlack + 1
+                ? newGame.goldBlack + 2
                 : newGame.goldBlack,
           };
       }
@@ -3116,14 +3286,29 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
       // Internal Combustion runs after mercenary ticks (see end of executeMove).
 
-      // Gold from capture (1 gold per captured piece, blocked by peace treaty)
+      // Gold from capture (blocked by peace treaty; Prize Money / Efficient)
       if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
+        let captureBonus = 1;
+        if (playerAugs.some((a) => a.id === "efficient")) captureBonus += 1;
+        const prizeDone =
+          movingColor === "white"
+            ? whitePrizeFirstCaptureDone
+            : blackPrizeFirstCaptureDone;
+        if (playerAugs.some((a) => a.id === "prize-money") && !prizeDone) {
+          captureBonus *= 2;
+          if (movingColor === "white") setWhitePrizeFirstCaptureDone(true);
+          else setBlackPrizeFirstCaptureDone(true);
+        }
         newGame = {
           ...newGame,
           goldWhite:
-            movingColor === "white" ? newGame.goldWhite + 1 : newGame.goldWhite,
+            movingColor === "white"
+              ? newGame.goldWhite + captureBonus
+              : newGame.goldWhite,
           goldBlack:
-            movingColor === "black" ? newGame.goldBlack + 1 : newGame.goldBlack,
+            movingColor === "black"
+              ? newGame.goldBlack + captureBonus
+              : newGame.goldBlack,
         };
       }
 
@@ -3227,10 +3412,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               goldBlack: newGame.goldBlack + 10,
             };
           } else if (event.id === "stock-crash") {
+            let nw = newGame.goldWhite - 10;
+            let nb = newGame.goldBlack - 10;
+            if (whiteAugments.some((a) => a.id === "anticipation"))
+              nw = newGame.goldWhite;
+            if (blackAugments.some((a) => a.id === "anticipation"))
+              nb = newGame.goldBlack;
             newGame = {
               ...newGame,
-              goldWhite: Math.max(0, newGame.goldWhite - 10),
-              goldBlack: Math.max(0, newGame.goldBlack - 10),
+              goldWhite: Math.max(0, nw),
+              goldBlack: Math.max(0, nb),
             };
           } else if (event.id === "peace-treaty") {
             setPeaceTreatyMovesLeft(10);
@@ -3452,10 +3643,86 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         }
       }
 
-      setGame(boardAfterMerc);
+      let finalGame = boardAfterMerc;
+      if (finalGame.status === "check" && finalGame.turn !== movingColor) {
+        const dangerStacks = playerAugs.filter((a) => a.id === "i-am-danger")
+          .length;
+        if (dangerStacks > 0) {
+          const g = 4 * dangerStacks;
+          finalGame = {
+            ...finalGame,
+            goldWhite:
+              movingColor === "white"
+                ? finalGame.goldWhite + g
+                : finalGame.goldWhite,
+            goldBlack:
+              movingColor === "black"
+                ? finalGame.goldBlack + g
+                : finalGame.goldBlack,
+          };
+        }
+      }
+      const thiefStacks = playerAugs.filter((a) => a.id === "thief").length;
+      if (thiefStacks > 0 && Math.random() < 0.01 * thiefStacks) {
+        finalGame = {
+          ...finalGame,
+          goldWhite:
+            movingColor === "white"
+              ? finalGame.goldWhite + 50
+              : finalGame.goldWhite,
+          goldBlack:
+            movingColor === "black"
+              ? finalGame.goldBlack + 50
+              : finalGame.goldBlack,
+        };
+      }
+      const oppC = opp(movingColor);
+      const oppGoldStart =
+        oppC === "white" ? startGoldWhite : startGoldBlack;
+      const oppGoldEnd =
+        oppC === "white" ? finalGame.goldWhite : finalGame.goldBlack;
+      const oppDelta = oppGoldEnd - oppGoldStart;
+      if (oppDelta > 0) {
+        const taxStacks = playerAugs.filter((a) => a.id === "tax-man").length;
+        if (taxStacks > 0) {
+          const tg = Math.floor(oppDelta / 10) * taxStacks;
+          if (tg > 0) {
+            finalGame = {
+              ...finalGame,
+              goldWhite:
+                movingColor === "white"
+                  ? finalGame.goldWhite + tg
+                  : finalGame.goldWhite,
+              goldBlack:
+                movingColor === "black"
+                  ? finalGame.goldBlack + tg
+                  : finalGame.goldBlack,
+            };
+          }
+        }
+      }
+      if (augmentSpellBlockedFor && movingColor === augmentSpellBlockedFor)
+        setAugmentSpellBlockedFor(null);
+
+      setGame(finalGame);
 
       // Triggers
       const newTriggers: AugmentTrigger[] = [];
+
+      if (
+        capturedType === "N" &&
+        !victimWasMercenary &&
+        newTurnCount <= 4 &&
+        playerAugs.some((a) => a.id === "blind-rage")
+      ) {
+        const brDone =
+          movingColor === "white" ? whiteBlindRageDone : blackBlindRageDone;
+        if (!brDone) {
+          newTriggers.push({ color: movingColor, reason: "blind-rage" });
+          if (movingColor === "white") setWhiteBlindRageDone(true);
+          else setBlackBlindRageDone(true);
+        }
+      }
 
       if (capturedType && !victimWasMercenary) {
         const ms = movingColor === "white" ? whiteMilestones : blackMilestones;
@@ -3499,7 +3766,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setCurrentTrigger(first);
         setMidGameOffered(
           rollAugments(
-            3,
+            pickAugmentCount(movingColor === "white" ? wAugs : bAugs),
             getExcludeForPlayer(movingColor === "white" ? wAugs : bAugs),
             getWeightsForPlayer(movingColor === "white" ? wAugs : bAugs),
           ),
@@ -3543,6 +3810,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       requestSnapshot,
       whiteIlkkanId,
       blackIlkkanId,
+      whitePrizeFirstCaptureDone,
+      blackPrizeFirstCaptureDone,
+      whiteBlindRageDone,
+      blackBlindRageDone,
+      whiteEvadeCharges,
+      blackEvadeCharges,
+      augmentSpellBlockedFor,
+      whitePawnShopBuys,
+      blackPawnShopBuys,
     ],
   );
 
@@ -3595,6 +3871,38 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           ? (augRestored as { chaosEventTiming: boolean }).chaosEventTiming
           : (augRestored as { eventInterval?: number }).eventInterval === 10,
       );
+      setWhitePrizeFirstCaptureDone(
+        (augRestored as { whitePrizeFirstCaptureDone?: boolean })
+          .whitePrizeFirstCaptureDone ?? false,
+      );
+      setBlackPrizeFirstCaptureDone(
+        (augRestored as { blackPrizeFirstCaptureDone?: boolean })
+          .blackPrizeFirstCaptureDone ?? false,
+      );
+      setWhiteBlindRageDone(
+        (augRestored as { whiteBlindRageDone?: boolean }).whiteBlindRageDone ??
+          false,
+      );
+      setBlackBlindRageDone(
+        (augRestored as { blackBlindRageDone?: boolean }).blackBlindRageDone ??
+          false,
+      );
+      setWhiteEvadeCharges(
+        (augRestored as { whiteEvadeCharges?: number }).whiteEvadeCharges ?? 0,
+      );
+      setBlackEvadeCharges(
+        (augRestored as { blackEvadeCharges?: number }).blackEvadeCharges ?? 0,
+      );
+      setAugmentSpellBlockedFor(
+        (augRestored as { augmentSpellBlockedFor?: Color | null })
+          .augmentSpellBlockedFor ?? null,
+      );
+      setWhitePawnShopBuys(
+        (augRestored as { whitePawnShopBuys?: number }).whitePawnShopBuys ?? 0,
+      );
+      setBlackPawnShopBuys(
+        (augRestored as { blackPawnShopBuys?: number }).blackPawnShopBuys ?? 0,
+      );
     }
     setSelected(null);
     setValidMoves([]);
@@ -3636,6 +3944,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setContractMode(false);
     setBlessedWaterMode(false);
     setPuppetMode(false);
+    setPawnPlaceFor(null);
     setSelected(null);
     setValidMoves([]);
   };
@@ -3859,6 +4168,31 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       if (promotionPending) return;
       const piece = getDerivedBoard(game)[r][c];
 
+      if (pawnPlaceFor && game.turn === pawnPlaceFor) {
+        if (
+          !piece &&
+          (pawnPlaceFor === "white" || pawnPlaceFor === "black") &&
+          isOriginalPawnSpawnSquare(
+            r,
+            c,
+            pawnPlaceFor,
+            getDerivedBoard(game).length,
+          )
+        ) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          nb[r][c] = { type: "P", color: pawnPlaceFor };
+          setGame(recomputeStatus(syncStateFromBoard({ ...game }, nb)));
+          setPawnPlaceFor(null);
+          setSelected(null);
+          setValidMoves([]);
+          requestSnapshot();
+        } else {
+          setSelected(null);
+          setValidMoves([]);
+        }
+        return;
+      }
+
       if (monolithMode === "place") {
         if (!piece) {
           const movingColor = game.turn;
@@ -3888,6 +4222,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
+            whitePrizeFirstCaptureDone,
+            blackPrizeFirstCaptureDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
           }]);
           let newGState: ChessState = syncStateFromBoard(
             {
@@ -3916,6 +4259,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setMonolithMode(null);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -3930,6 +4274,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setMonolithMode(null);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -3951,6 +4296,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setIlkkanMode(false);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -3992,6 +4338,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
+            whitePrizeFirstCaptureDone,
+            blackPrizeFirstCaptureDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4043,6 +4398,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         }
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -4056,6 +4412,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setBlessedWaterMode(false);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -4075,6 +4432,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setPuppetMode(false);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -4103,6 +4461,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setDeathNoteMode(false);
         setSelected(null);
         setValidMoves([]);
+        requestSnapshot();
         return;
       }
 
@@ -4114,6 +4473,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           else setBlackFreezeCharges((n) => n - 1);
         }
         setFreezeMode(false);
+        requestSnapshot();
         return;
       }
 
@@ -4158,6 +4518,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
+            whitePrizeFirstCaptureDone,
+            blackPrizeFirstCaptureDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -4416,6 +4785,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             whiteBloodlustNext, blackBloodlustNext,
             whiteLostMinors, blackLostMinors,
             nextEventTurn, chaosEventTiming,
+            whitePrizeFirstCaptureDone,
+            blackPrizeFirstCaptureDone,
+            whiteBlindRageDone,
+            blackBlindRageDone,
+            whiteEvadeCharges,
+            blackEvadeCharges,
+            augmentSpellBlockedFor,
+            whitePawnShopBuys,
+            blackPawnShopBuys,
           }]);
           setShopOpen(false);
           const newTurnCount =
@@ -4671,6 +5049,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       blackIlkkanId,
       swapMode,
       swapFirst,
+      pawnPlaceFor,
     ],
   );
 
@@ -4791,6 +5170,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setNecroPlusMode(false);
     setWhiteMonolithPermRemoved(false);
     setBlackMonolithPermRemoved(false);
+    setWhitePrizeFirstCaptureDone(false);
+    setBlackPrizeFirstCaptureDone(false);
+    setWhiteBlindRageDone(false);
+    setBlackBlindRageDone(false);
+    setWhiteEvadeCharges(0);
+    setBlackEvadeCharges(0);
+    setAugmentSpellBlockedFor(null);
+    setWhitePawnShopBuys(0);
+    setBlackPawnShopBuys(0);
+    setPawnPlaceFor(null);
     setWhiteIlkkanId(null);
     setBlackIlkkanId(null);
     setWhiteIlkkanChosen(false);
@@ -4842,8 +5231,57 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     (col) => getDerivedBoard(game)[blackNecroRow] && !getDerivedBoard(game)[blackNecroRow][col],
   );
 
+  const handleEvade = useCallback(() => {
+    if (game.turn === "white") {
+      if (whiteEvadeCharges <= 0) return;
+      setWhiteEvadeCharges((n) => n - 1);
+    } else {
+      if (blackEvadeCharges <= 0) return;
+      setBlackEvadeCharges((n) => n - 1);
+    }
+    setAugmentSpellBlockedFor(opp(game.turn));
+    requestSnapshot();
+  }, [
+    game.turn,
+    whiteEvadeCharges,
+    blackEvadeCharges,
+    requestSnapshot,
+  ]);
+
+  const handleBuyPawn = useCallback(() => {
+    const color = game.turn;
+    if (augmentSpellBlockedFor === color) return;
+    const augs = color === "white" ? whiteAugments : blackAugments;
+    if (!augs.some((a) => a.id === "pawn-shop")) return;
+    const bought = color === "white" ? whitePawnShopBuys : blackPawnShopBuys;
+    const price = 10 * (bought + 1);
+    const cur = color === "white" ? game.goldWhite : game.goldBlack;
+    if (cur < price) return;
+    setGame((g) => ({
+      ...g,
+      goldWhite: color === "white" ? g.goldWhite - price : g.goldWhite,
+      goldBlack: color === "black" ? g.goldBlack - price : g.goldBlack,
+    }));
+    if (color === "white") setWhitePawnShopBuys((n) => n + 1);
+    else setBlackPawnShopBuys((n) => n + 1);
+    setPawnPlaceFor(color);
+    setShopOpen(false);
+    requestSnapshot();
+  }, [
+    game.turn,
+    game.goldWhite,
+    game.goldBlack,
+    whiteAugments,
+    blackAugments,
+    whitePawnShopBuys,
+    blackPawnShopBuys,
+    augmentSpellBlockedFor,
+    requestSnapshot,
+  ]);
+
   const spellGuard = (fn: () => void) => () => {
     if (!isMyTurn && mpConfig) return;
+    if (augmentSpellBlockedFor && game.turn === augmentSpellBlockedFor) return;
     fn();
   };
 
@@ -4967,6 +5405,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         : !blackPuppetUsed && blackAugments.some((a) => a.id === "puppet"),
     puppetActive: puppetMode && game.turn === color,
     onPuppet: spellGuard(handleTogglePuppet),
+    evadeCharges:
+      color === "white" ? whiteEvadeCharges : blackEvadeCharges,
+    evadeActive: false,
+    onEvade: spellGuard(handleEvade),
     canUndo: color === "white" ? canWhiteUndo : canBlackUndo,
     onUndo: handleUndo,
     captureCount: color === "white" ? whiteCaptureCount : blackCaptureCount,
@@ -4998,6 +5440,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       return {
         text: "🧑 ILKKAN — Click one of your pawns to mark it as İlkkan",
         color: "#6b7280",
+      };
+    if (pawnPlaceFor)
+      return {
+        text: "♙ Pawn Shop — click an empty square on your original pawn rank",
+        color: "#22c55e",
       };
     if (royalEdMode)
       return {
@@ -5082,6 +5529,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     game.turn === "white" ? game.goldWhite : game.goldBlack;
   const activeTierBought =
     game.turn === "white" ? whiteTierBought : blackTierBought;
+  const pawnShopNextPrice =
+    game.turn === "white" && whiteAugments.some((a) => a.id === "pawn-shop")
+      ? 10 * (whitePawnShopBuys + 1)
+      : game.turn === "black" && blackAugments.some((a) => a.id === "pawn-shop")
+        ? 10 * (blackPawnShopBuys + 1)
+        : null;
 
   const fullRoundsPlayed = blackTurnCount;
   const fullRoundsUntilBoardEvent = Math.max(0, nextEventTurn - fullRoundsPlayed);
@@ -5503,6 +5956,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           playerAugments={game.turn === "white" ? whiteAugments : blackAugments}
           onBuy={handleBuy}
           onClose={() => setShopOpen(false)}
+          pawnShopNextPrice={pawnShopNextPrice}
+          onBuyPawn={pawnShopNextPrice != null ? handleBuyPawn : null}
+          pawnPlacePending={pawnPlaceFor !== null}
         />
       )}
 

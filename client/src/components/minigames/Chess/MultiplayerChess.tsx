@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Augment, AUGMENT_POOL, rollAugments, RARITY_META } from "./augments";
+import { Augment, AUGMENT_POOL, rollAugments, RARITY_META, pickAugmentCount } from "./augments";
 import ChessGame, { MpConfig } from "./ChessGame";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
           setResumeSession({ roomId: rid, color: "black", sessionToken: token });
           setResumeEnabled(true);
         }
-        setOfferedAugs(rollAugments(3));
+        setOfferedAugs(rollAugments(pickAugmentCount([])));
         setLobbyPhase("picking_augment");
         break;
       }
@@ -318,7 +318,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
         break;
       case "opponent_joined":
         // White now picks their augment
-        setOfferedAugs(rollAugments(3));
+        setOfferedAugs(rollAugments(pickAugmentCount([])));
         setLobbyPhase("picking_augment");
         break;
       case "opponent_augment":
