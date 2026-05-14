@@ -477,6 +477,14 @@ function SquareEl({
   const dot = size * 0.3,
     ring = size * 0.07;
   const isMonolith = piece?.type === "M";
+  const orangeMercenaryImg =
+    piece &&
+    piece.color === "orange" &&
+    (piece.type === "P" || piece.type === "N")
+      ? piece.type === "P"
+        ? "/chess-orange-mercenary-pawn.svg"
+        : "/chess-orange-mercenary-knight.svg"
+      : null;
   return (
     <div
       onClick={onClick}
@@ -777,6 +785,21 @@ function SquareEl({
                 piece.color === "white"
                   ? "0 0 0 2px #fff,0 0 6px #000"
                   : "0 0 0 2px #1a0f00,0 0 6px rgba(255,255,255,0.5)",
+            }}
+          />
+        ) : orangeMercenaryImg ? (
+          <img
+            src={orangeMercenaryImg}
+            alt=""
+            decoding="async"
+            style={{
+              width: size * 0.78,
+              height: size * 0.78,
+              objectFit: "contain",
+              pointerEvents: "none",
+              position: "relative",
+              zIndex: 1,
+              filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.45))",
             }}
           />
         ) : (

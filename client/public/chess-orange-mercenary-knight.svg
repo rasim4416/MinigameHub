@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" aria-hidden="true">
+  <!-- Orange mercenary knight  horse head facing left, bold outline -->
+  <g stroke="#7c2d12" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+    <ellipse cx="52" cy="106" rx="34" ry="9" fill="#7c2d12"/>
+    <ellipse cx="52" cy="98" rx="28" ry="8" fill="#ea580c"/>
+    <path fill="#f97316" d="M32 96 Q52 78 72 96 Q52 90 32 96"/>
+    <!-- neck -->
+    <path fill="#ea580c" d="M58 88 L68 52 Q70 38 62 28 L54 32 Q58 44 52 88Z"/>
+    <path fill="#fdba74" d="M62 36 Q66 44 64 56 L58 80 Q56 50 62 36"/>
+    <!-- head / snout (facing left) -->
+    <path fill="#f97316" d="M62 28 Q48 8 22 18 Q18 28 24 38 Q36 34 48 40 Q56 36 62 28Z"/>
+    <path fill="#fdba74" d="M42 16 Q28 14 26 26 Q38 22 42 16"/>
+    <path fill="#9a3412" d="M28 22 Q22 30 26 38 Q30 28 28 22"/>
+    <!-- ear -->
+    <path fill="#ea580c" d="M54 14 L50 4 L58 10Z"/>
+    <!-- mane ridge -->
+    <path fill="none" stroke="#c2410c" stroke-width="2" d="M66 48 Q62 32 60 20"/>
+    <!-- eye -->
+    <ellipse cx="34" cy="26" rx="2.5" ry="3" fill="#7c2d12" stroke="none"/>
+  </g>
+</svg>

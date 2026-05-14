@@ -128,6 +128,7 @@ function mercenaryTargetRank(t: PieceType): number {
 /**
  * After a full move (black just moved), advance the Lost Mercenary:
  * prefer capturing on sight (Q>R>N>B>P), else step one file east if clear.
+ * On the eastmost file with no capture, the mercenary leaves the board.
  */
 export function applyLostMercenaryAfterFullMove(
   state: ChessState,
@@ -192,7 +193,13 @@ export function applyLostMercenaryAfterFullMove(
   }
 
   const nc = c + 1;
-  if (nc >= n) return state;
+  if (nc >= n) {
+    const nb = cloneBoard(board);
+    nb[r][c] = null;
+    return recomputeChessStatus(
+      syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
+    );
+  }
   if (isWall(ctx, r, nc)) return state;
   if (board[r][nc]?.type === "M") return state;
   if (board[r][nc]) return state;

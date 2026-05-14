@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" aria-hidden="true">
+  <!-- Orange mercenary pawn  cell-shaded, transparent background -->
+  <ellipse cx="50" cy="108" rx="38" ry="10" fill="#7c2d12"/>
+  <ellipse cx="50" cy="100" rx="32" ry="9" fill="#ea580c"/>
+  <path fill="#c2410c" d="M28 98 Q50 72 72 98 Q50 88 28 98"/>
+  <path fill="#f97316" d="M34 76 Q50 58 66 76 Q50 96 34 76"/>
+  <ellipse cx="50" cy="62" rx="22" ry="7" fill="#ea580c"/>
+  <path fill="#fb923c" d="M38 58 Q50 48 62 58 Q50 64 38 58"/>
+  <circle cx="50" cy="32" r="22" fill="#ea580c"/>
+  <path fill="#fdba74" d="M36 22 Q50 10 58 24 Q44 20 36 22"/>
+  <path fill="#9a3412" d="M68 28 Q72 40 66 48 Q64 32 68 28"/>
+</svg>
