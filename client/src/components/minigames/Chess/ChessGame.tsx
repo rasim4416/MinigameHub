@@ -3394,7 +3394,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setBlessedSquares((prev) =>
         prev
           .map((b) => ({ ...b, movesLeft: b.movesLeft - 1 }))
-          .filter((b) => b.movesLeft > 1),
+          .filter((b) => b.movesLeft > 0),
       );
 
       // Cold Winds decrement
