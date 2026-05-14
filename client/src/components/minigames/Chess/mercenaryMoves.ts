@@ -21,6 +21,12 @@ export const MERCENARY_LOST_ID = "mercenary-event-lost";
 /** Mercenary Patrol knight ids */
 export const MERCENARY_PATROL_ID = "mercenary-event-patrol";
 
+/** Siege Patrol event — knight + rook */
+export const MERCENARY_SIEGE_ID = "mercenary-event-siege";
+
+/** Crusaders event — Q B N R */
+export const MERCENARY_CRUSADE_ID = "mercenary-event-crusade";
+
 /** True for orange mercenary pieces (Lost Mercenary event, future rentals). */
 export function isMercenaryPiece(p: Piece | null): boolean {
   return (
@@ -59,7 +65,13 @@ export type MercenaryStepContext = {
   coldWindsSquares: [number, number][];
   coldWindsMovesLeft: number;
   blessedSquares: { row: number; col: number; movesLeft: number }[];
+  /** Permanent winter squares — mercenaries cannot enter or pass through. */
+  permaFrozenSquares?: { row: number; col: number }[];
 };
+
+function isPermaFrozen(ctx: MercenaryStepContext, r: number, c: number): boolean {
+  return ctx.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false;
+}
 
 function isWall(ctx: MercenaryStepContext, r: number, c: number): boolean {
   return ctx.wallSquares.some((w) => w.row === r && w.col === c);
@@ -148,6 +160,7 @@ export function applyLostMercenaryAfterFullMove(
       tc = c + dc;
     if (tr < 0 || tr >= n || tc < 0 || tc >= n) continue;
     if (isWall(ctx, tr, tc)) continue;
+    if (isPermaFrozen(ctx, tr, tc)) continue;
     const victim = board[tr][tc];
     if (!victimCapturable(victim)) continue;
     if (isBlessedSquare(ctx, tr, tc)) continue;
@@ -200,6 +213,7 @@ export function applyLostMercenaryAfterFullMove(
     );
   }
   if (isWall(ctx, r, nc)) return state;
+  if (isPermaFrozen(ctx, r, nc)) return state;
   if (board[r][nc]?.type === "M") return state;
   if (board[r][nc]) return state;
 
@@ -215,6 +229,7 @@ export function applyLostMercenaryAfterFullMove(
 export function spawnLostMercenaryOnBoard(
   state: ChessState,
   wallSquares: { row: number; col: number }[] = [],
+  permaFrozenSquares: { row: number; col: number }[] = [],
 ): ChessState {
   const board = getDerivedBoard(state);
   if (findLostMercenary(board)) return state;
@@ -229,10 +244,16 @@ export function spawnLostMercenaryOnBoard(
     coldWindsSquares: [],
     coldWindsMovesLeft: 0,
     blessedSquares: [],
+    permaFrozenSquares,
   };
   for (const col of leftCols)
     for (let row = 0; row < n; row++) {
-      if (!board[row][col] && !isWall(wallCtx, row, col)) empties.push([row, col]);
+      if (
+        !board[row][col] &&
+        !isWall(wallCtx, row, col) &&
+        !isPermaFrozen(wallCtx, row, col)
+      )
+        empties.push([row, col]);
     }
 
   if (empties.length === 0) return state;
@@ -263,17 +284,6 @@ function shufflePositions(a: [number, number][]): [number, number][] {
   return copy;
 }
 
-/** All mercenary patrol knight squares (in arbitrary scan order). */
-export function findMercenaryPatrolKnights(board: Board): [number, number][] {
-  const n = board.length;
-  const out: [number, number][] = [];
-  for (let r = 0; r < n; r++)
-    for (let c = 0; c < n; c++) {
-      if (isMercenaryPatrolKnight(board[r][c])) out.push([r, c]);
-    }
-  return out;
-}
-
 function patrolKnightLegalDestinations(
   board: Board,
   r: number,
@@ -287,6 +297,7 @@ function patrolKnightLegalDestinations(
       tc = c + dc;
     if (tr < 0 || tr >= n || tc < 0 || tc >= n) continue;
     if (isWall(ctx, tr, tc)) continue;
+    if (isPermaFrozen(ctx, tr, tc)) continue;
     const occ = board[tr][tc];
     if (occ?.type === "M") continue;
     if (!occ) {
@@ -294,6 +305,7 @@ function patrolKnightLegalDestinations(
       continue;
     }
     if (occ.color === "orange") continue;
+    // Never move onto or capture any king (defense in depth).
     if (occ.type === "K") continue;
     if (isBlessedSquare(ctx, tr, tc)) continue;
     out.push([tr, tc]);
@@ -301,45 +313,163 @@ function patrolKnightLegalDestinations(
   return out;
 }
 
+/** Orange mercenary combat pieces (not Lost Mercenary pawn). */
+export function findNonLostOrangeMercenaryPositions(
+  board: Board,
+): [number, number][] {
+  const n = board.length;
+  const out: [number, number][] = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const p = board[r][c];
+      if (!p || p.color !== "orange") continue;
+      if (typeof p.id !== "string" || !p.id.includes(MERCENARY_ID_MARKER))
+        continue;
+      if (isLostMercenaryPawn(p)) continue;
+      if (p.type !== "N" && p.type !== "R" && p.type !== "B" && p.type !== "Q")
+        continue;
+      out.push([r, c]);
+    }
+  return out;
+}
+
+const ROOK_DIRS: [number, number][] = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+const BISHOP_DIRS: [number, number][] = [
+  [-1, -1],
+  [-1, 1],
+  [1, -1],
+  [1, 1],
+];
+
+function mercSliderDestinations(
+  board: Board,
+  r: number,
+  c: number,
+  ctx: MercenaryStepContext,
+  mode: "rook" | "bishop" | "queen",
+): [number, number][] {
+  const dirs: [number, number][] =
+    mode === "rook"
+      ? ROOK_DIRS
+      : mode === "bishop"
+        ? BISHOP_DIRS
+        : [...ROOK_DIRS, ...BISHOP_DIRS];
+  const n = board.length;
+  const out: [number, number][] = [];
+  for (const [dr, dc] of dirs) {
+    let tr = r + dr,
+      tc = c + dc;
+    while (tr >= 0 && tr < n && tc >= 0 && tc < n) {
+      if (isWall(ctx, tr, tc)) break;
+      if (isPermaFrozen(ctx, tr, tc)) break;
+      const occ = board[tr][tc];
+      if (occ?.type === "M") break;
+      if (!occ) {
+        out.push([tr, tc]);
+        tr += dr;
+        tc += dc;
+        continue;
+      }
+      if (occ.color === "orange") break;
+      if (occ.type === "K") break;
+      if (isBlessedSquare(ctx, tr, tc)) break;
+      out.push([tr, tc]);
+      break;
+    }
+  }
+  return out;
+}
+
+function mercenaryLegalDestinationsForPiece(
+  board: Board,
+  r: number,
+  c: number,
+  piece: Piece,
+  ctx: MercenaryStepContext,
+): [number, number][] {
+  if (piece.type === "N") return patrolKnightLegalDestinations(board, r, c, ctx);
+  if (piece.type === "R")
+    return mercSliderDestinations(board, r, c, ctx, "rook");
+  if (piece.type === "B")
+    return mercSliderDestinations(board, r, c, ctx, "bishop");
+  if (piece.type === "Q")
+    return mercSliderDestinations(board, r, c, ctx, "queen");
+  return [];
+}
+
+function applySingleOrangeMercRandomStep(
+  st: ChessState,
+  board: Board,
+  r: number,
+  c: number,
+  ctx: MercenaryStepContext,
+): ChessState {
+  const piece = board[r][c];
+  if (!piece || piece.color !== "orange") return st;
+  if (typeof piece.id !== "string" || !piece.id.includes(MERCENARY_ID_MARKER))
+    return st;
+  if (isLostMercenaryPawn(piece)) return st;
+  if (isMercenaryFrozen(ctx, r, c)) return st;
+  const dests = mercenaryLegalDestinationsForPiece(board, r, c, piece, ctx);
+  if (dests.length === 0) return st;
+  const [tr, tc] = dests[Math.floor(Math.random() * dests.length)]!;
+  const nb = cloneBoard(board);
+  const merc = nb[r][c]!;
+  const victim = nb[tr][tc];
+  nb[r][c] = null;
+  nb[tr][tc] = merc;
+  const next: ChessState = { ...st, enPassantTarget: null };
+  if (victim) {
+    const cbw = [...st.capturedByWhite];
+    const cbb = [...st.capturedByBlack];
+    if (victim.color === "white") cbw.push(victim.type);
+    else if (victim.color === "black") cbb.push(victim.type);
+    return recomputeChessStatus(
+      syncStateFromBoard({ ...next, capturedByWhite: cbw, capturedByBlack: cbb }, nb),
+    );
+  }
+  return recomputeChessStatus(syncStateFromBoard(next, nb));
+}
+
 /**
- * After a full move (black just moved), each patrol knight makes one random
- * legal knight hop (walls, monoliths, blessed victims blocked; no king capture).
+ * After a full move (black just moved), each non-lost orange mercenary
+ * (knight/rook/bishop/queen with mercenary id) makes at most one random legal step.
  */
 export function applyMercenaryPatrolAfterFullMove(
   state: ChessState,
   ctx: MercenaryStepContext,
 ): ChessState {
-  let board = getDerivedBoard(state);
   let st: ChessState = state;
-  const positions = shufflePositions(findMercenaryPatrolKnights(board));
-
+  const positions = shufflePositions(
+    findNonLostOrangeMercenaryPositions(getDerivedBoard(st)),
+  );
   for (const [r, c] of positions) {
-    board = getDerivedBoard(st);
+    const board = getDerivedBoard(st);
     const piece = board[r][c];
-    if (!isMercenaryPatrolKnight(piece)) continue;
+    if (!piece || piece.color !== "orange") continue;
+    if (typeof piece.id !== "string" || !piece.id.includes(MERCENARY_ID_MARKER))
+      continue;
+    if (isLostMercenaryPawn(piece)) continue;
     if (isMercenaryFrozen(ctx, r, c)) continue;
-    const dests = patrolKnightLegalDestinations(board, r, c, ctx);
-    if (dests.length === 0) continue;
-    const [tr, tc] = dests[Math.floor(Math.random() * dests.length)]!;
-    const nb = cloneBoard(board);
-    const merc = nb[r][c]!;
-    const victim = nb[tr][tc];
-    nb[r][c] = null;
-    nb[tr][tc] = merc;
-    const next: ChessState = { ...st, enPassantTarget: null };
-    if (victim) {
-      const cbw = [...st.capturedByWhite];
-      const cbb = [...st.capturedByBlack];
-      if (victim.color === "white") cbw.push(victim.type);
-      else if (victim.color === "black") cbb.push(victim.type);
-      st = recomputeChessStatus(
-        syncStateFromBoard({ ...next, capturedByWhite: cbw, capturedByBlack: cbb }, nb),
-      );
-    } else {
-      st = recomputeChessStatus(syncStateFromBoard(next, nb));
-    }
+    st = applySingleOrangeMercRandomStep(st, board, r, c, ctx);
   }
   return st;
+}
+
+/** @deprecated Prefer findNonLostOrangeMercenaryPositions for new code. */
+export function findMercenaryPatrolKnights(board: Board): [number, number][] {
+  const n = board.length;
+  const out: [number, number][] = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      if (isMercenaryPatrolKnight(board[r][c])) out.push([r, c]);
+    }
+  return out;
 }
 
 /**
@@ -351,6 +481,7 @@ export function applyMercenaryPatrolAfterFullMove(
 export function spawnMercenaryPatrolKnights(
   state: ChessState,
   wallSquares: { row: number; col: number }[] = [],
+  permaFrozenSquares: { row: number; col: number }[] = [],
 ): ChessState {
   const board = getDerivedBoard(state);
   const n = board.length;
@@ -364,12 +495,18 @@ export function spawnMercenaryPatrolKnights(
     coldWindsSquares: [],
     coldWindsMovesLeft: 0,
     blessedSquares: [],
+    permaFrozenSquares,
   };
 
   const pickRow = (b: Board, col: number): number | null => {
     const rows: number[] = [];
     for (let row = 0; row < n; row++) {
-      if (!b[row][col] && !isWall(wallCtx, row, col)) rows.push(row);
+      if (
+        !b[row][col] &&
+        !isWall(wallCtx, row, col) &&
+        !isPermaFrozen(wallCtx, row, col)
+      )
+        rows.push(row);
     }
     if (rows.length === 0) return null;
     return rows[Math.floor(Math.random() * rows.length)]!;
@@ -393,6 +530,113 @@ export function spawnMercenaryPatrolKnights(
     };
   }
 
+  return recomputeChessStatus(
+    syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
+  );
+}
+
+/** Siege Patrol: orange mercenary knight (left file) + rook (right file). */
+export function spawnMercenarySiegePatrol(
+  state: ChessState,
+  wallSquares: { row: number; col: number }[] = [],
+  permaFrozenSquares: { row: number; col: number }[] = [],
+): ChessState {
+  const board = getDerivedBoard(state);
+  const n = board.length;
+  const off = (n - 8) / 2;
+  const leftCol = Math.max(0, Math.min(n - 1, off));
+  const rightCol = Math.max(0, Math.min(n - 1, n - 1 - off));
+  const nb = cloneBoard(board);
+  const wallCtx: MercenaryStepContext = {
+    wallSquares,
+    frozenSquare: null,
+    coldWindsSquares: [],
+    coldWindsMovesLeft: 0,
+    blessedSquares: [],
+    permaFrozenSquares,
+  };
+  const pickRow = (b: Board, col: number): number | null => {
+    const rows: number[] = [];
+    for (let row = 0; row < n; row++) {
+      if (
+        !b[row][col] &&
+        !isWall(wallCtx, row, col) &&
+        !isPermaFrozen(wallCtx, row, col)
+      )
+        rows.push(row);
+    }
+    if (rows.length === 0) return null;
+    return rows[Math.floor(Math.random() * rows.length)]!;
+  };
+  const ts = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const lr = pickRow(nb, leftCol);
+  if (lr !== null) {
+    nb[lr][leftCol] = {
+      type: "N",
+      color: "orange",
+      id: `${MERCENARY_SIEGE_ID}-${ts}-N`,
+    };
+  }
+  const rr = pickRow(nb, rightCol);
+  if (rr !== null && (leftCol !== rightCol || lr !== rr)) {
+    nb[rr][rightCol] = {
+      type: "R",
+      color: "orange",
+      id: `${MERCENARY_SIEGE_ID}-${ts}-R`,
+    };
+  }
+  return recomputeChessStatus(
+    syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
+  );
+}
+
+/** Crusaders: orange Q, B, N, R on random inner empty squares (best-effort). */
+export function spawnMercenaryCrusaders(
+  state: ChessState,
+  wallSquares: { row: number; col: number }[] = [],
+  permaFrozenSquares: { row: number; col: number }[] = [],
+): ChessState {
+  const board = getDerivedBoard(state);
+  const n = board.length;
+  const wallCtx: MercenaryStepContext = {
+    wallSquares,
+    frozenSquare: null,
+    coldWindsSquares: [],
+    coldWindsMovesLeft: 0,
+    blessedSquares: [],
+    permaFrozenSquares,
+  };
+  const innerEmpties = (): [number, number][] => {
+    const out: [number, number][] = [];
+    for (let r = 1; r < n - 1; r++)
+      for (let c = 1; c < n - 1; c++) {
+        if (board[r][c]) continue;
+        if (isWall(wallCtx, r, c)) continue;
+        if (isPermaFrozen(wallCtx, r, c)) continue;
+        out.push([r, c]);
+      }
+    return shufflePositions(out);
+  };
+  const specs: { type: PieceType; suffix: string }[] = [
+    { type: "Q", suffix: "Q" },
+    { type: "B", suffix: "B" },
+    { type: "N", suffix: "N" },
+    { type: "R", suffix: "R" },
+  ];
+  const ts = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const slots = innerEmpties();
+  if (slots.length < 4) return state;
+  const chosen = slots.slice(0, 4);
+  const nb = cloneBoard(board);
+  for (let i = 0; i < 4; i++) {
+    const [r, c] = chosen[i]!;
+    const spec = specs[i]!;
+    nb[r][c] = {
+      type: spec.type,
+      color: "orange",
+      id: `${MERCENARY_CRUSADE_ID}-${ts}-${spec.suffix}`,
+    };
+  }
   return recomputeChessStatus(
     syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
   );

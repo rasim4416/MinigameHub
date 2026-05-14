@@ -84,6 +84,26 @@ export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
   return DEFAULT_WEIGHTS;
 }
 
+/** Child augment id → required augment id that must already be owned. */
+export const AUGMENT_PREREQUISITE: Partial<Record<string, string>> = {
+  "mastermind-plus": "mastermind",
+  "mastermind-plus-plus": "mastermind-plus",
+  "necromancer-plus": "necromancer",
+  "alternative-plus": "alternative",
+  "necromancer-plus-plus": "necromancer-plus",
+  "bloodbending-plus": "bloodbending",
+};
+
+/** True if `augId` cannot be rolled or bought until `requiredId` is owned. */
+export function augmentExcludedByPrereq(
+  augId: string,
+  ownedAugmentIds: string[],
+): boolean {
+  const req = AUGMENT_PREREQUISITE[augId];
+  if (!req) return false;
+  return !ownedAugmentIds.includes(req);
+}
+
 // ─── Max stack per augment ────────────────────────────────────────────────────
 
 /** 1 = cannot be held twice; 99 = effectively infinite stacking. */
@@ -126,6 +146,13 @@ export const MAX_STACK: Record<string, number> = {
   "pawn-shop":           1,
   "mastermind-plus-plus": 1,
   "i-am-danger":         99,
+  "alternative-plus":  1,
+  "double-gold":       1,
+  "horde":             1,
+  "bloodbending":      1,
+  "bloodbending-plus": 1,
+  "little-big-man":    1,
+  "necromancer-plus-plus": 1,
 };
 
 // ─── Augments that cannot be purchased in the shop ────────────────────────────
@@ -135,6 +162,8 @@ export const NON_PURCHASABLE = new Set<string>([
   "mastermind-plus",
   "mastermind-plus-plus",
   "instant-cash",
+  "prize-money",
+  "double-gold",
 ]);
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -145,7 +174,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"alternative",  name:"Alternative",  rarity:"common",   icon:"🛤️",   description:"Your rook-file pawns (a & h) may advance 3 squares on their first move." },
   { id:"mastermind",   name:"Mastermind",   rarity:"common",   icon:"🧠",   description:"Improves your augment roll chances (Common↓ Rare↑ Epic↑). Cannot be purchased in shop." },
   { id:"instant-cash", name:"Instant Cash", rarity:"common",   icon:"💰",   description:"Grants 10 gold instantly. Cannot be purchased in shop." },
-  { id:"prize-money", name:"Prize Money", rarity:"common", icon:"🏆", description:"Your first capture doubles every gold you earn that half-move (including Tax Man and Thief procs on the same move)." },
+  { id:"prize-money", name:"Prize Money", rarity:"common", icon:"🏆", description:"The game's first capture doubles that mover's gold for the half-move if they have Prize Money (once per game for everyone). Cannot be purchased in shop." },
   { id:"investment", name:"Investment", rarity:"common", icon:"📈", description:"Earn +1 gold at the end of each of your turns when you have more than 20 gold." },
   { id:"efficient", name:"Efficient", rarity:"common", icon:"⚡", description:"Gain +1 extra gold whenever you capture a piece (stacks with the normal capture payout)." },
   { id:"thief", name:"Thief", rarity:"common", icon:"🥷", description:"Each time you finish a turn, you have a 1% chance per Thief stack to gain 50 gold instantly." },
@@ -154,6 +183,7 @@ export const AUGMENT_POOL: Augment[] = [
   // ── Uncommon ──────────────────────────────────────────────────────────────
   { id:"king-of-the-hill", name:"King of the Hill", rarity:"uncommon", icon:"⛰️", description:"Each of your pieces on d4/d5/e4/e5 earns 1 gold per turn." },
   { id:"jew",          name:"Jew",          rarity:"uncommon", icon:"💎",   description:"When the enemy captures your pawns, you gain 2 gold per captured pawn." },
+  { id:"alternative-plus", name:"Alternative+", rarity:"uncommon", icon:"🛤️✨", description:"All of your pawns may advance up to 3 squares on their first move (requires Alternative)." },
   { id:"mastermind-plus", name:"Mastermind+", rarity:"uncommon", icon:"🧠✨", description:"Further boosts roll chances (Rare↑↑ Epic↑↑ Legendary↑). Cannot be purchased in shop." },
   { id:"contract-killer",  name:"Contract Killer",  rarity:"uncommon", icon:"🎯", description:"Mark one enemy piece (not king or pawn). If you capture it, earn 4× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure)." },
   { id:"evade", name:"Evade", rarity:"uncommon", icon:"💨", description:"Spend a charge: during your opponent's next turn, they cannot use augment spells (shop still allowed)." },
@@ -172,8 +202,11 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"pawn-shop", name:"Pawn Shop", rarity:"rare", icon:"♙", description:"Buy pawns from the shop; place on empty squares of your original pawn rank (second rank), even on a 10×10 board. Placement does not spend a turn. Price starts at 10g and rises by 10g each purchase with no cap." },
   { id:"mastermind-plus-plus", name:"Mastermind++", rarity:"rare", icon:"🧠💫", description:"Further improves your augment roll rarity. Cannot be purchased in shop." },
   { id:"i-am-danger", name:"I Am Danger", rarity:"rare", icon:"☠️👑", description:"Each time you give check to the enemy king, gain 4 gold (per stack)." },
+  { id:"double-gold", name:"Double Gold", rarity:"rare", icon:"💰💰", description:"For the next 5 full rounds, all gold you gain is doubled (captures, events, augments, shop sells, etc.). Cannot be purchased in shop." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive your most recently lost knight or bishop to any empty square on your home rank." },
+  { id:"horde", name:"Horde", rarity:"epic", icon:"🐺", description:"When acquired, every pawn on the board tries to step one square forward into an empty square (no captures)." },
+  { id:"bloodbending", name:"Bloodbending", rarity:"epic", icon:"🩸🧙", description:"Spell: flip one enemy pawn to your color (respects blessed/frozen rules)." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
   { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
   { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight." },
@@ -183,7 +216,24 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square." },
   { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages UP TO 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
   { id:"domain-expansion", name:"DOMAIN EXPANSION", rarity:"legendary", icon:"♾️", description:"Expand the board from 8×8 to 10×10. New peripheral squares (file x, file i, rank 0, rank 9) are added empty. No piece moves during expansion." },
+  { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Choose one of your pawns: for 4 full rounds it moves and captures like a queen, then reverts." },
+  { id:"bloodbending-plus", name:"Bloodbending+", rarity:"legendary", icon:"🩸✨", description:"Spell: flip one enemy knight, bishop, or rook to your color (requires Bloodbending)." },
+  { id:"necromancer-plus-plus", name:"Necromancer++", rarity:"legendary", icon:"💀💫", description:"Spell: place a revived queen on an empty home-rank square (requires Necromancer+)." },
 ];
+
+/** Exclude maxed stacks and augments whose prerequisite is not owned. */
+export function getRollExcludeIds(held: Augment[]): string[] {
+  const counts: Record<string, number> = {};
+  for (const a of held) counts[a.id] = (counts[a.id] || 0) + 1;
+  const maxed = Object.keys(counts).filter(
+    (id) => counts[id] >= (MAX_STACK[id] ?? 1),
+  );
+  const ownedIds = Object.keys(counts);
+  const prereqLocked = AUGMENT_POOL.filter((a) =>
+    augmentExcludedByPrereq(a.id, ownedIds),
+  ).map((a) => a.id);
+  return [...new Set([...maxed, ...prereqLocked])];
+}
 
 // ─── Weighted random roll ─────────────────────────────────────────────────────
 

@@ -114,6 +114,11 @@ export interface ChessState {
   /** Augment: Free Passage — king may castle while in check. */
   freePassageWhite?: boolean;
   freePassageBlack?: boolean;
+  /** Permanent winter ice (empty squares); cannot move onto or through. */
+  permaFrozenSquares?: { row: number; col: number }[];
+  /** Little Big Man — pawn id moves like a queen until UI clears this field. */
+  littleBigManWhiteId?: PieceId | null;
+  littleBigManBlackId?: PieceId | null;
 }
 
 // ─── Board size (mutable for Domain Expansion) ───────────────────────────────
@@ -256,6 +261,7 @@ function createEmptyChessStateShell(): ChessState {
     moveHistory: [],
     freePassageWhite: false,
     freePassageBlack: false,
+    permaFrozenSquares: [],
   };
 }
 
@@ -419,6 +425,17 @@ export function isSquareAttackedBy(
 
 const MERCENARY_ID_MARK = "mercenary";
 
+/** Orange mercenary knights never count toward check (patrol, siege, crusaders). */
+function isOrangeMercenaryKnight(p: Piece | null): boolean {
+  return (
+    !!p &&
+    p.type === "N" &&
+    p.color === "orange" &&
+    typeof p.id === "string" &&
+    p.id.includes(MERCENARY_ID_MARK)
+  );
+}
+
 function isSquareAttackedByOrangeMercenaries(
   state: ChessState,
   r: number,
@@ -431,6 +448,7 @@ function isSquareAttackedByOrangeMercenaries(
       if (
         p?.color === "orange" &&
         p.id?.includes(MERCENARY_ID_MARK) &&
+        !isOrangeMercenaryKnight(p) &&
         attacksFrom(state, pr, pc, p).some(([ar, ac]) => ar === r && ac === c)
       )
         return true;
@@ -489,7 +507,47 @@ export function isInCheck(stateOrBoard: ChessState | Board, color: Color): boole
   return isInCheckState(boardToMinimalState(stateOrBoard), color);
 }
 
-// ─── Pseudo-legal move generation ─────────────────────────────────────────────
+function isPermaFrozenSquare(state: ChessState, r: number, c: number): boolean {
+  return (
+    state.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false
+  );
+}
+
+/** Queen-like slides for Little Big Man pawn (pseudo-legal only). */
+function pseudoQueenLikeSlidesForColor(
+  state: ChessState,
+  r: number,
+  c: number,
+  color: Color,
+): [number, number][] {
+  const n = state.occupancy.length;
+  const sq: [number, number][] = [];
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+  for (const [dr, dc] of dirs) {
+    let nr = r + dr,
+      nc = c + dc;
+    while (inB(nr, nc, n)) {
+      const tgt = getPieceAt(state, nr, nc);
+      if (tgt) {
+        if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
+        break;
+      }
+      sq.push([nr, nc]);
+      nr += dr;
+      nc += dc;
+    }
+  }
+  return sq;
+}
 
 function pseudoMoves(
   state: ChessState,
@@ -507,6 +565,13 @@ function pseudoMoves(
 
   if (type === "P") {
     if (color === "orange") return [];
+    const movingId = state.occupancy[r][c];
+    if (movingId) {
+      if (color === "white" && state.littleBigManWhiteId === movingId)
+        return pseudoQueenLikeSlidesForColor(state, r, c, color);
+      if (color === "black" && state.littleBigManBlackId === movingId)
+        return pseudoQueenLikeSlidesForColor(state, r, c, color);
+    }
     const dir = color === "white" ? -1 : 1;
     const _off = (n - 8) / 2;
     const startRow = color === "white" ? 6 + _off : 1 + _off;
@@ -649,7 +714,20 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
   const piece = getPieceAt(state, r, c);
   if (!piece || piece.color !== state.turn) return [];
 
-  const pseudo = pseudoMoves(state, r, c, state.enPassantTarget);
+  const pseudoAll = pseudoMoves(state, r, c, state.enPassantTarget);
+  const pseudo = pseudoAll.filter(([tr, tc]) => {
+    if (isPermaFrozenSquare(state, tr, tc)) return false;
+    if (
+      piece.type === "P" &&
+      Math.abs(tr - r) === 2 &&
+      tc === c &&
+      piece.color !== "orange"
+    ) {
+      const midR = (r + tr) / 2;
+      if (isPermaFrozenSquare(state, midR, tc)) return false;
+    }
+    return true;
+  });
   const legal: [number, number][] = [];
 
   for (const [tr, tc] of pseudo) {
@@ -679,6 +757,8 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
       rights.kingside &&
       !state.occupancy[row][off + 5] &&
       !state.occupancy[row][off + 6] &&
+      !isPermaFrozenSquare(state, row, off + 5) &&
+      !isPermaFrozenSquare(state, row, off + 6) &&
       !isSquareAttackedByEnemyOrMercenary(state, row, off + 5, side) &&
       !isSquareAttackedByEnemyOrMercenary(state, row, off + 6, side)
     ) {
@@ -690,6 +770,9 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
       !state.occupancy[row][off + 1] &&
       !state.occupancy[row][off + 2] &&
       !state.occupancy[row][off + 3] &&
+      !isPermaFrozenSquare(state, row, off + 1) &&
+      !isPermaFrozenSquare(state, row, off + 2) &&
+      !isPermaFrozenSquare(state, row, off + 3) &&
       !isSquareAttackedByEnemyOrMercenary(state, row, off + 3, side) &&
       !isSquareAttackedByEnemyOrMercenary(state, row, off + 2, side)
     ) {
@@ -814,6 +897,11 @@ export function makeMove(
     moveHistory: [...state.moveHistory, record],
     freePassageWhite: state.freePassageWhite ?? false,
     freePassageBlack: state.freePassageBlack ?? false,
+    permaFrozenSquares: state.permaFrozenSquares
+      ? [...state.permaFrozenSquares]
+      : [],
+    littleBigManWhiteId: state.littleBigManWhiteId ?? null,
+    littleBigManBlackId: state.littleBigManBlackId ?? null,
   };
 
   const nextHasMove = hasAnyLegalMove(nextState, nextTurn);
