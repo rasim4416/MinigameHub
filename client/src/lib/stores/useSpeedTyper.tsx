@@ -30,7 +30,7 @@ interface SpeedTyperState {
   incrementScore: () => void;
   setGameOver: (isOver: boolean) => void;
   setPaused: (isPaused: boolean) => void;
-  setTimeLeft: (time: number) => void;
+  setTimeLeft: (time: number | ((prev: number) => number)) => void;
   setInputValue: (value: string) => void;
   addFallingWord: (word: FallingWord) => void;
   removeFallingWord: (id: string) => void;
@@ -92,7 +92,10 @@ export const useSpeedTyper = create<SpeedTyperState>((set) => ({
   setGameOver: (isOver) => set({ isGameOver: isOver }),
   setPaused: (isPaused) => set({ isPaused }),
   
-  setTimeLeft: (time) => set({ timeLeft: time }),
+  setTimeLeft: (time) =>
+    set((state) => ({
+      timeLeft: typeof time === "function" ? time(state.timeLeft) : time,
+    })),
   
   setInputValue: (value) => set({ inputValue: value }),
   

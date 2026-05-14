@@ -41,6 +41,7 @@ const SpeedTyperGame: React.FC = () => {
     wordBank,
     
     incrementScore,
+    setScore,
     setInputValue,
     addFallingWord,
     removeFallingWord,
@@ -49,6 +50,7 @@ const SpeedTyperGame: React.FC = () => {
     setGameOver,
     setPaused,
     setDifficulty,
+    setFallingWords,
     resetGame
   } = useSpeedTyper();
   

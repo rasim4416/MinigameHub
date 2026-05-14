@@ -987,7 +987,7 @@ export const getWordOfLength = (lang: Language, length: number): string => {
     return arr[Math.floor(Math.random() * arr.length)];
   }
   // Find nearest available length
-  const lengths = [...map.keys()];
+  const lengths = Array.from(map.keys());
   lengths.sort((a, b) => Math.abs(a - length) - Math.abs(b - length));
   const nearest = map.get(lengths[0])!;
   return nearest[Math.floor(Math.random() * nearest.length)];
