@@ -95,13 +95,13 @@ export function lostMercenaryAttackOffsets(): [number, number][] {
   ];
 }
 
-/** Find the Lost Mercenary pawn (orange P with mercenary id), if any. */
+/** Find the Lost Mercenary pawn (orange P with lost-event id), if any. */
 export function findLostMercenary(board: Board): [number, number] | null {
   const n = board.length;
   for (let r = 0; r < n; r++)
     for (let c = 0; c < n; c++) {
       const p = board[r][c];
-      if (isMercenaryPiece(p) && p!.type === "P") return [r, c];
+      if (isLostMercenaryPawn(p)) return [r, c];
     }
   return null;
 }
@@ -194,7 +194,6 @@ export function applyLostMercenaryAfterFullMove(
 
   const nc = c + 1;
   if (nc >= n) {
-    const nb = cloneBoard(board);
     nb[r][c] = null;
     return recomputeChessStatus(
       syncStateFromBoard({ ...state, enPassantTarget: null }, nb),
