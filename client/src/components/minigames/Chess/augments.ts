@@ -104,6 +104,55 @@ export function augmentExcludedByPrereq(
   return !ownedAugmentIds.includes(req);
 }
 
+/** Shop: upgrade tiers appear only after their parent augment is owned. */
+export function augmentUnlockedForShop(
+  augId: string,
+  ownedAugmentIds: string[],
+): boolean {
+  return !augmentExcludedByPrereq(augId, ownedAugmentIds);
+}
+
+function augmentById(id: string): Augment | undefined {
+  return AUGMENT_POOL.find((a) => a.id === id);
+}
+
+/** Force one offered slot to the next tier upgrade the player is eligible for (++ before +). */
+export function applyGuaranteedUpgradeSlot(
+  offered: Augment[],
+  owned: Augment[],
+  exclude: string[],
+): Augment[] {
+  if (offered.length === 0) return offered;
+  const ownedIds = owned.map((a) => a.id);
+  const has = (id: string) => ownedIds.includes(id);
+  const candidates: { id: string; priority: number }[] = [];
+  for (const [childId, parentId] of Object.entries(AUGMENT_PREREQUISITE)) {
+    if (has(childId) || exclude.includes(childId)) continue;
+    if (!has(parentId)) continue;
+    const priority = childId.endsWith("-plus-plus") ? 2 : 1;
+    candidates.push({ id: childId, priority });
+  }
+  if (candidates.length === 0) return offered;
+  candidates.sort((a, b) => b.priority - a.priority);
+  const forced = augmentById(candidates[0]!.id);
+  if (!forced) return offered;
+  const out = [...offered];
+  out[Math.floor(Math.random() * out.length)] = { ...forced };
+  return out;
+}
+
+/** Weighted roll for bonus picks with upgrade-slot guarantee. */
+export function rollBonusAugments(
+  count: number,
+  owned: Augment[],
+  weights?: RarityWeights,
+): Augment[] {
+  const exclude = getRollExcludeIds(owned);
+  const w = weights ?? getWeightsForPlayer(owned);
+  const rolled = rollAugments(count, exclude, w);
+  return applyGuaranteedUpgradeSlot(rolled, owned, exclude);
+}
+
 // ─── Max stack per augment ────────────────────────────────────────────────────
 
 /** 1 = cannot be held twice; 99 = effectively infinite stacking. */
@@ -201,7 +250,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"swap", name:"Swap", rarity:"rare", icon:"🔀", description:"Once per game, exchange the positions of any two of your own pieces (free action). Frozen pieces cannot be moved." },
   { id:"pawn-shop", name:"Pawn Shop", rarity:"rare", icon:"♙", description:"Buy pawns from the shop; place on empty squares of your original pawn rank (second rank), even on a 10×10 board. Placement does not spend a turn. Price starts at 10g and rises by 10g each purchase with no cap." },
   { id:"mastermind-plus-plus", name:"Mastermind++", rarity:"rare", icon:"🧠💫", description:"Further improves your augment roll rarity. Cannot be purchased in shop." },
-  { id:"i-am-danger", name:"I Am Danger", rarity:"rare", icon:"☠️👑", description:"Each time you give check to the enemy king, gain 4 gold (per stack)." },
+  { id:"i-am-danger", name:"I am the danger", rarity:"rare", icon:"☠️👑", description:"Each time you give check to the enemy king, gain 4 gold (per stack)." },
   { id:"double-gold", name:"Double Gold", rarity:"rare", icon:"💰💰", description:"For the next 5 full rounds, all gold you gain is doubled (captures, events, augments, shop sells, etc.). Cannot be purchased in shop." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive your most recently lost knight or bishop to any empty square on your home rank." },
@@ -216,7 +265,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square." },
   { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages UP TO 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
   { id:"domain-expansion", name:"DOMAIN EXPANSION", rarity:"legendary", icon:"♾️", description:"Expand the board from 8×8 to 10×10. New peripheral squares (file x, file i, rank 0, rank 9) are added empty. No piece moves during expansion." },
-  { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Choose one of your pawns: for 4 full rounds it moves and captures like a queen, then reverts." },
+  { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Spell: choose a rook-file pawn (a/h). For 4 full rounds it moves and captures like a queen, then reverts." },
   { id:"bloodbending-plus", name:"Bloodbending+", rarity:"legendary", icon:"🩸✨", description:"Spell: flip one enemy knight, bishop, or rook to your color (requires Bloodbending)." },
   { id:"necromancer-plus-plus", name:"Necromancer++", rarity:"legendary", icon:"💀💫", description:"Spell: place a revived queen on an empty home-rank square (requires Necromancer+)." },
 ];

@@ -36,9 +36,11 @@ import {
   Augment,
   AUGMENT_POOL,
   augmentExcludedByPrereq,
+  augmentUnlockedForShop,
   getRollExcludeIds,
   MAX_STACK,
   rollAugments,
+  rollBonusAugments,
   RARITY_META,
   RarityWeights,
   getWeightsForPlayer,
@@ -71,6 +73,11 @@ function isOriginalPawnSpawnSquare(
   return c >= off && c < off + 8;
 }
 
+function isRookFileCol(c: number, boardSize: number): boolean {
+  const off = (boardSize - 8) / 2;
+  return c === off || c === off + 7;
+}
+
 function isPermaFrostSquare(state: ChessState, r: number, c: number): boolean {
   return (
     state.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false
@@ -83,7 +90,7 @@ type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
 type AugmentTrigger = {
   color: Color;
-  reason: "milestone" | "bloodlust";
+  reason: "milestone" | "bloodlust" | "promotion" | "queen-capture";
   milestoneType?: PieceType;
 };
 type TierBought = {
@@ -146,6 +153,8 @@ type AugmentSnapshot = {
   blackBloodbendingPlusCharges: number;
   whiteNecroPPCharges: number;
   blackNecroPPCharges: number;
+  whiteLittleBigManCharges: number;
+  blackLittleBigManCharges: number;
 };
 
 const EMPTY_MILESTONES: Milestones = {
@@ -361,7 +370,8 @@ function getAlternativePlusMoves(
 function applyHordeEffect(g: ChessState, owner: "white" | "black"): ChessState {
   const nb = cloneBoard(getDerivedBoard(g));
   const n = nb.length;
-  for (let r = 0; r < n; r++)
+  // Scan from back rank toward front so a pawn is never stepped twice in one pass.
+  for (let r = n - 1; r >= 0; r--)
     for (let c = 0; c < n; c++) {
       const p = nb[r][c];
       if (!p || p.type !== "P" || p.color !== owner) continue;
@@ -574,14 +584,84 @@ function getRankLabel(row: number, boardSize: number): string {
   return boardSize === 8 ? String(8 - row) : String(9 - row);
 }
 
-// ─── Board constants ──────────────────────────────────────────────────────────
+// ─── Board themes (local cosmetic) ───────────────────────────────────────────
 
-const LIGHT_SQ = "#f0d9b5",
-  DARK_SQ = "#b58863",
-  SEL_LIGHT = "#f6f669",
-  SEL_DARK = "#baca2b",
-  LAST_LIGHT = "#cdd16f",
-  LAST_DARK = "#aaa23a";
+type BoardThemeId =
+  | "classic"
+  | "forest"
+  | "ocean"
+  | "slate"
+  | "highContrast";
+
+type BoardThemePalette = {
+  light: string;
+  dark: string;
+  selLight: string;
+  selDark: string;
+  lastLight: string;
+  lastDark: string;
+};
+
+const BOARD_THEMES: Record<
+  BoardThemeId,
+  { label: string; palette: BoardThemePalette }
+> = {
+  classic: {
+    label: "Classic",
+    palette: {
+      light: "#f0d9b5",
+      dark: "#b58863",
+      selLight: "#f6f669",
+      selDark: "#baca2b",
+      lastLight: "#cdd16f",
+      lastDark: "#aaa23a",
+    },
+  },
+  forest: {
+    label: "Forest",
+    palette: {
+      light: "#dce8c6",
+      dark: "#6b8f4e",
+      selLight: "#e8f5a0",
+      selDark: "#8faa3c",
+      lastLight: "#c5e89a",
+      lastDark: "#5a7d38",
+    },
+  },
+  ocean: {
+    label: "Ocean",
+    palette: {
+      light: "#d4e4f7",
+      dark: "#5b7c99",
+      selLight: "#a8d4ff",
+      selDark: "#4a90c4",
+      lastLight: "#9ec5eb",
+      lastDark: "#3d6d8f",
+    },
+  },
+  slate: {
+    label: "Slate",
+    palette: {
+      light: "#c8cdd3",
+      dark: "#5a6068",
+      selLight: "#e2e8f0",
+      selDark: "#94a3b8",
+      lastLight: "#b8c0c8",
+      lastDark: "#4b5563",
+    },
+  },
+  highContrast: {
+    label: "High contrast",
+    palette: {
+      light: "#ffffff",
+      dark: "#2d2d2d",
+      selLight: "#ffff00",
+      selDark: "#cccc00",
+      lastLight: "#e0e0e0",
+      lastDark: "#404040",
+    },
+  },
+};
 
 /** SVG for orange mercenary pieces (id contains mercenary marker). */
 function orangeMercenaryPieceImage(
@@ -636,11 +716,13 @@ function SquareEl({
   isPuppet,
   isIlkkan,
   viewFlipped,
+  squarePalette,
 }: {
   row: number;
   col: number;
   /** When true (black in online MP), rank/file labels sit on the rotated edges. */
   viewFlipped?: boolean;
+  squarePalette: BoardThemePalette;
   size: number;
   piece: { type: PieceType; color: Color } | null;
   isSelected: boolean;
@@ -663,12 +745,13 @@ function SquareEl({
   isIlkkan?: boolean;
 }) {
   const vf = !!viewFlipped;
+  const pal = squarePalette;
   const light = (row + col) % 2 === 0;
-  let bg = light ? LIGHT_SQ : DARK_SQ;
+  let bg = light ? pal.light : pal.dark;
   if (isPermaWinter) bg = light ? "#dbeafe" : "#7dd3fc";
   else if (isCheckKing) bg = "#c82020";
-  else if (isSelected) bg = light ? SEL_LIGHT : SEL_DARK;
-  else if (isLastMove) bg = light ? LAST_LIGHT : LAST_DARK;
+  else if (isSelected) bg = light ? pal.selLight : pal.selDark;
+  else if (isLastMove) bg = light ? pal.lastLight : pal.lastDark;
   const dot = size * 0.3,
     ring = size * 0.07;
   const isMonolith = piece?.type === "M";
@@ -697,7 +780,7 @@ function SquareEl({
             ...(vf ? { right: 3 } : { left: 3 }),
             fontSize: Math.max(9, size * 0.18),
             fontWeight: 700,
-            color: light ? DARK_SQ : LIGHT_SQ,
+            color: light ? pal.dark : pal.light,
             userSelect: "none",
             lineHeight: 1,
           }}
@@ -713,7 +796,7 @@ function SquareEl({
             right: 3,
             fontSize: Math.max(9, size * 0.18),
             fontWeight: 700,
-            color: light ? DARK_SQ : LIGHT_SQ,
+            color: light ? pal.dark : pal.light,
             userSelect: "none",
             lineHeight: 1,
           }}
@@ -1589,7 +1672,7 @@ function ShopPanel({
         a.rarity === r &&
         !NON_PURCHASABLE.has(a.id) &&
         !atMax(a.id) &&
-        !augmentExcludedByPrereq(a.id, ownedIds),
+        augmentUnlockedForShop(a.id, ownedIds),
     ),
   })).filter((g) => g.augments.length > 0);
 
@@ -1955,9 +2038,13 @@ function AugmentSelector({
       ? "😤 Blind Rage — bonus pick!"
       : trigger?.reason === "bloodlust"
         ? "🩸 Bloodlust Bonus!"
-        : trigger?.milestoneType
-          ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
-          : null;
+        : trigger?.reason === "promotion"
+          ? "♕ Promotion bonus!"
+          : trigger?.reason === "queen-capture"
+            ? "👑 Queen captured — bonus pick!"
+            : trigger?.milestoneType
+              ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
+              : null;
   return (
     <div
       style={{
@@ -2211,6 +2298,9 @@ type SpellState = {
   necroPPActive: boolean;
   hasNecroPPTargets: boolean;
   onNecroPP: () => void;
+  littleBigManCharges: number;
+  littleBigManActive: boolean;
+  onLittleBigMan: () => void;
   ilkkanAvailable: boolean;
   ilkkanActive: boolean;
   onIlkkan: () => void;
@@ -2427,6 +2517,16 @@ function PlayerBar({
               title="Place a revived queen on an empty square of your back rank"
             />
           )}
+        {canAct && spells.littleBigManCharges > 0 && (
+          <SpellButton
+            icon="👶👑"
+            label="LBM"
+            active={spells.littleBigManActive}
+            count={spells.littleBigManCharges}
+            onClick={spells.onLittleBigMan}
+            title="Choose a rook-file pawn (a/h) — it moves like a queen for 4 full rounds"
+          />
+        )}
         {canAct && spells.ilkkanAvailable && (
           <SpellButton
             icon="🧑"
@@ -2671,6 +2771,8 @@ export interface MpConfig {
 export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [boardPx, setBoardPx] = useState(320);
+  const [boardThemeId, setBoardThemeId] = useState<BoardThemeId>("classic");
+  const boardPalette = BOARD_THEMES[boardThemeId].palette;
 
   const [game, setGame] = useState<ChessState>(createInitialState);
 
@@ -2910,6 +3012,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     useState(0);
   const [whiteNecroPPCharges, setWhiteNecroPPCharges] = useState(0);
   const [blackNecroPPCharges, setBlackNecroPPCharges] = useState(0);
+  const [whiteLittleBigManCharges, setWhiteLittleBigManCharges] = useState(0);
+  const [blackLittleBigManCharges, setBlackLittleBigManCharges] = useState(0);
+  const [littleBigManMode, setLittleBigManMode] = useState(false);
   const [whiteBlindRageDone, setWhiteBlindRageDone] = useState(false);
   const [blackBlindRageDone, setBlackBlindRageDone] = useState(false);
 
@@ -3037,30 +3142,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         else setBlackBloodbendingPlusCharges((n) => n + 1);
       }
       if (aug.id === "little-big-man") {
-        const fullR = Math.min(whiteTurnCount, blackTurnCount) + 4;
-        setGame((g) => {
-          const b = getDerivedBoard(g);
-          const n = b.length;
-          const off = (n - 8) / 2;
-          const row = color === "white" ? 6 + off : 1 + off;
-          for (let ci = 0; ci < n; ci++) {
-            const p = b[row][ci];
-            if (p?.type === "P" && p.color === color && p.id) {
-              return color === "white"
-                ? {
-                    ...g,
-                    littleBigManWhiteId: p.id,
-                    littleBigManWhiteExpiresAtFullRound: fullR,
-                  }
-                : {
-                    ...g,
-                    littleBigManBlackId: p.id,
-                    littleBigManBlackExpiresAtFullRound: fullR,
-                  };
-            }
-          }
-          return g;
-        });
+        if (color === "white") setWhiteLittleBigManCharges((n) => n + 1);
+        else setBlackLittleBigManCharges((n) => n + 1);
       }
     },
     [
@@ -3175,6 +3258,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackBloodbendingPlusCharges,
     whiteNecroPPCharges,
     blackNecroPPCharges,
+    whiteLittleBigManCharges,
+    blackLittleBigManCharges,
   });
 
   // Apply a snapshot received from the opponent
@@ -3323,6 +3408,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackNecroPPCharges(
       (g as { blackNecroPPCharges?: number }).blackNecroPPCharges ?? 0,
     );
+    setWhiteLittleBigManCharges(
+      (g as { whiteLittleBigManCharges?: number }).whiteLittleBigManCharges ??
+        0,
+    );
+    setBlackLittleBigManCharges(
+      (g as { blackLittleBigManCharges?: number }).blackLittleBigManCharges ??
+        0,
+    );
     setPawnPlaceFor(
       (g as { pawnPlaceFor?: Color | null }).pawnPlaceFor ?? null,
     );
@@ -3347,6 +3440,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBloodbendingMode(false);
     setBloodbendingPlusMode(false);
     setNecroPPMode(false);
+    setLittleBigManMode(false);
     setIlkkanMode(false);
     setSwapMode(false);
     setSwapFirst(null);
@@ -3400,13 +3494,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // ── Pre-game picks ───────────────────────────────────────────────────────
 
   const handleStart = () => {
-    setOfferedToWhite(rollAugments(pickAugmentCount([])));
+    setOfferedToWhite(rollBonusAugments(pickAugmentCount([]), []));
     setPhase("white-augment");
   };
   const handleWhitePick = (aug: Augment) => {
     setWhiteAugments([aug]);
     grantPickedEffects(aug, "white", [aug], []);
-    setOfferedToBlack(rollAugments(pickAugmentCount([aug]), [aug.id]));
+    setOfferedToBlack(rollBonusAugments(pickAugmentCount([aug]), [aug]));
     setPhase("black-augment");
   };
   const handleBlackPick = (aug: Augment) => {
@@ -3422,11 +3516,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       setCurrentTrigger(trigger);
       const playerAugs = trigger.color === "white" ? wAugs : bAugs;
       setMidGameOffered(
-        rollAugments(
-          pickAugmentCount(playerAugs),
-          getExcludeForPlayer(playerAugs),
-          getWeightsForPlayer(playerAugs),
-        ),
+        rollBonusAugments(pickAugmentCount(playerAugs), playerAugs),
       );
     },
     [],
@@ -3489,13 +3579,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const [first, ...rest] = pending;
         setCurrentTrigger(first);
         const pAugs = first.color === "white" ? newWAugs : newBAugs;
-        setMidGameOffered(
-          rollAugments(
-            pickAugmentCount(pAugs),
-            getExcludeForPlayer(pAugs),
-            getWeightsForPlayer(pAugs),
-          ),
-        );
+        setMidGameOffered(rollBonusAugments(pickAugmentCount(pAugs), pAugs));
         setAugmentQueue(rest);
       }
       requestSnapshot();
@@ -3517,6 +3601,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const ownedCount = playerAugs.filter((a) => a.id === aug.id).length;
       if (ownedCount >= (MAX_STACK[aug.id] ?? 1)) return;
+      const ownedIds = playerAugs.map((a) => a.id);
+      if (!augmentUnlockedForShop(aug.id, ownedIds)) return;
       const tierBought = color === "white" ? whiteTierBought : blackTierBought;
       const cost = getShopCost(aug.rarity, tierBought[aug.rarity]);
       const currentGold = color === "white" ? game.goldWhite : game.goldBlack;
@@ -4264,6 +4350,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         else setBlackCaptureCount(newCount);
       }
 
+      if (promotion) {
+        milestoneTriggers.push({ color: movingColor, reason: "promotion" });
+      }
+      if (
+        capturedType === "Q" &&
+        !victimWasMercenary &&
+        peaceTreatyMovesLeft <= 0
+      ) {
+        milestoneTriggers.push({
+          color: movingColor,
+          reason: "queen-capture",
+        });
+      }
+
       const blindEligible =
         capturedType === "N" &&
         !victimWasMercenary &&
@@ -4282,11 +4382,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const pAugsForRoll = movingColor === "white" ? wAugs0 : bAugs0;
         setBlindRagePickColor(movingColor);
         setBlindRageOffered(
-          rollAugments(
-            pickAugmentCount(pAugsForRoll),
-            getExcludeForPlayer(pAugsForRoll),
-            getWeightsForPlayer(pAugsForRoll),
-          ),
+          rollBonusAugments(pickAugmentCount(pAugsForRoll), pAugsForRoll),
         );
       } else if (milestoneTriggers.length > 0) {
         const [first, ...rest] = milestoneTriggers;
@@ -4295,12 +4391,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const bAugs =
           movingColor === "black" ? [...blackAugments] : blackAugments;
         setCurrentTrigger(first);
+        const pickAugs = movingColor === "white" ? wAugs : bAugs;
         setMidGameOffered(
-          rollAugments(
-            pickAugmentCount(movingColor === "white" ? wAugs : bAugs),
-            getExcludeForPlayer(movingColor === "white" ? wAugs : bAugs),
-            getWeightsForPlayer(movingColor === "white" ? wAugs : bAugs),
-          ),
+          rollBonusAugments(pickAugmentCount(pickAugs), pickAugs),
         );
         if (rest.length > 0) setAugmentQueue((prev) => [...prev, ...rest]);
       }
@@ -4473,6 +4566,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         (augRestored as { blackNecroPPCharges?: number })
           .blackNecroPPCharges ?? 0,
       );
+      setWhiteLittleBigManCharges(
+        (augRestored as { whiteLittleBigManCharges?: number })
+          .whiteLittleBigManCharges ?? 0,
+      );
+      setBlackLittleBigManCharges(
+        (augRestored as { blackLittleBigManCharges?: number })
+          .blackLittleBigManCharges ?? 0,
+      );
     }
     setSelected(null);
     setValidMoves([]);
@@ -4480,6 +4581,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setNecroMode(false);
     setNecroPlusMode(false);
     setNecroPPMode(false);
+    setLittleBigManMode(false);
     setBloodbendingMode(false);
     setBloodbendingPlusMode(false);
     setRoyalEdMode(false);
@@ -4522,6 +4624,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setPawnPlaceFor(null);
     setBloodbendingPlusMode(false);
     setNecroPPMode(false);
+    setLittleBigManMode(false);
   };
 
   const handleToggleFreeze = useCallback(() => {
@@ -4539,6 +4642,28 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     clearModes();
     setBloodbendingPlusMode(e);
   }, [bloodbendingPlusMode]);
+  const handleToggleLittleBigMan = useCallback(() => {
+    const entering = !littleBigManMode;
+    clearModes();
+    setLittleBigManMode(entering);
+    if (entering) {
+      const bs = getDerivedBoard(game).length;
+      const pawns: [number, number][] = [];
+      getDerivedBoard(game).forEach((row, r) =>
+        row.forEach((p, c) => {
+          if (
+            p?.type === "P" &&
+            p.color === game.turn &&
+            p.id &&
+            isRookFileCol(c, bs)
+          )
+            pawns.push([r, c]);
+        }),
+      );
+      setValidMoves(pawns);
+      if (pawns.length === 0) setLittleBigManMode(false);
+    }
+  }, [littleBigManMode, game]);
   const handleToggleNecro = useCallback(() => {
     const entering = !necroMode;
     clearModes();
@@ -4841,6 +4966,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           let newGState: ChessState = syncStateFromBoard(
             {
@@ -4897,6 +5024,40 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setSelected(null);
         setValidMoves([]);
         requestSnapshot();
+        return;
+      }
+
+      if (littleBigManMode) {
+        const bsLbm = getDerivedBoard(game).length;
+        if (
+          piece &&
+          piece.type === "P" &&
+          piece.color === game.turn &&
+          piece.id &&
+          isRookFileCol(c, bsLbm)
+        ) {
+          const fullR = Math.min(whiteTurnCount, blackTurnCount) + 4;
+          const pid = piece.id;
+          setGame((g) =>
+            game.turn === "white"
+              ? {
+                  ...g,
+                  littleBigManWhiteId: pid,
+                  littleBigManWhiteExpiresAtFullRound: fullR,
+                }
+              : {
+                  ...g,
+                  littleBigManBlackId: pid,
+                  littleBigManBlackExpiresAtFullRound: fullR,
+                },
+          );
+          if (game.turn === "white") setWhiteLittleBigManCharges((n) => n - 1);
+          else setBlackLittleBigManCharges((n) => n - 1);
+          requestSnapshot();
+        }
+        setLittleBigManMode(false);
+        setSelected(null);
+        setValidMoves([]);
         return;
       }
 
@@ -4975,6 +5136,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setGame(newGState);
           if (playerColor === "white") setWhiteNecroPPCharges((n) => n - 1);
@@ -5043,6 +5206,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -5209,6 +5374,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setGame(newG);
           if (game.turn === "white") setWhiteBloodbendingPlusCharges((n) => n - 1);
@@ -5269,6 +5436,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setGame(newG);
           if (game.turn === "white") setWhiteBloodbendingCharges((n) => n - 1);
@@ -5352,6 +5521,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setGame(newGState);
           if (playerColor === "white") {
@@ -5628,6 +5799,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackBloodbendingPlusCharges,
             whiteNecroPPCharges,
             blackNecroPPCharges,
+            whiteLittleBigManCharges,
+            blackLittleBigManCharges,
           }]);
           setShopOpen(false);
           const newTurnCount =
@@ -5875,8 +6048,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       freezeMode,
       bloodbendingMode,
       bloodbendingPlusMode,
+      littleBigManMode,
       necroMode,
       necroPPMode,
+      whiteLittleBigManCharges,
+      blackLittleBigManCharges,
+      whiteTurnCount,
+      blackTurnCount,
       royalEdMode,
       whatMode,
       whatSelected,
@@ -5971,6 +6149,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackBloodbendingPlusCharges(0);
     setWhiteNecroPPCharges(0);
     setBlackNecroPPCharges(0);
+    setWhiteLittleBigManCharges(0);
+    setBlackLittleBigManCharges(0);
+    setLittleBigManMode(false);
     setFrozenSquare(null);
     setFrozenExpireAfter(null);
     setFreezeMode(false);
@@ -6223,6 +6404,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     hasNecroPPTargets:
       color === "white" ? whiteHasNecroPPTargets : blackHasNecroPPTargets,
     onNecroPP: spellGuard(handleToggleNecroPP),
+    littleBigManCharges:
+      color === "white" ? whiteLittleBigManCharges : blackLittleBigManCharges,
+    littleBigManActive: littleBigManMode && game.turn === color,
+    onLittleBigMan: spellGuard(handleToggleLittleBigMan),
     ilkkanAvailable:
       color === "white"
         ? whiteAugments.some((a) => a.id === "ilkkan") && !whiteIlkkanChosen
@@ -6342,6 +6527,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   });
 
   const modeBanner = (() => {
+    if (littleBigManMode)
+      return {
+        text: "👶👑 Little Big Man — click one of your pawns on the a- or h-file",
+        color: "#eab308",
+      };
     if (bloodbendingPlusMode)
       return {
         text: "🩸✨ Bloodbending+ — click an enemy knight, bishop, or rook (not on blessed)",
@@ -6578,6 +6768,48 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         )}
         <div
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#64748b",
+              letterSpacing: "0.08em",
+            }}
+          >
+            BOARD
+          </span>
+          <select
+            value={boardThemeId}
+            onChange={(e) =>
+              setBoardThemeId(e.target.value as BoardThemeId)
+            }
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "4px 8px",
+              borderRadius: 6,
+              border: "1px solid #334155",
+              background: "#0f172a",
+              color: "#e2e8f0",
+              cursor: "pointer",
+            }}
+          >
+            {(Object.keys(BOARD_THEMES) as BoardThemeId[]).map((id) => (
+              <option key={id} value={id}>
+                {BOARD_THEMES[id].label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div
+          style={{
             width: boardPx,
             height: boardPx,
             display: "grid",
@@ -6685,6 +6917,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                   isWall={isWall}
                   isPuppet={isPuppet}
                   isIlkkan={isIlkkanSq}
+                  squarePalette={boardPalette}
                 />
               );
             }),
