@@ -95,7 +95,7 @@ function getExcludeForPlayer(augments: Augment[]): string[] {
   return getRollExcludeIds(augments);
 }
 
-/** Empty original pawn rank square for Pawn Shop / spawn rules (8×8 or 10×10). */
+/** Empty original pawn rank square for Pawn Shop / spawn rules (8×8 or expanded boards). */
 function isOriginalPawnSpawnSquare(
   r: number,
   c: number,
@@ -132,6 +132,8 @@ type AugmentSnapshot = {
   frozenSquare: [number, number] | null;
   frozenExpireAfter: Color | null;
   frozenTurnsLeft: number;
+  whiteDomainUsed?: boolean;
+  blackDomainUsed?: boolean;
   whiteAugmentLevels: AugmentUpgradeLevels;
   blackAugmentLevels: AugmentUpgradeLevels;
   whiteJewPawnLosses: number;
@@ -609,12 +611,21 @@ function getRoyalHouseholdDests(
 
 // ─── Board expansion helpers ──────────────────────────────────────────────────
 
-function expandGameBoard(g: ChessState): ChessState {
-  const newBoard: Board = Array(10)
+function expandGameBoard(g: ChessState, expander: Color): ChessState {
+  const oldBoard = getDerivedBoard(g);
+  const oldN = oldBoard.length;
+  const newN = oldN + 2;
+  const off = (newN - 8) / 2;
+  const newBoard: Board = Array(newN)
     .fill(null)
-    .map(() => Array(10).fill(null));
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++) newBoard[r + 1][c + 1] = getDerivedBoard(g)[r][c];
+    .map(() => Array(newN).fill(null));
+  for (let r = 0; r < oldN; r++)
+    for (let c = 0; c < oldN; c++)
+      newBoard[r + 1][c + 1] = oldBoard[r][c];
+  const backRow = expander === "white" ? 7 + off : off;
+  newBoard[backRow][0] = { type: "R", color: expander };
+  newBoard[backRow][newN - 1] = { type: "R", color: expander };
+
   return syncStateFromBoard(
     {
       ...g,
@@ -645,13 +656,26 @@ function expandGameBoard(g: ChessState): ChessState {
 
 function getFileChar(col: number, boardSize: number): string {
   if (boardSize === 8) return String.fromCharCode(97 + col);
-  if (col === 0) return "x";
-  if (col === boardSize - 1) return "i";
-  return String.fromCharCode(96 + col);
+  const off = (boardSize - 8) / 2;
+  const innerRight = boardSize - 1 - off;
+  if (boardSize >= 12) {
+    if (col === off - 2) return "y";
+    if (col === off - 1) return "x";
+    if (col === innerRight + 1) return "i";
+    if (col === innerRight + 2) return "j";
+  } else {
+    if (col === off - 1) return "x";
+    if (col === innerRight + 1) return "i";
+  }
+  if (col >= off && col < off + 8)
+    return String.fromCharCode(97 + (col - off));
+  return "?";
 }
 
 function getRankLabel(row: number, boardSize: number): string {
-  return boardSize === 8 ? String(8 - row) : String(9 - row);
+  if (boardSize === 8) return String(8 - row);
+  const off = (boardSize - 8) / 2;
+  return String(8 + off - row);
 }
 
 // ─── Board themes (local cosmetic) ───────────────────────────────────────────
@@ -1401,8 +1425,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     [],
   );
 
-  // Domain Expansion
-  const [boardExpanded, setBoardExpanded] = useState(false);
+  // Domain Expansion — each side may expand once (8→10→12)
   const [whiteDomainUsed, setWhiteDomainUsed] = useState(false);
   const [blackDomainUsed, setBlackDomainUsed] = useState(false);
 
@@ -1534,7 +1557,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     ...EMPTY_TIER,
   });
 
-  const boardSize = boardExpanded ? 10 : 8;
+  const boardSize = game.occupancy.length;
   const { boardPx, sqSize, stageMinHeight } = useBoardDimensions(
     boardSize,
     boardStageRef,
@@ -1652,6 +1675,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     frozenSquare,
     frozenExpireAfter,
     frozenTurnsLeft,
+    whiteDomainUsed,
+    blackDomainUsed,
     whiteAugmentLevels,
     blackAugmentLevels,
     whiteJewPawnLosses,
@@ -1706,6 +1731,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     blackLittleBigManCharges,
   }), [
     frozenSquare, frozenExpireAfter, frozenTurnsLeft,
+    whiteDomainUsed, blackDomainUsed,
     whiteAugmentLevels, blackAugmentLevels, whiteJewPawnLosses, blackJewPawnLosses,
     whiteRoyalEdUsesLeft, blackRoyalEdUsesLeft, deathNoteTargets,
     activePuppetSquare, activePuppetColor, whiteContractTarget, blackContractTarget,
@@ -1766,7 +1792,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     whiteDNUsed,
     blackDNUsed,
     deathNoteTargets,
-    boardExpanded,
+    boardExpanded: whiteDomainUsed || blackDomainUsed,
     whiteDomainUsed,
     blackDomainUsed,
     nextEventTurn,
@@ -1879,9 +1905,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setWhiteDNUsed(g.whiteDNUsed as boolean);
     setBlackDNUsed(g.blackDNUsed as boolean);
     setDeathNoteTargets(normalizeDeathNoteTargets(g.deathNoteTargets));
-    setBoardExpanded(g.boardExpanded as boolean);
-    setWhiteDomainUsed(g.whiteDomainUsed as boolean);
-    setBlackDomainUsed(g.blackDomainUsed as boolean);
+    setWhiteDomainUsed(!!g.whiteDomainUsed);
+    setBlackDomainUsed(!!g.blackDomainUsed);
     setNextEventTurn(g.nextEventTurn as number);
     setPendingEvent(g.pendingEvent as GameEvent | null);
     setPeaceTreatyMovesLeft(g.peaceTreatyMovesLeft as number);
@@ -3108,17 +3133,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     if (gameHistory.length < 2) return;
     const restored = gameHistory[gameHistory.length - 2];
     const augRestored = augmentHistory[augmentHistory.length - 2];
-    // Cancel domain expansion if the restored board is smaller than current
-    if (restored.occupancy.length < game.occupancy.length) {
-      setBoardExpanded(false);
-      setBoardSize(8);
-    }
     setGame(restored);
     setBoardSize(restored.occupancy.length);
     setGameHistory((h) => h.slice(0, -2));
     setAugmentHistory((h) => h.slice(0, -2));
     triggersAfterBlindRageRef.current = [];
     if (augRestored) {
+      setWhiteDomainUsed(augRestored.whiteDomainUsed ?? false);
+      setBlackDomainUsed(augRestored.blackDomainUsed ?? false);
       setFrozenSquare(augRestored.frozenSquare);
       setFrozenExpireAfter(augRestored.frozenExpireAfter);
       setFrozenTurnsLeft(augRestored.frozenTurnsLeft ?? 0);
@@ -3482,11 +3504,16 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setPuppetMode(e);
   }, [puppetMode]);
   const handleDomainExpansion = useCallback(() => {
-    if (boardExpanded) return;
-    setBoardSize(10);
-    const expanded = expandGameBoard(game);
+    const curBoard = getDerivedBoard(game);
+    const curN = curBoard.length;
+    if (curN >= 12) return;
+    const expander = game.turn === "black" ? "black" : "white";
+    if (expander === "white" && whiteDomainUsed) return;
+    if (expander === "black" && blackDomainUsed) return;
+
+    const expanded = expandGameBoard(game, expander);
+    setBoardSize(curN + 2);
     setGame(recomputeStatus(expanded));
-    setBoardExpanded(true);
     if (game.turn === "white") setWhiteDomainUsed(true);
     else setBlackDomainUsed(true);
     if (frozenSquare)
@@ -3532,11 +3559,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     clearModes();
   }, [
     game,
-    boardExpanded,
+    whiteDomainUsed,
+    blackDomainUsed,
     frozenSquare,
     selected,
     sakoSelected,
     whatSelected,
+    activePuppetSquare,
+    swapFirst,
     whiteContractPieceId,
     blackContractPieceId,
   ]);
@@ -4608,7 +4638,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setBlackDNUsed(false);
     setDeathNoteMode(false);
     setDeathNoteTargets([]);
-    setBoardExpanded(false);
     setWhiteDomainUsed(false);
     setBlackDomainUsed(false);
     setBoardSize(8);
@@ -4883,10 +4912,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     domainAvailable:
       color === "white"
         ? !whiteDomainUsed &&
-          !boardExpanded &&
+          game.occupancy.length < 12 &&
           whiteAugments.some((a) => a.id === "domain-expansion")
         : !blackDomainUsed &&
-          !boardExpanded &&
+          game.occupancy.length < 12 &&
           blackAugments.some((a) => a.id === "domain-expansion"),
     onDomain: spellGuard(handleDomainExpansion),
     monolithPlaceAvailable:
