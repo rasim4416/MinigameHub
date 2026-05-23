@@ -192,13 +192,24 @@ export function syncStateFromBoard(state: ChessState, board: Board): ChessState 
   const occupancy: Occupancy = board.map((row) =>
     row.map((sq) => {
       if (!sq) return null;
-      let id = sq.id;
+      const normalized =
+        sq.color === "orange"
+          ? ensureMercenaryPieceIdOnSync(sq)
+          : sq;
+      let id = normalized.id;
       if (!id) id = genFallbackPieceId();
-      pieces[id] = { id, type: sq.type, color: sq.color };
+      pieces[id] = { id, type: normalized.type, color: normalized.color };
       return id;
     }),
   );
   return { ...state, occupancy, pieces };
+}
+
+/** Inline to avoid circular imports with mercenaryMoves (orange ids must include "mercenary"). */
+function ensureMercenaryPieceIdOnSync(sq: Piece): Piece {
+  if (typeof sq.id === "string" && sq.id.includes("mercenary")) return sq;
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  return { ...sq, id: `mercenary-auto-${suffix}` };
 }
 
 /** True if payload is legacy single-layer state (only `board`). */

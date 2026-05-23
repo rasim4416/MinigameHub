@@ -11,6 +11,22 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
+/** Do not serve SPA HTML for static public assets (mercenary SVGs, audio, etc.). */
+const STATIC_PUBLIC_FILE =
+  /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json)(\?.*)?$/i;
+
+function resolveClientPublicDir(): string {
+  return path.resolve(__dirname, "..", "client", "public");
+}
+
+function resolveProductionDistDir(): string {
+  const nextToBundle = path.resolve(__dirname, "public");
+  if (fs.existsSync(nextToBundle)) return nextToBundle;
+  const repoDist = path.resolve(__dirname, "..", "dist", "public");
+  if (fs.existsSync(repoDist)) return repoDist;
+  return nextToBundle;
+}
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -44,7 +60,14 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   app.use(vite.middlewares);
+
+  const clientPublic = resolveClientPublicDir();
+  app.use(express.static(clientPublic));
+
   app.use("*", async (req, res, next) => {
+    if (STATIC_PUBLIC_FILE.test(req.path)) {
+      return next();
+    }
     const url = req.originalUrl;
 
     try {
@@ -71,7 +94,7 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
+  const distPath = resolveProductionDistDir();
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -82,7 +105,10 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("*", (req, res, next) => {
+    if (STATIC_PUBLIC_FILE.test(req.path)) {
+      return next();
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
