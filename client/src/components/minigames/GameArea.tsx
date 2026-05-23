@@ -180,12 +180,19 @@ const GameArea = ({ game }: GameAreaProps) => {
     );
   };
   
+  const isChess = game.id === "chess";
+
   return (
     <Card className={cn(
-      "w-full h-[50vh] md:h-[65vh] transition-all duration-500 relative overflow-hidden border-2",
-      isDedicatedGame
+      "w-full transition-all duration-500 relative border-2",
+      isChess
+        ? "mx-auto flex min-h-[min(720px,calc(100dvh-8rem))] max-w-5xl flex-col overflow-visible p-0 h-auto"
+        : "h-[50vh] md:h-[65vh] overflow-hidden",
+      isDedicatedGame && !isChess
         ? "flex flex-col p-0"
-        : "flex items-center justify-center",
+        : isDedicatedGame && isChess
+          ? "flex flex-col p-0"
+          : "flex items-center justify-center",
       isLoading ? "opacity-50" : "opacity-100",
       isDedicatedGame ? "" : (gameStarted ? "border-primary" : "border-muted")
     )}>

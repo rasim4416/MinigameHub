@@ -21,13 +21,13 @@ const MinigamePage = () => {
   }, [backgroundMusic]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-950 text-white">
+    <div className="flex h-screen flex-col overflow-hidden bg-gray-950 text-white">
       <GameHeader
         title={game?.title || "Game"}
         showHomeButton={true}
       />
 
-      <main className="flex-1 flex flex-col items-center justify-start p-4 md:p-8">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto overflow-x-hidden p-4 md:p-8">
         {game && game.isAvailable ? (
           <GameArea game={game} />
         ) : (

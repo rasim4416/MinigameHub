@@ -1,0 +1,94 @@
+import type { Color, PieceType } from "./engine";
+import type { Augment } from "./augments";
+
+export type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
+
+export type AugmentTrigger = {
+  color: Color;
+  reason: "milestone" | "bloodlust" | "promotion" | "queen-capture";
+  milestoneType?: PieceType;
+};
+
+export type TierBought = {
+  common: number;
+  uncommon: number;
+  rare: number;
+  epic: number;
+  legendary: number;
+};
+
+export type SpellState = {
+  freezeCharges: number;
+  freezeActive: boolean;
+  onFreeze: () => void;
+  necroCharges: number;
+  necroActive: boolean;
+  hasNecroTargets: boolean;
+  onNecro: () => void;
+  necroPlusCharges: number;
+  necroPlusActive: boolean;
+  hasNecroPlusTargets: boolean;
+  onNecroPlus: () => void;
+  bloodbendingCharges: number;
+  bloodbendingActive: boolean;
+  onBloodbending: () => void;
+  bloodbendingPlusCharges: number;
+  bloodbendingPlusActive: boolean;
+  onBloodbendingPlus: () => void;
+  necroPPCharges: number;
+  necroPPActive: boolean;
+  hasNecroPPTargets: boolean;
+  onNecroPP: () => void;
+  littleBigManCharges: number;
+  littleBigManActive: boolean;
+  onLittleBigMan: () => void;
+  ilkkanAvailable: boolean;
+  ilkkanActive: boolean;
+  onIlkkan: () => void;
+  royalEdAvailable: boolean;
+  royalEdActive: boolean;
+  onRoyalEd: () => void;
+  whatAvailable: boolean;
+  whatActive: boolean;
+  onWhat: () => void;
+  sakoAvailable: boolean;
+  sakoActive: boolean;
+  onSako: () => void;
+  swapAvailable: boolean;
+  swapActive: boolean;
+  onSwap: () => void;
+  royalHouseholdAvailable: boolean;
+  royalHouseholdActive: boolean;
+  onRoyalHousehold: () => void;
+  deathNoteAvailable: boolean;
+  deathNoteActive: boolean;
+  onDeathNote: () => void;
+  domainAvailable: boolean;
+  onDomain: () => void;
+  monolithPlaceAvailable: boolean;
+  monolithPlaceActive: boolean;
+  onMonolithPlace: () => void;
+  monolithRemoveAvailable: boolean;
+  onMonolithRemove: () => void;
+  contractAvailable: boolean;
+  contractActive: boolean;
+  onContract: () => void;
+  contractTarget: [number, number] | null;
+  blessedWaterCharges: number;
+  blessedWaterActive: boolean;
+  onBlessedWater: () => void;
+  puppetAvailable: boolean;
+  puppetActive: boolean;
+  onPuppet: () => void;
+  evadeCharges: number;
+  evadeActive: boolean;
+  onEvade: () => void;
+  canUndo: boolean;
+  onUndo: () => void;
+  captureCount: number;
+  hasBloodlust: boolean;
+  shopOpen: boolean;
+  onToggleShop: () => void;
+};
+
+export type { Augment };

@@ -25,6 +25,19 @@ import {
 import { getOrangeMercenaryPieceImageCandidates } from "./mercenaryAssets";
 import { MercenaryPieceImg } from "./MercenaryPieceImg";
 import {
+  BOARD_THEMES,
+  type BoardThemeId,
+  type BoardThemePalette,
+} from "./boardThemes";
+import { chessShell } from "./chessTheme";
+import type { GamePhase, AugmentTrigger, TierBought, SpellState } from "./chessTypes";
+import { useBoardDimensions } from "./hooks/useBoardDimensions";
+import { BoardStage } from "./ui/BoardStage";
+import { PlayerBar } from "./ui/PlayerBar";
+import { ShopPanel } from "./ui/ShopPanel";
+import { AugmentSelector } from "./ui/AugmentSelector";
+import { StartScreen } from "./ui/StartScreen";
+import {
   applyLostMercenaryAfterFullMove,
   applyMercenaryPatrolAfterFullMove,
   isMercenaryPiece,
@@ -88,20 +101,7 @@ function isPermaFrostSquare(state: ChessState, r: number, c: number): boolean {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 type Milestones = { knight: boolean; bishop: boolean; rook: boolean };
-type AugmentTrigger = {
-  color: Color;
-  reason: "milestone" | "bloodlust" | "promotion" | "queen-capture";
-  milestoneType?: PieceType;
-};
-type TierBought = {
-  common: number;
-  uncommon: number;
-  rare: number;
-  epic: number;
-  legendary: number;
-};
 type DeathNoteTarget = {
   pieceId: string;
   turnsLeft: number;
@@ -587,83 +587,6 @@ function getRankLabel(row: number, boardSize: number): string {
 }
 
 // ─── Board themes (local cosmetic) ───────────────────────────────────────────
-
-type BoardThemeId =
-  | "classic"
-  | "forest"
-  | "ocean"
-  | "slate"
-  | "highContrast";
-
-type BoardThemePalette = {
-  light: string;
-  dark: string;
-  selLight: string;
-  selDark: string;
-  lastLight: string;
-  lastDark: string;
-};
-
-const BOARD_THEMES: Record<
-  BoardThemeId,
-  { label: string; palette: BoardThemePalette }
-> = {
-  classic: {
-    label: "Classic",
-    palette: {
-      light: "#f0d9b5",
-      dark: "#b58863",
-      selLight: "#f6f669",
-      selDark: "#baca2b",
-      lastLight: "#cdd16f",
-      lastDark: "#aaa23a",
-    },
-  },
-  forest: {
-    label: "Forest",
-    palette: {
-      light: "#dce8c6",
-      dark: "#6b8f4e",
-      selLight: "#e8f5a0",
-      selDark: "#8faa3c",
-      lastLight: "#c5e89a",
-      lastDark: "#5a7d38",
-    },
-  },
-  ocean: {
-    label: "Ocean",
-    palette: {
-      light: "#d4e4f7",
-      dark: "#5b7c99",
-      selLight: "#a8d4ff",
-      selDark: "#4a90c4",
-      lastLight: "#9ec5eb",
-      lastDark: "#3d6d8f",
-    },
-  },
-  slate: {
-    label: "Slate",
-    palette: {
-      light: "#c8cdd3",
-      dark: "#5a6068",
-      selLight: "#e2e8f0",
-      selDark: "#94a3b8",
-      lastLight: "#b8c0c8",
-      lastDark: "#4b5563",
-    },
-  },
-  highContrast: {
-    label: "High contrast",
-    palette: {
-      light: "#ffffff",
-      dark: "#2d2d2d",
-      selLight: "#ffff00",
-      selDark: "#cccc00",
-      lastLight: "#e0e0e0",
-      lastDark: "#404040",
-    },
-  },
-};
 
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
@@ -1257,1465 +1180,6 @@ function PromotionDialog({
   );
 }
 
-// ─── GoldBadge ────────────────────────────────────────────────────────────────
-
-function GoldBadge({ gold, active }: { gold: number; active: boolean }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
-        background:
-          gold > 0
-            ? "linear-gradient(135deg,#1c1500,#2d2000)"
-            : "rgba(255,255,255,0.04)",
-        border: `1px solid ${gold > 0 ? "rgba(234,179,8,0.35)" : "rgba(255,255,255,0.08)"}`,
-        borderRadius: 20,
-        padding: "2px 8px 2px 5px",
-        transition: "all 0.3s",
-        boxShadow: gold > 0 && active ? "0 0 8px rgba(234,179,8,0.25)" : "none",
-      }}
-    >
-      <div
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          flexShrink: 0,
-          background:
-            "radial-gradient(ellipse at 35% 30%,#fde047,#eab308 55%,#a16207)",
-          boxShadow:
-            "inset 0 0 0 1.5px rgba(255,255,255,0.25),0 1px 3px rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 8,
-            fontWeight: 900,
-            color: "#422006",
-            lineHeight: 1,
-          }}
-        >
-          G
-        </span>
-      </div>
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 800,
-          color: gold > 0 ? "#facc15" : "#4b5563",
-          lineHeight: 1,
-          minWidth: 14,
-          textAlign: "right",
-        }}
-      >
-        {gold}
-      </span>
-    </div>
-  );
-}
-
-// ─── AugmentIconChip ─────────────────────────────────────────────────────────
-
-function AugmentIconChip({
-  augment,
-  stacked,
-}: {
-  augment: Augment;
-  stacked?: boolean;
-}) {
-  const m = RARITY_META[augment.rarity];
-  return (
-    <div
-      title={`${augment.name}${stacked ? " ★ (×2)" : ""} — ${augment.description}`}
-      style={{
-        position: "relative",
-        width: 24,
-        height: 24,
-        flexShrink: 0,
-        cursor: "default",
-      }}
-    >
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: "50%",
-          border: `1.5px solid ${m.border}`,
-          background: "#0f172a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: `0 0 5px ${m.glow}`,
-        }}
-      >
-        <span style={{ fontSize: 10, lineHeight: 1 }}>{augment.icon}</span>
-      </div>
-      {stacked && (
-        <div
-          style={{
-            position: "absolute",
-            top: -4,
-            right: -4,
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            background: "linear-gradient(135deg,#eab308,#fde047)",
-            border: "1px solid #422006",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 0 4px rgba(234,179,8,0.7)",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 7,
-              fontWeight: 900,
-              color: "#422006",
-              lineHeight: 1,
-            }}
-          >
-            ★
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── SpellButton ─────────────────────────────────────────────────────────────
-
-function SpellButton({
-  icon,
-  label,
-  active,
-  onClick,
-  title,
-  count,
-}: {
-  icon: string;
-  label: string;
-  active?: boolean;
-  onClick: () => void;
-  title?: string;
-  count?: number;
-}) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      title={title}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 3,
-        padding: "2px 7px",
-        fontSize: 10,
-        fontWeight: 800,
-        borderRadius: 6,
-        border: `1px solid ${active ? "#06b6d4" : hov ? "#374151" : "#1f2937"}`,
-        background: active
-          ? "rgba(6,182,212,0.15)"
-          : hov
-            ? "#111827"
-            : "transparent",
-        color: active ? "#22d3ee" : hov ? "#d1d5db" : "#6b7280",
-        cursor: "pointer",
-        transition: "all 0.15s",
-        flexShrink: 0,
-        letterSpacing: "0.04em",
-        boxShadow: active ? "0 0 8px rgba(6,182,212,0.3)" : "none",
-      }}
-    >
-      <span style={{ fontSize: 11 }}>{icon}</span>
-      {label}
-      {count !== undefined && count > 0 && (
-        <span
-          style={{
-            fontSize: 9,
-            fontWeight: 900,
-            background: "#06b6d4",
-            color: "#030712",
-            borderRadius: "50%",
-            width: 14,
-            height: 14,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function UndoButton({ onUndo }: { onUndo: () => void }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onUndo}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      title="Use your Oops! undo"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        padding: "2px 8px",
-        fontSize: 10,
-        fontWeight: 800,
-        borderRadius: 6,
-        border: `1px solid ${hov ? "#6366f1" : "#374151"}`,
-        background: hov ? "#1e1b4b" : "#111827",
-        color: hov ? "#a5b4fc" : "#9ca3af",
-        cursor: "pointer",
-        transition: "all 0.15s",
-        flexShrink: 0,
-        letterSpacing: "0.04em",
-      }}
-    >
-      <span style={{ fontSize: 11 }}>↩</span>UNDO
-    </button>
-  );
-}
-
-// ─── AugmentCard (pick overlay) ───────────────────────────────────────────────
-
-function AugmentCard({
-  augment,
-  onSelect,
-}: {
-  augment: Augment;
-  onSelect: () => void;
-}) {
-  const [hov, setHov] = useState(false);
-  const m = RARITY_META[augment.rarity];
-  return (
-    <div
-      onClick={onSelect}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        width: 155,
-        padding: "18px 14px 14px",
-        borderRadius: 14,
-        position: "relative",
-        border: `2px solid ${hov ? m.border : "rgba(255,255,255,0.07)"}`,
-        background: hov ? "#0b1120" : "#080e1a",
-        cursor: "pointer",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 10,
-        boxShadow: hov
-          ? `0 0 22px ${m.glow},0 4px 16px rgba(0,0,0,0.5)`
-          : "0 2px 8px rgba(0,0,0,0.4)",
-        transform: hov
-          ? "translateY(-5px) scale(1.02)"
-          : "translateY(0) scale(1)",
-        transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-        userSelect: "none",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 14,
-          right: 14,
-          height: 3,
-          borderRadius: "0 0 3px 3px",
-          background:
-            m.shimmer ??
-            `linear-gradient(90deg,transparent,${m.border},transparent)`,
-          opacity: hov ? 1 : augment.rarity === "legendary" ? 0.8 : 0.4,
-          transition: "opacity 0.2s",
-        }}
-      />
-      <span
-        style={{
-          fontSize: 32,
-          lineHeight: 1,
-          filter: hov ? "drop-shadow(0 0 8px rgba(255,255,255,0.3))" : "none",
-          transition: "filter 0.2s",
-        }}
-      >
-        {augment.icon}
-      </span>
-      <div style={{ textAlign: "center" }}>
-        <p
-          style={{
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#f1f5f9",
-            margin: "0 0 5px",
-            letterSpacing: "0.01em",
-          }}
-        >
-          {augment.name}
-        </p>
-        <p
-          style={{
-            fontSize: 10.5,
-            color: "#64748b",
-            margin: 0,
-            lineHeight: 1.45,
-          }}
-        >
-          {augment.description}
-        </p>
-      </div>
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          padding: "2px 10px",
-          borderRadius: 20,
-          background: m.badge,
-          color: m.text,
-          border: `1px solid ${m.border}`,
-        }}
-      >
-        {m.label}
-      </div>
-    </div>
-  );
-}
-
-// ─── Shop Panel ───────────────────────────────────────────────────────────────
-
-function ShopPanel({
-  playerColor,
-  gold,
-  tierBought,
-  playerAugments,
-  onBuy,
-  onClose,
-  pawnShopNextPrice,
-  onBuyPawn,
-  pawnPlacePending,
-}: {
-  playerColor: Color;
-  gold: number;
-  tierBought: TierBought;
-  playerAugments: Augment[];
-  onBuy: (aug: Augment) => void;
-  onClose: () => void;
-  pawnShopNextPrice: number | null;
-  onBuyPawn: (() => void) | null;
-  pawnPlacePending: boolean;
-}) {
-  const RARITY_ORDER: Array<Augment["rarity"]> = [
-    "common",
-    "uncommon",
-    "rare",
-    "epic",
-    "legendary",
-  ];
-  const counts: Record<string, number> = {};
-  for (const a of playerAugments) counts[a.id] = (counts[a.id] || 0) + 1;
-  const ownedIds = Object.keys(counts);
-  const atMax = (id: string) => (counts[id] ?? 0) >= (MAX_STACK[id] ?? 1);
-  const grouped = RARITY_ORDER.map((r) => ({
-    rarity: r,
-    augments: AUGMENT_POOL.filter(
-      (a) =>
-        a.rarity === r &&
-        !NON_PURCHASABLE.has(a.id) &&
-        !atMax(a.id) &&
-        augmentUnlockedForShop(a.id, ownedIds),
-    ),
-  })).filter((g) => g.augments.length > 0);
-
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        borderTop: "2px solid #1e2d40",
-        background: "#080e1a",
-        display: "flex",
-        flexDirection: "column",
-        maxHeight: 220,
-        minHeight: 160,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "6px 14px",
-          borderBottom: "1px solid #1f2937",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 900,
-              color: "#e2e8f0",
-              letterSpacing: "0.06em",
-            }}
-          >
-            🏪 SHOP
-          </span>
-          <span
-            style={{ fontSize: 11, color: "#4b5563", letterSpacing: "0.04em" }}
-          >
-            {playerColor.toUpperCase()}'S TURN
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <GoldBadge gold={gold} active={true} />
-          <button
-            onClick={onClose}
-            style={{
-              padding: "2px 8px",
-              fontSize: 11,
-              fontWeight: 800,
-              borderRadius: 6,
-              border: "1px solid #374151",
-              background: "#111827",
-              color: "#6b7280",
-              cursor: "pointer",
-              letterSpacing: "0.04em",
-            }}
-          >
-            ✕ CLOSE
-          </button>
-        </div>
-      </div>
-
-      {/* Augment list */}
-      <div
-        style={{
-          overflowY: "auto",
-          flex: 1,
-          padding: "6px 10px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
-        {grouped.map(({ rarity, augments }) => {
-          const m = RARITY_META[rarity];
-          const bought = tierBought[rarity];
-          const nextCost = getShopCost(rarity, bought);
-          return (
-            <div key={rarity}>
-              {/* Tier header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 4,
-                }}
-              >
-                <div
-                  style={{
-                    height: 1,
-                    flex: 1,
-                    background: `linear-gradient(90deg,${m.border}66,transparent)`,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 800,
-                    letterSpacing: "0.16em",
-                    color: m.text,
-                    textTransform: "uppercase",
-                    padding: "1px 8px",
-                    borderRadius: 20,
-                    background: m.badge,
-                    border: `1px solid ${m.border}44`,
-                  }}
-                >
-                  {m.label}
-                </span>
-                <span
-                  style={{ fontSize: 9, color: "#374151", fontWeight: 600 }}
-                >
-                  next: {nextCost}g{bought > 0 ? ` (${bought} bought)` : ""}
-                </span>
-                <div
-                  style={{
-                    height: 1,
-                    width: 20,
-                    background: `linear-gradient(90deg,transparent,${m.border}66)`,
-                  }}
-                />
-              </div>
-              {/* Augment rows */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {augments.map((aug) => {
-                  const cost = getShopCost(aug.rarity, bought);
-                  const canAfford = gold >= cost;
-                  const ownedCount = playerAugments.filter(
-                    (a: Augment) => a.id === aug.id,
-                  ).length;
-                  const maxStack = MAX_STACK[aug.id] ?? 1;
-                  const isMaxed = ownedCount >= maxStack;
-                  return (
-                    <ShopRow
-                      key={aug.id}
-                      augment={aug}
-                      cost={cost}
-                      canAfford={canAfford}
-                      isMaxed={isMaxed}
-                      onBuy={() => onBuy(aug)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-        {pawnShopNextPrice != null &&
-          onBuyPawn &&
-          playerAugments.some((a) => a.id === "pawn-shop") &&
-          !pawnPlacePending && (
-            <div style={{ padding: "8px 10px", borderTop: "1px solid #1f2937" }}>
-              <div
-                style={{
-                  fontSize: 9,
-                  fontWeight: 800,
-                  letterSpacing: "0.14em",
-                  color: "#64748b",
-                  marginBottom: 6,
-                }}
-              >
-                PAWN SHOP
-              </div>
-              <ShopRow
-                augment={{
-                  id: "pawn-shop-buy",
-                  name: "Buy pawn",
-                  description: "Place on an empty original pawn square",
-                  rarity: "rare",
-                  icon: "♙",
-                }}
-                cost={pawnShopNextPrice}
-                canAfford={gold >= pawnShopNextPrice}
-                isMaxed={false}
-                onBuy={onBuyPawn}
-              />
-            </div>
-          )}
-      </div>
-    </div>
-  );
-}
-
-function ShopRow({
-  augment,
-  cost,
-  canAfford,
-  isMaxed,
-  onBuy,
-}: {
-  augment: Augment;
-  cost: number;
-  canAfford: boolean;
-  isMaxed: boolean;
-  onBuy: () => void;
-}) {
-  const [hov, setHov] = useState(false);
-  const m = RARITY_META[augment.rarity];
-  const canClick = canAfford && !isMaxed;
-  return (
-    <div
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "4px 8px",
-        borderRadius: 8,
-        background: hov && !isMaxed ? "#0f1929" : "#0b111e",
-        border: `1px solid ${hov && !isMaxed ? m.border + "66" : "#1f293766"}`,
-        transition: "all 0.15s",
-        cursor: "default",
-        opacity: isMaxed ? 0.55 : 1,
-      }}
-    >
-      {/* Icon */}
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 8,
-          background: "#0f172a",
-          border: `1px solid ${m.border}44`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontSize: 15, lineHeight: 1 }}>{augment.icon}</span>
-      </div>
-      {/* Name + desc */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: m.text,
-            lineHeight: 1.2,
-            letterSpacing: "0.02em",
-          }}
-        >
-          {augment.name}
-          {isMaxed && (
-            <span
-              style={{
-                marginLeft: 5,
-                fontSize: 9,
-                fontWeight: 700,
-                color: "#eab308",
-                letterSpacing: "0.1em",
-              }}
-            >
-              MAX
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            fontSize: 9.5,
-            color: "#475569",
-            lineHeight: 1.3,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: 260,
-          }}
-        >
-          {augment.description}
-        </div>
-      </div>
-      {/* Cost */}
-      {!isMaxed && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 900,
-              color: canAfford ? "#facc15" : "#4b5563",
-              lineHeight: 1,
-            }}
-          >
-            {cost}
-          </span>
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(ellipse at 35% 30%,#fde047,#eab308 55%,#a16207)",
-              flexShrink: 0,
-            }}
-          />
-        </div>
-      )}
-      {/* Buy button */}
-      <button
-        onClick={canClick ? onBuy : undefined}
-        disabled={!canClick}
-        style={{
-          padding: "3px 10px",
-          fontSize: 10,
-          fontWeight: 800,
-          letterSpacing: "0.06em",
-          borderRadius: 6,
-          border: "none",
-          cursor: canClick ? "pointer" : "not-allowed",
-          background: isMaxed
-            ? "#1c1500"
-            : canClick
-              ? hov
-                ? "linear-gradient(135deg,#166534,#16a34a)"
-                : "linear-gradient(135deg,#14532d,#15803d)"
-              : "#1f2937",
-          color: isMaxed ? "#eab30888" : canClick ? "#bbf7d0" : "#374151",
-          boxShadow: canClick && hov ? "0 2px 8px rgba(22,163,74,0.4)" : "none",
-          transition: "all 0.15s",
-          flexShrink: 0,
-        }}
-      >
-        {isMaxed ? "★ MAX" : canClick ? "BUY" : "—"}
-      </button>
-    </div>
-  );
-}
-
-// ─── AugmentSelector (pick overlay) ──────────────────────────────────────────
-
-const MILESTONE_LABEL: Partial<Record<PieceType, string>> = {
-  N: "First Knight Captured!",
-  B: "First Bishop Captured!",
-  R: "First Rook Captured!",
-};
-
-function AugmentSelector({
-  playerColor,
-  offered,
-  onSelect,
-  trigger,
-  pickMode = "normal",
-}: {
-  playerColor: Color;
-  offered: Augment[];
-  onSelect: (aug: Augment) => void;
-  trigger?: AugmentTrigger | null;
-  pickMode?: "normal" | "blind-rage";
-}) {
-  const isWhite = playerColor === "white";
-  const badgeLabel =
-    pickMode === "blind-rage"
-      ? "😤 Blind Rage — bonus pick!"
-      : trigger?.reason === "bloodlust"
-        ? "🩸 Bloodlust Bonus!"
-        : trigger?.reason === "promotion"
-          ? "♕ Promotion bonus!"
-          : trigger?.reason === "queen-capture"
-            ? "👑 Queen captured — bonus pick!"
-            : trigger?.milestoneType
-              ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
-              : null;
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: pickMode === "blind-rage" ? 90 : 80,
-        background: "linear-gradient(160deg,#030712 0%,#080e1f 100%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
-        padding: "16px 12px",
-      }}
-    >
-      <div style={{ textAlign: "center" }}>
-        {badgeLabel && (
-          <div
-            style={{
-              display: "inline-block",
-              marginBottom: 10,
-              padding: "4px 14px",
-              borderRadius: 20,
-              background: "linear-gradient(135deg,#1c1f2e,#2d2f45)",
-              border: `1px solid ${
-                pickMode === "blind-rage"
-                  ? "#ea580c"
-                  : trigger?.reason === "bloodlust"
-                    ? "#dc2626"
-                    : "#4f46e5"
-              }`,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              color:
-                pickMode === "blind-rage"
-                  ? "#fdba74"
-                  : trigger?.reason === "bloodlust"
-                    ? "#fca5a5"
-                    : "#818cf8",
-              textTransform: "uppercase",
-            }}
-          >
-            {badgeLabel}
-          </div>
-        )}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            marginTop: badgeLabel ? 0 : 4,
-          }}
-        >
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              flexShrink: 0,
-              background: isWhite ? "#ffffff" : "#1a0f00",
-              border: `2px solid ${isWhite ? "#94a3b8" : "#6b7280"}`,
-              boxShadow: `0 0 10px ${isWhite ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}`,
-            }}
-          />
-          <h2
-            style={{
-              fontSize: 20,
-              fontWeight: 900,
-              margin: 0,
-              letterSpacing: "0.08em",
-              color: "#f1f5f9",
-            }}
-          >
-            {playerColor.toUpperCase()}
-          </h2>
-        </div>
-        {pickMode === "blind-rage" && (
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#94a3b8",
-              margin: "8px 0 0",
-              maxWidth: 320,
-              lineHeight: 1.45,
-            }}
-          >
-            Knight captured before both sides have finished four moves each
-            (four full rounds).
-          </p>
-        )}
-        {!badgeLabel && pickMode !== "blind-rage" && (
-          <p
-            style={{
-              fontSize: 10,
-              letterSpacing: "0.2em",
-              fontWeight: 700,
-              color: "#475569",
-              margin: "6px 0 0",
-              textTransform: "uppercase",
-            }}
-          >
-            Choose your augment
-          </p>
-        )}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          justifyContent: "center",
-        }}
-      >
-        {offered.map((aug) => (
-          <AugmentCard
-            key={aug.id}
-            augment={aug}
-            onSelect={() => onSelect(aug)}
-          />
-        ))}
-      </div>
-      <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>
-        Click a card to select it
-      </p>
-    </div>
-  );
-}
-
-// ─── StartScreen ─────────────────────────────────────────────────────────────
-
-function StartScreen({ onStart }: { onStart: () => void }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 80,
-        background: "linear-gradient(160deg,#030712 0%,#080e1f 100%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 18,
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4,10px)",
-          gap: 1,
-          opacity: 0.15,
-          marginBottom: 4,
-        }}
-      >
-        {Array.from({ length: 16 }, (_, i) => (
-          <div
-            key={i}
-            style={{
-              width: 10,
-              height: 10,
-              background:
-                (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863",
-            }}
-          />
-        ))}
-      </div>
-      <span
-        style={{
-          fontSize: 48,
-          lineHeight: 1,
-          filter: "drop-shadow(0 4px 16px rgba(99,102,241,0.4))",
-        }}
-      >
-        ♟️
-      </span>
-      <div style={{ textAlign: "center" }}>
-        <h2
-          style={{
-            fontSize: 22,
-            fontWeight: 900,
-            color: "#f1f5f9",
-            margin: "0 0 6px",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Chess Augmented
-        </h2>
-        <p
-          style={{ fontSize: 12, color: "#475569", margin: 0, lineHeight: 1.6 }}
-        >
-          Classic chess · Each player picks an augment
-          <br />
-          before the game begins
-        </p>
-      </div>
-      <button
-        onClick={onStart}
-        onMouseEnter={() => setHov(true)}
-        onMouseLeave={() => setHov(false)}
-        style={{
-          padding: "11px 44px",
-          fontSize: 14,
-          fontWeight: 800,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          borderRadius: 12,
-          border: "none",
-          cursor: "pointer",
-          background: hov
-            ? "linear-gradient(135deg,#4338ca,#6366f1)"
-            : "linear-gradient(135deg,#4f46e5,#818cf8)",
-          color: "#fff",
-          boxShadow: hov
-            ? "0 6px 28px rgba(99,102,241,0.65)"
-            : "0 4px 18px rgba(99,102,241,0.45)",
-          transform: hov ? "translateY(-2px)" : "none",
-          transition: "all 0.18s",
-        }}
-      >
-        Start Game
-      </button>
-    </div>
-  );
-}
-
-// ─── PlayerBar ───────────────────────────────────────────────────────────────
-
-type SpellState = {
-  freezeCharges: number;
-  freezeActive: boolean;
-  onFreeze: () => void;
-  necroCharges: number;
-  necroActive: boolean;
-  hasNecroTargets: boolean;
-  onNecro: () => void;
-  necroPlusCharges: number;
-  necroPlusActive: boolean;
-  hasNecroPlusTargets: boolean;
-  onNecroPlus: () => void;
-  bloodbendingCharges: number;
-  bloodbendingActive: boolean;
-  onBloodbending: () => void;
-  bloodbendingPlusCharges: number;
-  bloodbendingPlusActive: boolean;
-  onBloodbendingPlus: () => void;
-  necroPPCharges: number;
-  necroPPActive: boolean;
-  hasNecroPPTargets: boolean;
-  onNecroPP: () => void;
-  littleBigManCharges: number;
-  littleBigManActive: boolean;
-  onLittleBigMan: () => void;
-  ilkkanAvailable: boolean;
-  ilkkanActive: boolean;
-  onIlkkan: () => void;
-  royalEdAvailable: boolean;
-  royalEdActive: boolean;
-  onRoyalEd: () => void;
-  whatAvailable: boolean;
-  whatActive: boolean;
-  onWhat: () => void;
-  sakoAvailable: boolean;
-  sakoActive: boolean;
-  onSako: () => void;
-  swapAvailable: boolean;
-  swapActive: boolean;
-  onSwap: () => void;
-  royalHouseholdAvailable: boolean;
-  royalHouseholdActive: boolean;
-  onRoyalHousehold: () => void;
-  deathNoteAvailable: boolean;
-  deathNoteActive: boolean;
-  onDeathNote: () => void;
-  domainAvailable: boolean;
-  onDomain: () => void;
-  monolithPlaceAvailable: boolean;
-  monolithPlaceActive: boolean;
-  onMonolithPlace: () => void;
-  monolithRemoveAvailable: boolean;
-  onMonolithRemove: () => void;
-  contractAvailable: boolean;
-  contractActive: boolean;
-  onContract: () => void;
-  contractTarget: [number, number] | null;
-  blessedWaterCharges: number;
-  blessedWaterActive: boolean;
-  onBlessedWater: () => void;
-  puppetAvailable: boolean;
-  puppetActive: boolean;
-  onPuppet: () => void;
-  evadeCharges: number;
-  evadeActive: boolean;
-  onEvade: () => void;
-  canUndo: boolean;
-  onUndo: () => void;
-  captureCount: number;
-  hasBloodlust: boolean;
-  shopOpen: boolean;
-  onToggleShop: () => void;
-};
-
-function PlayerBar({
-  color,
-  isActive,
-  isOver,
-  phase,
-  augments,
-  gold,
-  capturedPieces,
-  advantage,
-  spells,
-  showReset,
-  onReset,
-  statusLabel,
-  statusColor,
-  statusBadge,
-}: {
-  color: Color;
-  isActive: boolean;
-  isOver: boolean;
-  phase: GamePhase;
-  augments: Augment[];
-  gold: number;
-  capturedPieces: PieceType[];
-  advantage: number;
-  spells: SpellState;
-  showReset: boolean;
-  onReset: () => void;
-  statusLabel?: string;
-  statusColor?: string;
-  statusBadge?: boolean;
-}) {
-  const captureColor = opp(color);
-  const sorted = [...capturedPieces].sort(
-    (a, b) => PIECE_VALUE[b] - PIECE_VALUE[a],
-  );
-  const canAct = isActive && !isOver && phase === "playing";
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        height: 48,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 12px",
-        background: "#0a0f1a",
-        borderTop: color === "white" ? "1px solid #1f2937" : undefined,
-        borderBottom: color === "black" ? "1px solid #1f2937" : undefined,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          minWidth: 0,
-          overflow: "hidden",
-          flexWrap: "nowrap",
-        }}
-      >
-        <div
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            flexShrink: 0,
-            background: color === "white" ? "#ffffff" : "#1a0f00",
-            border: `2px solid ${color === "white" ? "#94a3b8" : "#6b7280"}`,
-            boxShadow: canAct ? "0 0 0 2px #6366f1" : "none",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            letterSpacing: "0.05em",
-            flexShrink: 0,
-            color: canAct ? "#e2e8f0" : "#6b7280",
-          }}
-        >
-          {color.toUpperCase()}
-        </span>
-        {augments.length > 0 &&
-          (() => {
-            const counts: Record<string, number> = {};
-            const ordered: Augment[] = [];
-            for (const a of augments) {
-              if (!counts[a.id]) {
-                ordered.push(a);
-                counts[a.id] = 0;
-              }
-              counts[a.id]++;
-            }
-            return (
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                {ordered.map((a) => (
-                  <AugmentIconChip
-                    key={a.id}
-                    augment={a}
-                    stacked={counts[a.id] >= 2}
-                  />
-                ))}
-              </div>
-            );
-          })()}
-        {spells.canUndo && <UndoButton onUndo={spells.onUndo} />}
-        {canAct && spells.freezeCharges > 0 && (
-          <SpellButton
-            icon="❄️"
-            label="FREEZE"
-            active={spells.freezeActive}
-            count={spells.freezeCharges}
-            onClick={spells.onFreeze}
-            title="Freeze an enemy piece for 1 opponent turn"
-          />
-        )}
-        {canAct && spells.necroCharges > 0 && spells.hasNecroTargets && (
-          <SpellButton
-            icon="💀"
-            label="REVIVE"
-            active={spells.necroActive}
-            onClick={spells.onNecro}
-            title="Resurrect a captured pawn at its home square"
-          />
-        )}
-        {canAct &&
-          spells.necroPlusCharges > 0 &&
-          spells.hasNecroPlusTargets && (
-            <SpellButton
-              icon="💀✨"
-              label="REVIVE+"
-              active={spells.necroPlusActive}
-              onClick={spells.onNecroPlus}
-              title="Revive a captured knight or bishop to your home rank"
-            />
-          )}
-        {canAct && spells.bloodbendingCharges > 0 && (
-          <SpellButton
-            icon="🩸"
-            label="BLOOD"
-            active={spells.bloodbendingActive}
-            count={spells.bloodbendingCharges}
-            onClick={spells.onBloodbending}
-            title="Flip an enemy pawn to your color"
-          />
-        )}
-        {canAct && spells.bloodbendingPlusCharges > 0 && (
-          <SpellButton
-            icon="🩸✨"
-            label="BLOOD+"
-            active={spells.bloodbendingPlusActive}
-            count={spells.bloodbendingPlusCharges}
-            onClick={spells.onBloodbendingPlus}
-            title="Flip an enemy knight, bishop, or rook to your color"
-          />
-        )}
-        {canAct &&
-          spells.necroPPCharges > 0 &&
-          spells.hasNecroPPTargets && (
-            <SpellButton
-              icon="💀💫"
-              label="REVIVE++"
-              active={spells.necroPPActive}
-              onClick={spells.onNecroPP}
-              title="Place a revived queen on an empty square of your back rank"
-            />
-          )}
-        {canAct && spells.littleBigManCharges > 0 && (
-          <SpellButton
-            icon="👶👑"
-            label="LBM"
-            active={spells.littleBigManActive}
-            count={spells.littleBigManCharges}
-            onClick={spells.onLittleBigMan}
-            title="Choose a rook-file pawn (a/h) — it moves like a queen for 4 full rounds"
-          />
-        )}
-        {canAct && spells.ilkkanAvailable && (
-          <SpellButton
-            icon="🧑"
-            label="ILKKAN"
-            active={spells.ilkkanActive}
-            onClick={spells.onIlkkan}
-            title="Click a pawn to make it İlkkan — it transforms into any R/B/N it captures"
-          />
-        )}
-        {canAct && spells.royalEdAvailable && (
-          <SpellButton
-            icon="♞"
-            label="ROYAL"
-            active={spells.royalEdActive}
-            onClick={spells.onRoyalEd}
-            title="Move your king like a knight (one time)"
-          />
-        )}
-        {canAct && spells.whatAvailable && (
-          <SpellButton
-            icon="↔️"
-            label="WHAT?"
-            active={spells.whatActive}
-            onClick={spells.onWhat}
-            title="Move one pawn sideways one square (one time)"
-          />
-        )}
-        {canAct && spells.sakoAvailable && (
-          <SpellButton
-            icon="⚓"
-            label="SAKO"
-            active={spells.sakoActive}
-            onClick={spells.onSako}
-            title="Teleport a piece to your half board (free action)"
-          />
-        )}
-        {canAct && spells.swapAvailable && (
-          <SpellButton
-            icon="🔀"
-            label="SWAP"
-            active={spells.swapActive}
-            onClick={spells.onSwap}
-            title="Exchange two of your pieces (free action, once per game)"
-          />
-        )}
-        {canAct && spells.royalHouseholdAvailable && (
-          <SpellButton
-            icon="🏰"
-            label="RAMPAGE"
-            active={spells.royalHouseholdActive}
-            onClick={spells.onRoyalHousehold}
-            title="King rampages up to 4 squares, destroys all in path"
-          />
-        )}
-        {canAct && spells.deathNoteAvailable && (
-          <SpellButton
-            icon="☠️"
-            label="DEATH"
-            active={spells.deathNoteActive}
-            onClick={spells.onDeathNote}
-            title="Mark an enemy piece (not king/queen) to die in 5 rounds"
-          />
-        )}
-        {canAct && spells.domainAvailable && (
-          <SpellButton
-            icon="♾️"
-            label="DOMAIN"
-            onClick={spells.onDomain}
-            title="DOMAIN EXPANSION — expand the board to 10×10"
-          />
-        )}
-        {canAct && spells.monolithPlaceAvailable && (
-          <SpellButton
-            icon="🗿"
-            label="PLACE"
-            active={spells.monolithPlaceActive}
-            onClick={spells.onMonolithPlace}
-            title="Place an impassable monolith on any empty square (spends a turn)"
-          />
-        )}
-        {canAct && spells.monolithRemoveAvailable && (
-          <SpellButton
-            icon="🗑️"
-            label="REMOVE"
-            active={spells.monolithPlaceActive}
-            onClick={spells.onMonolithRemove}
-            title="Remove your monolith (free action)"
-          />
-        )}
-        {canAct && spells.contractAvailable && (
-          <SpellButton
-            icon="🎯"
-            label="CONTRACT"
-            active={spells.contractActive}
-            onClick={spells.onContract}
-            title="Mark an enemy piece (not king/pawn) — capture it for 4× its value"
-          />
-        )}
-        {canAct && spells.blessedWaterCharges > 0 && (
-          <SpellButton
-            icon="💧"
-            label="BLESS"
-            count={spells.blessedWaterCharges}
-            active={spells.blessedWaterActive}
-            onClick={spells.onBlessedWater}
-            title="Bless a square — piece cannot be captured for 2 rounds"
-          />
-        )}
-        {canAct && spells.puppetAvailable && (
-          <SpellButton
-            icon="🪆"
-            label="PUPPET"
-            active={spells.puppetActive}
-            onClick={spells.onPuppet}
-            title="Force the opponent to move a specific piece on their next turn"
-          />
-        )}
-        {canAct && spells.evadeCharges > 0 && (
-          <SpellButton
-            icon="💨"
-            label="EVADE"
-            active={spells.evadeActive}
-            count={spells.evadeCharges}
-            onClick={spells.onEvade}
-            title="Opponent cannot use augment spells or shop on their next turn"
-          />
-        )}
-        {canAct && (
-          <SpellButton
-            icon="🏪"
-            label="SHOP"
-            active={spells.shopOpen}
-            onClick={spells.onToggleShop}
-            title="Open the augment shop"
-          />
-        )}
-        <GoldBadge gold={gold} active={canAct} />
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flexWrap: "wrap",
-          }}
-        >
-          {sorted.map((t, i) => (
-            <span
-              key={i}
-              style={{
-                fontSize: 16,
-                lineHeight: 1,
-                color: captureColor === "white" ? "#fff" : "#1a0f00",
-                textShadow:
-                  captureColor === "white"
-                    ? "0 0 2px #000,0 0 4px #000"
-                    : "0 0 2px rgba(255,255,255,0.6)",
-              }}
-            >
-              {PIECE_UNICODE[captureColor][t]}
-            </span>
-          ))}
-          {advantage > 0 && (
-            <span
-              style={{
-                fontSize: 12,
-                color: "#9ca3af",
-                fontWeight: 600,
-                marginLeft: 2,
-              }}
-            >
-              +{advantage}
-            </span>
-          )}
-        </div>
-        {spells.hasBloodlust && (
-          <span
-            style={{
-              fontSize: 9,
-              color: "#9ca3af",
-              letterSpacing: "0.05em",
-              flexShrink: 0,
-            }}
-          >
-            🩸 {spells.captureCount % 4}/4
-          </span>
-        )}
-      </div>
-      <div
-        style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}
-      >
-        {statusLabel && (
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              color: statusColor ?? "#e2e8f0",
-              background: statusBadge ? "rgba(239,68,68,0.15)" : "transparent",
-              padding: statusBadge ? "3px 10px" : "0",
-              borderRadius: 20,
-              border: statusBadge ? "1px solid rgba(239,68,68,0.4)" : "none",
-            }}
-          >
-            {statusLabel}
-          </div>
-        )}
-        {showReset && (
-          <button
-            onClick={onReset}
-            style={{
-              padding: "4px 12px",
-              fontSize: 11,
-              fontWeight: 700,
-              borderRadius: 6,
-              border: "1px solid #374151",
-              background: "#111827",
-              color: "#9ca3af",
-              cursor: "pointer",
-            }}
-          >
-            New Game
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -2731,8 +1195,7 @@ export interface MpConfig {
 }
 
 export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [boardPx, setBoardPx] = useState(320);
+  const boardStageRef = useRef<HTMLDivElement>(null);
   const [boardThemeId, setBoardThemeId] = useState<BoardThemeId>("classic");
   const boardPalette = BOARD_THEMES[boardThemeId].palette;
 
@@ -2996,6 +1459,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   });
 
   const boardSize = boardExpanded ? 10 : 8;
+  const { boardPx, sqSize, stageMinHeight } = useBoardDimensions(
+    boardSize,
+    boardStageRef,
+  );
   const showCenterMarkers =
     phase === "playing" &&
     [...whiteAugments, ...blackAugments].some(
@@ -3007,26 +1474,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   /** Online black sees the board from their side (pieces at bottom); white unchanged. */
   const mpViewFlipped = mpConfig?.myColor === "black";
-
-  // Responsive board
-  useEffect(() => {
-    const obs = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setBoardPx(Math.floor(Math.min(width - 4, height - 4) / 8) * 8);
-    });
-    if (containerRef.current) obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
-  useEffect(() => {
-    if (containerRef.current) {
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      const sqCount = boardExpanded ? 10 : 8;
-      setBoardPx(
-        Math.floor(Math.min(width - 4, height - 4) / sqCount) * sqCount,
-      );
-    }
-  }, [boardExpanded]);
-  const sqSize = boardPx / boardSize;
 
   // ── Grant effects ────────────────────────────────────────────────────────
 
@@ -6647,19 +5094,91 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     );
   }
 
+  const eventBannerEl = (
+    <div className="rounded-lg border border-slate-700 bg-slate-900/90 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-slate-400 shadow-lg">
+      <span className="text-slate-300">Board event</span>
+      {" — fires after full round "}
+      <span className="text-amber-400">{nextEventTurn}</span>
+      {" · "}
+      <span className="text-slate-200">
+        {fullRoundsUntilBoardEvent} full round
+        {fullRoundsUntilBoardEvent === 1 ? "" : "s"} away
+      </span>
+      {chaosEventTiming && (
+        <span className="ml-2 text-pink-400">(Chaos)</span>
+      )}
+    </div>
+  );
+
+  const boardOverlays = (
+    <>
+      {promotionPending && (
+        <PromotionDialog color={game.turn} onChoose={handlePromotion} />
+      )}
+      {pendingEvent && (
+        <EventAnnouncement
+          event={pendingEvent}
+          peaceTreatyLeft={peaceTreatyMovesLeft}
+          onClose={() => setPendingEvent(null)}
+        />
+      )}
+      {isOver && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55">
+          <div className={`${chessShell.card} pointer-events-auto flex flex-col items-center gap-2.5 px-9 py-5`}>
+            <span
+              className="text-[22px] font-black tracking-wide"
+              style={{ color: statusText.color }}
+            >
+              {statusText.label}
+            </span>
+            <button
+              type="button"
+              onClick={resetGame}
+              className="rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-400 px-7 py-2 text-sm font-bold text-white shadow-[0_3px_12px_rgba(99,102,241,0.5)]"
+            >
+              Play Again
+            </button>
+          </div>
+        </div>
+      )}
+      {modeBanner && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-2.5 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/80 px-4 py-1 text-[11px] font-extrabold uppercase tracking-wider"
+          style={{
+            color: modeBanner.color,
+            boxShadow: `0 2px 12px rgba(0,0,0,0.5),0 0 0 1px ${modeBanner.color}40`,
+          }}
+        >
+          {modeBanner.text}
+        </div>
+      )}
+      {mpConfig && !isMyTurn && !isOver && (
+        <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/75 px-4 py-1 text-[11px] font-bold tracking-wide text-slate-400">
+          Opponent&apos;s turn…
+        </div>
+      )}
+      {mpConfig?.connectionLost && !mpConfig.opponentLeft && (
+        <div className="pointer-events-none absolute left-1/2 top-2.5 z-[25] -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-500/45 bg-amber-500/15 px-3.5 py-1.5 text-[11px] font-bold tracking-wide text-amber-300">
+          Connection lost — reconnecting…
+        </div>
+      )}
+      {mpConfig?.opponentLeft && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className={`${chessShell.card} px-9 py-6 text-center`}>
+            <div className="mb-2.5 text-[32px]">🔌</div>
+            <div className="mb-1.5 text-base font-bold">Opponent disconnected</div>
+            <div className="text-sm text-slate-400">The game has ended.</div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: mpViewFlipped ? "column-reverse" : "column",
-        width: "100%",
-        height: "100%",
-        background: "#030712",
-        color: "#fff",
-        userSelect: "none",
-        overflow: "hidden",
-        position: "relative",
-      }}
+      className={`${chessShell.page} ${chessShell.column} relative ${
+        mpViewFlipped ? "flex-col-reverse" : "flex-col"
+      }`}
     >
       <PlayerBar
         color="black"
@@ -6671,118 +5190,27 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         capturedPieces={game.capturedByBlack}
         advantage={adv.black > 0 ? adv.black : 0}
         spells={makeSpells("black")}
-        showReset={true}
-        onReset={resetGame}
       />
 
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 6,
-          minHeight: 0,
-          position: "relative",
-          background: "#030712",
-        }}
-      >
-        {phase === "playing" && !isOver && (
+      <div ref={boardStageRef} className="w-full flex-shrink-0">
+        <BoardStage
+          boardPx={boardPx}
+          stageMinHeight={stageMinHeight}
+          boardThemeId={boardThemeId}
+          onThemeChange={setBoardThemeId}
+          showEventBanner={phase === "playing" && !isOver}
+          eventBanner={eventBannerEl}
+          overlays={boardOverlays}
+        >
           <div
+            className="grid shrink-0 rounded-sm border-[3px] border-[#5c3d1e] shadow-[0_8px_40px_rgba(0,0,0,0.8),0_2px_8px_rgba(0,0,0,0.5)]"
             style={{
-              position: "absolute",
-              top: 4,
-              left: 0,
-              right: 0,
-              zIndex: 4,
-              display: "flex",
-              justifyContent: "center",
-              pointerEvents: "none",
+              width: boardPx,
+              height: boardPx,
+              gridTemplateColumns: `repeat(${boardSize},${sqSize}px)`,
+              gridTemplateRows: `repeat(${boardSize},${sqSize}px)`,
             }}
           >
-            <div
-              style={{
-                background: "rgba(15,23,42,0.9)",
-                border: "1px solid #334155",
-                borderRadius: 8,
-                padding: "5px 14px",
-                fontSize: 11,
-                color: "#94a3b8",
-                fontWeight: 600,
-                letterSpacing: "0.02em",
-                boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
-              }}
-            >
-              <span style={{ color: "#cbd5e1" }}>Board event</span>
-              {" — fires after full round "}
-              <span style={{ color: "#fbbf24" }}>{nextEventTurn}</span>
-              {" · "}
-              <span style={{ color: "#e2e8f0" }}>
-                {fullRoundsUntilBoardEvent} full round
-                {fullRoundsUntilBoardEvent === 1 ? "" : "s"} away
-              </span>
-              {chaosEventTiming && (
-                <span style={{ color: "#f472b6", marginLeft: 8 }}>(Chaos)</span>
-              )}
-            </div>
-          </div>
-        )}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 6,
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#64748b",
-              letterSpacing: "0.08em",
-            }}
-          >
-            BOARD
-          </span>
-          <select
-            value={boardThemeId}
-            onChange={(e) =>
-              setBoardThemeId(e.target.value as BoardThemeId)
-            }
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid #334155",
-              background: "#0f172a",
-              color: "#e2e8f0",
-              cursor: "pointer",
-            }}
-          >
-            {(Object.keys(BOARD_THEMES) as BoardThemeId[]).map((id) => (
-              <option key={id} value={id}>
-                {BOARD_THEMES[id].label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div
-          style={{
-            width: boardPx,
-            height: boardPx,
-            display: "grid",
-            gridTemplateColumns: `repeat(${boardSize},${sqSize}px)`,
-            gridTemplateRows: `repeat(${boardSize},${sqSize}px)`,
-            border: "3px solid #5c3d1e",
-            borderRadius: 2,
-            boxShadow: "0 8px 40px rgba(0,0,0,0.8),0 2px 8px rgba(0,0,0,0.5)",
-            flexShrink: 0,
-          }}
-        >
           {Array.from({ length: boardSize }, (_, dr) =>
             Array.from({ length: boardSize }, (_, dc) => {
               const r = mpViewFlipped ? boardSize - 1 - dr : dr;
@@ -6884,181 +5312,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               );
             }),
           )}
-        </div>
-
-        {promotionPending && (
-          <PromotionDialog color={game.turn} onChoose={handlePromotion} />
-        )}
-        {pendingEvent && (
-          <EventAnnouncement
-            event={pendingEvent}
-            peaceTreatyLeft={peaceTreatyMovesLeft}
-            onClose={() => setPendingEvent(null)}
-          />
-        )}
-
-        {isOver && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,0.55)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "none",
-            }}
-          >
-            <div
-              style={{
-                background: "#111827",
-                border: "1px solid #374151",
-                borderRadius: 14,
-                padding: "20px 36px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 10,
-                boxShadow: "0 8px 40px rgba(0,0,0,0.7)",
-                pointerEvents: "auto",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 22,
-                  fontWeight: 900,
-                  color: statusText.color,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                {statusText.label}
-              </span>
-              <button
-                onClick={resetGame}
-                style={{
-                  padding: "8px 28px",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  borderRadius: 10,
-                  border: "none",
-                  cursor: "pointer",
-                  background: "linear-gradient(135deg,#4f46e5,#6366f1)",
-                  color: "#fff",
-                  boxShadow: "0 3px 12px rgba(99,102,241,0.5)",
-                }}
-              >
-                Play Again
-              </button>
-            </div>
           </div>
-        )}
-
-        {modeBanner && (
-          <div
-            style={{
-              position: "absolute",
-              top: 10,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 20,
-              pointerEvents: "none",
-              background: "rgba(0,0,0,0.82)",
-              color: modeBanner.color,
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              padding: "5px 18px",
-              borderRadius: 20,
-              textTransform: "uppercase",
-              boxShadow: `0 2px 12px rgba(0,0,0,0.5),0 0 0 1px ${modeBanner.color}40`,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {modeBanner.text}
-          </div>
-        )}
-
-        {/* MP: waiting-for-turn overlay */}
-        {mpConfig && !isMyTurn && !isOver && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 10,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 20,
-              pointerEvents: "none",
-              background: "rgba(0,0,0,0.75)",
-              color: "#94a3b8",
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "4px 16px",
-              borderRadius: 20,
-              letterSpacing: "0.06em",
-              whiteSpace: "nowrap",
-            }}
-          >
-            ⏳ Opponent&apos;s turn…
-          </div>
-        )}
-
-        {mpConfig?.connectionLost && !mpConfig.opponentLeft && (
-          <div
-            style={{
-              position: "absolute",
-              top: 10,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 25,
-              pointerEvents: "none",
-              background: "rgba(234,179,8,0.15)",
-              border: "1px solid rgba(234,179,8,0.45)",
-              color: "#fcd34d",
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "6px 14px",
-              borderRadius: 20,
-              letterSpacing: "0.04em",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Connection lost — reconnecting…
-          </div>
-        )}
-
-        {/* MP: opponent disconnected overlay */}
-        {mpConfig?.opponentLeft && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,0.7)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 50,
-            }}
-          >
-            <div
-              style={{
-                background: "#111827",
-                border: "1px solid #374151",
-                borderRadius: 14,
-                padding: "24px 36px",
-                textAlign: "center",
-                boxShadow: "0 8px 40px rgba(0,0,0,0.8)",
-              }}
-            >
-              <div style={{ fontSize: 32, marginBottom: 10 }}>🔌</div>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
-                Opponent disconnected
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: 13 }}>
-                The game has ended.
-              </div>
-            </div>
-          </div>
-        )}
+        </BoardStage>
       </div>
 
       <PlayerBar
@@ -7071,8 +5326,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         capturedPieces={game.capturedByWhite}
         advantage={adv.white > 0 ? adv.white : 0}
         spells={makeSpells("white")}
-        showReset={false}
-        onReset={resetGame}
         statusLabel={
           phase === "playing" && !isOver ? statusText.label : undefined
         }
@@ -7080,20 +5333,18 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         statusBadge={game.status === "check"}
       />
 
-      {/* Shop panel — below white bar, board auto-shrinks */}
-      {shopOpen && phase === "playing" && !isOver && (
-        <ShopPanel
-          playerColor={game.turn}
-          gold={activePlayerGold}
-          tierBought={activeTierBought}
-          playerAugments={game.turn === "white" ? whiteAugments : blackAugments}
-          onBuy={handleBuy}
-          onClose={() => setShopOpen(false)}
-          pawnShopNextPrice={pawnShopNextPrice}
-          onBuyPawn={pawnShopNextPrice != null ? handleBuyPawn : null}
-          pawnPlacePending={pawnPlaceFor !== null}
-        />
-      )}
+      <ShopPanel
+        open={shopOpen && phase === "playing" && !isOver}
+        playerColor={game.turn}
+        gold={activePlayerGold}
+        tierBought={activeTierBought}
+        playerAugments={game.turn === "white" ? whiteAugments : blackAugments}
+        onBuy={handleBuy}
+        onClose={() => setShopOpen(false)}
+        pawnShopNextPrice={pawnShopNextPrice}
+        onBuyPawn={pawnShopNextPrice != null ? handleBuyPawn : null}
+        pawnPlacePending={pawnPlaceFor !== null}
+      />
 
       {/* Phase overlays */}
       {phase === "start" && <StartScreen onStart={handleStart} />}
