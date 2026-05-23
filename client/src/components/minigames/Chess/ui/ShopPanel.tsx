@@ -1,9 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { Color } from "../engine";
-import type { Augment } from "../augments";
+import type { Augment, AugmentUpgradeLevels } from "../augments";
 import {
+  AUGMENT_IMPROVEMENTS,
   AUGMENT_POOL,
   augmentUnlockedForShop,
+  canImproveAugment,
+  getAugmentDisplayDescription,
+  getNextImproveTier,
   getShopCost,
   MAX_STACK,
   NON_PURCHASABLE,
@@ -19,7 +23,9 @@ export function ShopPanel({
   gold,
   tierBought,
   playerAugments,
+  augmentLevels,
   onBuy,
+  onImprove,
   onClose,
   pawnShopNextPrice,
   onBuyPawn,
@@ -30,7 +36,9 @@ export function ShopPanel({
   gold: number;
   tierBought: TierBought;
   playerAugments: Augment[];
+  augmentLevels: AugmentUpgradeLevels;
   onBuy: (aug: Augment) => void;
+  onImprove: (augId: string) => void;
   onClose: () => void;
   pawnShopNextPrice: number | null;
   onBuyPawn: (() => void) | null;
@@ -57,16 +65,61 @@ export function ShopPanel({
   for (const a of playerAugments) counts[a.id] = (counts[a.id] || 0) + 1;
   const ownedIds = Object.keys(counts);
   const atMax = (id: string) => (counts[id] ?? 0) >= (MAX_STACK[id] ?? 1);
+
+  const showInCatalog = (a: Augment) => {
+    if (NON_PURCHASABLE.has(a.id)) return false;
+    if (!augmentUnlockedForShop(a.id, ownedIds)) return false;
+    if (!atMax(a.id)) return true;
+    return canImproveAugment(augmentLevels, a.id, playerAugments);
+  };
+
   const grouped = RARITY_ORDER.map((r) => ({
     rarity: r,
-    augments: AUGMENT_POOL.filter(
-      (a) =>
-        a.rarity === r &&
-        !NON_PURCHASABLE.has(a.id) &&
-        !atMax(a.id) &&
-        augmentUnlockedForShop(a.id, ownedIds),
-    ),
+    augments: AUGMENT_POOL.filter((a) => a.rarity === r && showInCatalog(a)),
   })).filter((g) => g.augments.length > 0);
+
+  const catalogIds = new Set(grouped.flatMap((g) => g.augments.map((a) => a.id)));
+  const ownedOnlyUpgrades = Object.keys(AUGMENT_IMPROVEMENTS)
+    .filter(
+      (id) =>
+        !catalogIds.has(id) &&
+        canImproveAugment(augmentLevels, id, playerAugments),
+    )
+    .map((id) => AUGMENT_POOL.find((a) => a.id === id))
+    .filter((a): a is Augment => a != null);
+
+  const renderShopRow = (aug: Augment, buyCost: number, showBuy: boolean) => {
+    const ownedCount = playerAugments.filter((a) => a.id === aug.id).length;
+    const maxStack = MAX_STACK[aug.id] ?? 1;
+    const isMaxed = ownedCount >= maxStack;
+    const canAfford = gold >= buyCost;
+    const improveTier = getNextImproveTier(aug.id, augmentLevels);
+    const showImprove = canImproveAugment(
+      augmentLevels,
+      aug.id,
+      playerAugments,
+    );
+    const description = getAugmentDisplayDescription(aug, augmentLevels);
+
+    return (
+      <ShopRow
+        key={aug.id}
+        augment={aug}
+        description={description}
+        cost={buyCost}
+        canAfford={canAfford}
+        isMaxed={isMaxed}
+        showBuy={showBuy}
+        onBuy={() => onBuy(aug)}
+        showImprove={showImprove}
+        improveCost={improveTier?.cost}
+        canAffordImprove={
+          improveTier != null && gold >= improveTier.cost
+        }
+        onImprove={() => onImprove(aug.id)}
+      />
+    );
+  };
 
   return (
     <div
@@ -130,27 +183,27 @@ export function ShopPanel({
                     <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-1">
                       {augments.map((aug) => {
                         const cost = getShopCost(aug.rarity, bought);
-                        const canAfford = gold >= cost;
-                        const ownedCount = playerAugments.filter(
-                          (a) => a.id === aug.id,
-                        ).length;
-                        const maxStack = MAX_STACK[aug.id] ?? 1;
-                        const isMaxed = ownedCount >= maxStack;
-                        return (
-                          <ShopRow
-                            key={aug.id}
-                            augment={aug}
-                            cost={cost}
-                            canAfford={canAfford}
-                            isMaxed={isMaxed}
-                            onBuy={() => onBuy(aug)}
-                          />
-                        );
+                        const isMaxed =
+                          (counts[aug.id] ?? 0) >= (MAX_STACK[aug.id] ?? 1);
+                        return renderShopRow(aug, cost, !isMaxed);
                       })}
                     </div>
                   </section>
                 );
               })}
+
+              {ownedOnlyUpgrades.length > 0 && (
+                <section>
+                  <div className="mb-2 text-[9px] font-extrabold tracking-widest text-slate-500">
+                    UPGRADE OWNED
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {ownedOnlyUpgrades.map((aug) =>
+                      renderShopRow(aug, 0, false),
+                    )}
+                  </div>
+                </section>
+              )}
 
               {pawnShopNextPrice != null &&
                 onBuyPawn &&

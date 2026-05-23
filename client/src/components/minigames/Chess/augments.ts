@@ -53,6 +53,274 @@ export function getShopCost(rarity: Rarity, tierBought: number): number {
   return BASE_COST[rarity] * (tierBought + 1);
 }
 
+// ─── Shop improve (augment upgrades) ─────────────────────────────────────────
+
+export type AugmentUpgradeLevels = Partial<Record<string, number>>;
+
+export type ImproveTier = { cost: number; description: string };
+
+/** Flat-gold improve tiers per augment id (only listed augments show Improve). */
+export const AUGMENT_IMPROVEMENTS: Partial<Record<string, ImproveTier[]>> = {
+  miner: [
+    {
+      cost: 10,
+      description: "Earn 2 gold every 2 turns (was every 3). Infinitely stackable.",
+    },
+  ],
+  alternative: [
+    {
+      cost: 15,
+      description:
+        "Every pawn may advance up to 3 squares on its first move (path must be clear).",
+    },
+  ],
+  investment: [
+    {
+      cost: 20,
+      description:
+        "At the end of each full round, earn 1 gold per 10 gold you have (20g → 2g, 40g → 4g, etc.).",
+    },
+  ],
+  efficient: [
+    {
+      cost: 8,
+      description:
+        "Gain +2 extra gold whenever you capture a piece (stacks with normal capture payout).",
+    },
+    {
+      cost: 15,
+      description:
+        "Gain +3 extra gold whenever you capture a piece (stacks with normal capture payout).",
+    },
+  ],
+  thief: [
+    { cost: 5, description: "2% chance per Thief stack to gain 50 gold at end of turn." },
+    { cost: 10, description: "5% chance per Thief stack to gain 50 gold at end of turn." },
+    { cost: 15, description: "10% chance per Thief stack to gain 50 gold at end of turn." },
+  ],
+  "king-of-the-hill": [
+    {
+      cost: 18,
+      description: "Each of your pieces on d4/d5/e4/e5 earns 2 gold per turn.",
+    },
+  ],
+  jew: [
+    {
+      cost: 10,
+      description: "When the enemy captures your pawns, you gain 3 gold per captured pawn.",
+    },
+    {
+      cost: 30,
+      description:
+        "When the enemy captures your pawns: 3g for the first, 6g for the second, 9g for the third, and keeps scaling.",
+    },
+  ],
+  "contract-killer": [
+    {
+      cost: 5,
+      description:
+        "Mark one enemy piece (not king or pawn). Capture it for 5× its base gold value instead of 1.",
+    },
+  ],
+  "tax-man": [
+    {
+      cost: 10,
+      description:
+        "When you finish a half-move, earn 3 gold per 8 gold your opponent gained that half-move (per stack).",
+    },
+    {
+      cost: 20,
+      description:
+        "When you finish a half-move, earn 3 gold per 5 gold your opponent gained that half-move (per stack).",
+    },
+  ],
+  frost: [
+    {
+      cost: 30,
+      description: "Freeze one enemy piece — it cannot move for 2 turns.",
+    },
+  ],
+  "blessed-water-spell": [
+    {
+      cost: 10,
+      description:
+        "Bless any square. The piece on that square cannot be captured for 3 rounds.",
+    },
+  ],
+  "pawn-shop": [
+    {
+      cost: 10,
+      description:
+        "Buy pawns from the shop; price starts at 5g and rises by 5g each purchase.",
+    },
+    {
+      cost: 20,
+      description:
+        "Buy pawns from the shop for a flat 10g each (price no longer scales).",
+    },
+  ],
+  "i-am-danger": [
+    {
+      cost: 15,
+      description: "Each time you give check to the enemy king, gain 5 gold (per stack).",
+    },
+  ],
+  bloodlust: [
+    {
+      cost: 40,
+      description: "Every 3 enemy pieces you capture, gain 1 bonus augment pick.",
+    },
+    {
+      cost: 100,
+      description:
+        "Every 3 enemy pieces you capture, gain 2 bonus augment picks.",
+    },
+  ],
+  "royal-education": [
+    {
+      cost: 50,
+      description:
+        "Your king may move like a knight twice (spell has two charges).",
+    },
+  ],
+  "death-note": [
+    {
+      cost: 30,
+      description:
+        "Cursed enemy piece dies after 12 half-moves (timer follows piece identity).",
+    },
+    {
+      cost: 60,
+      description:
+        "Cursed enemy piece dies after 4 half-moves (timer follows piece identity).",
+    },
+    {
+      cost: 60,
+      description:
+        "Cursed enemy piece dies instantly when selected (no timer).",
+    },
+  ],
+};
+
+export function getImproveLevel(
+  levels: AugmentUpgradeLevels,
+  augId: string,
+): number {
+  return levels[augId] ?? 0;
+}
+
+export function ownsAugment(held: Augment[], augId: string): boolean {
+  return held.some((a) => a.id === augId);
+}
+
+export function canImproveAugment(
+  levels: AugmentUpgradeLevels,
+  augId: string,
+  held: Augment[],
+): boolean {
+  const tiers = AUGMENT_IMPROVEMENTS[augId];
+  if (!tiers?.length) return false;
+  if (!ownsAugment(held, augId)) return false;
+  return getImproveLevel(levels, augId) < tiers.length;
+}
+
+export function getNextImproveTier(
+  augId: string,
+  levels: AugmentUpgradeLevels,
+): ImproveTier | null {
+  const tiers = AUGMENT_IMPROVEMENTS[augId];
+  if (!tiers?.length) return null;
+  const level = getImproveLevel(levels, augId);
+  return tiers[level] ?? null;
+}
+
+export function getAugmentDisplayDescription(
+  aug: Augment,
+  levels: AugmentUpgradeLevels,
+): string {
+  const level = getImproveLevel(levels, aug.id);
+  const tiers = AUGMENT_IMPROVEMENTS[aug.id];
+  if (level > 0 && tiers) {
+    const idx = Math.min(level, tiers.length) - 1;
+    return tiers[idx]!.description;
+  }
+  return aug.description;
+}
+
+/** Miner payout interval in half-moves (player turns). */
+export function getMinerInterval(level: number): number {
+  return level >= 1 ? 2 : 3;
+}
+
+export function getEfficientCaptureBonus(level: number): number {
+  if (level >= 2) return 3;
+  if (level >= 1) return 2;
+  return 1;
+}
+
+export function getThiefProcRate(level: number): number {
+  const rates = [0.01, 0.02, 0.05, 0.1];
+  return rates[Math.min(level, rates.length - 1)]!;
+}
+
+export function getKingOfTheHillGoldPerPiece(level: number): number {
+  return level >= 1 ? 2 : 1;
+}
+
+export function getJewPawnCaptureGold(level: number, lossIndex: number): number {
+  if (level >= 2) return 3 * lossIndex;
+  if (level >= 1) return 3;
+  return 2;
+}
+
+export function getContractKillerMultiplier(level: number): number {
+  return level >= 1 ? 5 : 4;
+}
+
+export function getTaxManParams(level: number): { divisor: number; goldPer: number } {
+  if (level >= 2) return { divisor: 5, goldPer: 3 };
+  if (level >= 1) return { divisor: 8, goldPer: 3 };
+  return { divisor: 10, goldPer: 1 };
+}
+
+export function getFrostFreezeTurns(level: number): number {
+  return level >= 1 ? 2 : 1;
+}
+
+export function getBlessedWaterMovesLeft(level: number): number {
+  return level >= 1 ? 6 : 4;
+}
+
+export function getPawnShopPrice(
+  level: number,
+  buys: number,
+): number {
+  if (level >= 2) return 10;
+  if (level >= 1) return 5 * (buys + 1);
+  return 10 * (buys + 1);
+}
+
+export function getIAmDangerGoldPerStack(level: number): number {
+  return level >= 1 ? 5 : 4;
+}
+
+export function getBloodlustThreshold(level: number): number {
+  return level >= 1 ? 3 : 4;
+}
+
+export function getBloodlustPickCount(level: number): number {
+  return level >= 2 ? 2 : 1;
+}
+
+export function getRoyalEducationMaxUses(level: number): number {
+  return level >= 1 ? 2 : 1;
+}
+
+export function getDeathNoteTurnsLeft(level: number): number {
+  const timers = [16, 12, 4, 0];
+  return timers[Math.min(level, timers.length - 1)]!;
+}
+
 // ─── Roll weight presets ──────────────────────────────────────────────────────
 
 export type RarityWeights = Record<Rarity, number>;
