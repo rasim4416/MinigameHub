@@ -5190,8 +5190,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         capturedPieces={game.capturedByBlack}
         advantage={adv.black > 0 ? adv.black : 0}
         spells={makeSpells("black")}
-        showReset={true}
-        onReset={resetGame}
       />
 
       <div ref={boardStageRef} className="w-full flex-shrink-0">
@@ -5328,8 +5326,6 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         capturedPieces={game.capturedByWhite}
         advantage={adv.white > 0 ? adv.white : 0}
         spells={makeSpells("white")}
-        showReset={false}
-        onReset={resetGame}
         statusLabel={
           phase === "playing" && !isOver ? statusText.label : undefined
         }

@@ -491,7 +491,14 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
               </p>
             )}
           </div>
-          <div className="grid grid-cols-1 place-items-center gap-4 sm:grid-cols-2">
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              alignItems: "center",
+            }}
+          >
             {offeredAugs.map((aug) => (
               <AugmentCardPick
                 key={aug.id}

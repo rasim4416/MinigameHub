@@ -17,8 +17,6 @@ export function PlayerBar({
   capturedPieces,
   advantage,
   spells,
-  showReset,
-  onReset,
   statusLabel,
   statusColor,
   statusBadge,
@@ -32,8 +30,6 @@ export function PlayerBar({
   capturedPieces: PieceType[];
   advantage: number;
   spells: SpellState;
-  showReset: boolean;
-  onReset: () => void;
   statusLabel?: string;
   statusColor?: string;
   statusBadge?: boolean;
@@ -197,15 +193,6 @@ export function PlayerBar({
             >
               {statusLabel}
             </div>
-          )}
-          {showReset && (
-            <button
-              type="button"
-              onClick={onReset}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-bold text-slate-400 transition-colors hover:text-slate-200"
-            >
-              New Game
-            </button>
           )}
         </div>
       </div>
