@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Augment, AUGMENT_POOL, rollBonusAugments, RARITY_META, pickAugmentCount } from "./augments";
+import { Augment, AUGMENT_POOL, rollBonusAugments, pickAugmentCount } from "./augments";
 import ChessGame, { MpConfig } from "./ChessGame";
+import { AugmentCardPick } from "./ui/AugmentCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -223,31 +224,6 @@ function Btn({ children, onClick, disabled, variant = "primary", style }: {
       }}
     >
       {children}
-    </button>
-  );
-}
-
-// ─── Augment pick card ────────────────────────────────────────────────────────
-
-function AugmentCard({ aug, onPick }: { aug: Augment; onPick: () => void }) {
-  const meta = RARITY_META[aug.rarity];
-  return (
-    <button
-      onClick={onPick}
-      style={{
-        background: "#111827", border: `2px solid ${meta.border}`,
-        boxShadow: `0 0 12px ${meta.glow}`, borderRadius: 12, padding: 16,
-        cursor: "pointer", textAlign: "left", color: "#fff", width: "100%", transition: "transform 0.15s",
-      }}
-      onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.02)")}
-      onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
-    >
-      <div style={{ fontSize: 28, marginBottom: 6 }}>{aug.icon}</div>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{aug.name}</div>
-      <div style={{ fontSize: 11, color: meta.text, fontWeight: 600, marginBottom: 6, textTransform: "uppercase" }}>
-        {aug.rarity}
-      </div>
-      <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5 }}>{aug.description}</div>
     </button>
   );
 }
@@ -515,9 +491,13 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
               </p>
             )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {offeredAugs.map(aug => (
-              <AugmentCard key={aug.id} aug={aug} onPick={() => handlePickAugment(aug)} />
+          <div className="grid grid-cols-1 place-items-center gap-4 sm:grid-cols-2">
+            {offeredAugs.map((aug) => (
+              <AugmentCardPick
+                key={aug.id}
+                aug={aug}
+                onPick={() => handlePickAugment(aug)}
+              />
             ))}
           </div>
         </div>

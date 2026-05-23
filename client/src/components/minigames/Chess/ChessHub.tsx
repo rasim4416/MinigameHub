@@ -7,7 +7,12 @@ type Mode = "local" | "online";
 export default function ChessHub() {
   const [mode, setMode] = useState<Mode | null>(null);
 
-  if (mode === "local") return <ChessGame />;
+  if (mode === "local")
+    return (
+      <div className="flex min-h-[min(720px,calc(100dvh-8rem))] w-full flex-col">
+        <ChessGame />
+      </div>
+    );
   if (mode === "online") return <MultiplayerChess onBack={() => setMode(null)} />;
 
   return (
