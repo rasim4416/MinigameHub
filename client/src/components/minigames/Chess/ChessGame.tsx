@@ -4260,6 +4260,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             blackAugments,
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
+            movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
           );
           newGame = recomputeStatus(
             expireLittleBigManAfterHalfMove(
