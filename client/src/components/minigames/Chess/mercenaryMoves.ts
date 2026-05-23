@@ -474,7 +474,7 @@ export function findMercenaryPatrolKnights(board: Board): [number, number][] {
 
 /**
  * Spawn two orange patrol knights: one on the left flank file, one on the right
- * (a-file / i-file on 10×10 with Domain Expansion padding). Skips a side if no
+ * (leftmost/rightmost flank files on expanded Domain boards). Skips a side if no
  * empty square in that column. Does not remove existing mercenaries — stacks
  * with repeated events.
  */

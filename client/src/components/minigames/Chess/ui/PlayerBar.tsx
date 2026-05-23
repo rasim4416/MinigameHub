@@ -96,7 +96,7 @@ export function PlayerBar({
         <SpellButton icon="☠️" label="DEATH" active={spells.deathNoteActive} onClick={spells.onDeathNote} title="Mark an enemy piece to die in 16 half-moves" />
       )}
       {canAct && spells.domainAvailable && (
-        <SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="Expand the board to 10×10" />
+        <SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="Expand the board (8→10→12); 2 rooks on new outer files (once per player)" />
       )}
       {canAct && spells.monolithPlaceAvailable && (
         <SpellButton icon="🗿" label="PLACE" active={spells.monolithPlaceActive} onClick={spells.onMonolithPlace} title="Place a monolith (spends a turn)" />
