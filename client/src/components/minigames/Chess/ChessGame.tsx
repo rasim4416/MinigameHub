@@ -20,13 +20,15 @@ import {
   syncStateFromBoard,
   normalizeChessState,
   castlingRightsAfterSwap,
+  type Piece,
 } from "./engine";
+import { getOrangeMercenaryPieceImageCandidates } from "./mercenaryAssets";
+import { MercenaryPieceImg } from "./MercenaryPieceImg";
 import {
   applyLostMercenaryAfterFullMove,
   applyMercenaryPatrolAfterFullMove,
   isMercenaryPiece,
   isLostMercenaryPawn,
-  MERCENARY_ID_MARKER,
   spawnLostMercenaryOnBoard,
   spawnMercenaryPatrolKnights,
   spawnMercenarySiegePatrol,
@@ -663,33 +665,6 @@ const BOARD_THEMES: Record<
   },
 };
 
-/** SVG for orange mercenary pieces (id contains mercenary marker). */
-function orangeMercenaryPieceImage(
-  piece: { type: PieceType; color: Color; id?: string } | null,
-): string | null {
-  if (
-    !piece ||
-    piece.color !== "orange" ||
-    typeof piece.id !== "string" ||
-    !piece.id.includes(MERCENARY_ID_MARKER)
-  )
-    return null;
-  switch (piece.type) {
-    case "P":
-      return "/chess-orange-mercenary-pawn.svg";
-    case "N":
-      return "/chess-orange-mercenary-knight.svg";
-    case "R":
-      return "/chess-orange-mercenary-rook.svg";
-    case "B":
-      return "/chess-orange-mercenary-bishop.svg";
-    case "Q":
-      return "/chess-orange-mercenary-queen.svg";
-    default:
-      return null;
-  }
-}
-
 // ─── SquareEl ─────────────────────────────────────────────────────────────────
 
 function SquareEl({
@@ -724,7 +699,7 @@ function SquareEl({
   viewFlipped?: boolean;
   squarePalette: BoardThemePalette;
   size: number;
-  piece: { type: PieceType; color: Color } | null;
+  piece: Piece | null;
   isSelected: boolean;
   isValidMove: boolean;
   isLastMove: boolean;
@@ -755,7 +730,7 @@ function SquareEl({
   const dot = size * 0.3,
     ring = size * 0.07;
   const isMonolith = piece?.type === "M";
-  const orangeMercenaryImg = orangeMercenaryPieceImage(piece);
+  const mercenaryImgCandidates = getOrangeMercenaryPieceImageCandidates(piece);
   return (
     <div
       onClick={onClick}
@@ -1058,21 +1033,8 @@ function SquareEl({
                   : "0 0 0 2px #1a0f00,0 0 6px rgba(255,255,255,0.5)",
             }}
           />
-        ) : orangeMercenaryImg ? (
-          <img
-            src={orangeMercenaryImg}
-            alt=""
-            decoding="async"
-            style={{
-              width: size * 0.78,
-              height: size * 0.78,
-              objectFit: "contain",
-              pointerEvents: "none",
-              position: "relative",
-              zIndex: 1,
-              filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.45))",
-            }}
-          />
+        ) : mercenaryImgCandidates.length > 0 ? (
+          <MercenaryPieceImg candidates={mercenaryImgCandidates} size={size} />
         ) : (
           <span
             style={{
