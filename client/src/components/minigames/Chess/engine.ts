@@ -6,12 +6,19 @@
 export type PieceType = "K" | "Q" | "R" | "B" | "N" | "P" | "M";
 export type Color = "white" | "black" | "orange";
 export type PieceId = string;
+export type PlayerSlot = "white1" | "white2" | "black1" | "black2";
+export type GameMode = "standard" | "2v2";
+export type TeamStatus = "playing" | "team_win_white" | "team_win_black";
 
 /** Authoritative piece data (extend for per-piece shenanigans). */
 export interface PieceEntity {
   id: PieceId;
   type: PieceType;
   color: Color;
+  /** 2v2: which human controls this piece */
+  slot?: PlayerSlot;
+  /** 2v2: 1 = right-hand army (blue dot UI) */
+  setIndex?: 0 | 1;
 }
 
 /** UI / move-record shape: type + color + optional id (matches entity when present). */
@@ -19,6 +26,8 @@ export interface Piece {
   type: PieceType;
   color: Color;
   id?: PieceId;
+  slot?: PlayerSlot;
+  setIndex?: 0 | 1;
 }
 
 export type Square = Piece | null;
@@ -122,6 +131,38 @@ export interface ChessState {
   /** Full rounds completed (`min(white,black turn counts)`) when Little Big Man buff ends. */
   littleBigManWhiteExpiresAtFullRound?: number | null;
   littleBigManBlackExpiresAtFullRound?: number | null;
+  /** 2v2 team mode */
+  gameMode?: GameMode;
+  turnSlot?: PlayerSlot;
+  eliminatedSlots?: PlayerSlot[];
+  teamStatus?: TeamStatus;
+  /** Per-player castling (2v2 only; each 8-file block) */
+  castlingBySlot?: Partial<
+    Record<PlayerSlot, { kingside: boolean; queenside: boolean }>
+  >;
+}
+
+export const TURN_ORDER_2V2: PlayerSlot[] = [
+  "white1",
+  "black1",
+  "white2",
+  "black2",
+];
+
+export function is2v2Mode(state: ChessState): boolean {
+  return state.gameMode === "2v2";
+}
+
+export function slotToColor(slot: PlayerSlot): "white" | "black" {
+  return slot.startsWith("white") ? "white" : "black";
+}
+
+export function getBoardRows(state: ChessState): number {
+  return state.occupancy.length;
+}
+
+export function getBoardCols(state: ChessState): number {
+  return state.occupancy[0]?.length ?? state.occupancy.length;
 }
 
 // ─── Board size (mutable for Domain Expansion) ───────────────────────────────
@@ -159,12 +200,17 @@ function genFallbackPieceId(): PieceId {
 }
 
 function entityToPiece(e: PieceEntity): Piece {
-  return { type: e.type, color: e.color, id: e.id };
+  const p: Piece = { type: e.type, color: e.color, id: e.id };
+  if (e.slot) p.slot = e.slot;
+  if (e.setIndex !== undefined) p.setIndex = e.setIndex;
+  return p;
 }
 
 /** Piece at square for rules + UI (derived from registry). */
 export function getPieceAt(state: ChessState, r: number, c: number): Piece | null {
-  if (!inB(r, c, state.occupancy.length)) return null;
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  if (!inB(r, c, rows, cols)) return null;
   const id = state.occupancy[r][c];
   if (!id) return null;
   const e = state.pieces[id];
@@ -173,12 +219,13 @@ export function getPieceAt(state: ChessState, r: number, c: number): Piece | nul
 
 /** Build a classic `Board` grid from occupancy + pieces (read-only view). */
 export function getDerivedBoard(state: ChessState): Board {
-  const n = state.occupancy.length;
-  const b: Board = Array(n)
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  const b: Board = Array(rows)
     .fill(null)
-    .map(() => Array(n).fill(null));
-  for (let r = 0; r < n; r++)
-    for (let c = 0; c < n; c++) {
+    .map(() => Array(cols).fill(null));
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
       b[r][c] = getPieceAt(state, r, c);
     }
   return b;
@@ -199,7 +246,14 @@ export function syncStateFromBoard(state: ChessState, board: Board): ChessState 
           : sq;
       let id = normalized.id;
       if (!id) id = genFallbackPieceId();
-      pieces[id] = { id, type: normalized.type, color: normalized.color };
+      const ent: PieceEntity = {
+        id,
+        type: normalized.type,
+        color: normalized.color,
+      };
+      if (normalized.slot) ent.slot = normalized.slot;
+      if (normalized.setIndex !== undefined) ent.setIndex = normalized.setIndex;
+      pieces[id] = ent;
       return id;
     }),
   );
@@ -305,9 +359,17 @@ export function assertStateConsistent(state: ChessState): void {
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-/** Bounds check; `n` defaults to global board size (Domain Expansion updates `BOARD_SIZE`). */
-export const inB = (r: number, c: number, n: number = BOARD_SIZE) =>
-  r >= 0 && r < n && c >= 0 && c < n;
+/** Bounds check; square boards pass one size; rectangular pass rows then cols. */
+export const inB = (
+  r: number,
+  c: number,
+  rowsOrN: number = BOARD_SIZE,
+  cols?: number,
+) => {
+  const rows = rowsOrN;
+  const cCols = cols ?? rowsOrN;
+  return r >= 0 && r < rows && c >= 0 && c < cCols;
+};
 
 export const opp = (color: Color): Color =>
   color === "white" ? "black" : color === "black" ? "white" : "black";
@@ -354,9 +416,31 @@ export function findKing(stateOrBoard: ChessState | Board, color: Color): [numbe
   return findKingOnBoard(stateOrBoard, color);
 }
 
+export function findKingForSlot(
+  state: ChessState,
+  slot: PlayerSlot,
+): [number, number] {
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const id = state.occupancy[r][c];
+      if (!id) continue;
+      const e = state.pieces[id];
+      if (e?.type === "K" && e.slot === slot) return [r, c];
+    }
+  return [-1, -1];
+}
+
+export function slotHasKing(state: ChessState, slot: PlayerSlot): boolean {
+  const [kr] = findKingForSlot(state, slot);
+  return kr !== -1;
+}
+
 function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [number, number][] {
   const { type, color } = piece;
-  const n = state.occupancy.length;
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
   const sq: [number, number][] = [];
 
   if (type === "M") return [];
@@ -367,12 +451,12 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
         [-1, 1],
         [1, 1],
       ] as [number, number][])
-        if (inB(r + dr, c + dc, n)) sq.push([r + dr, c + dc]);
+        if (inB(r + dr, c + dc, rows, cols)) sq.push([r + dr, c + dc]);
       return sq;
     }
     const dir = color === "white" ? -1 : 1;
     for (const dc of [-1, 1])
-      if (inB(r + dir, c + dc, n)) sq.push([r + dir, c + dc]);
+      if (inB(r + dir, c + dc, rows, cols)) sq.push([r + dir, c + dc]);
     return sq;
   }
 
@@ -387,7 +471,7 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
       [2, -1],
       [2, 1],
     ])
-      if (inB(r + dr, c + dc, n)) sq.push([r + dr, c + dc]);
+      if (inB(r + dr, c + dc, rows, cols)) sq.push([r + dr, c + dc]);
     return sq;
   }
 
@@ -402,7 +486,7 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
       [1, 0],
       [1, 1],
     ])
-      if (inB(r + dr, c + dc, n)) sq.push([r + dr, c + dc]);
+      if (inB(r + dr, c + dc, rows, cols)) sq.push([r + dr, c + dc]);
     return sq;
   }
 
@@ -412,7 +496,7 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
   for (const [dr, dc] of dirs) {
     let nr = r + dr,
       nc = c + dc;
-    while (inB(nr, nc, n)) {
+    while (inB(nr, nc, rows, cols)) {
       sq.push([nr, nc]);
       if (state.occupancy[nr][nc]) break;
       nr += dr;
@@ -428,9 +512,10 @@ export function isSquareAttackedBy(
   c: number,
   byColor: Color,
 ): boolean {
-  const n = state.occupancy.length;
-  for (let pr = 0; pr < n; pr++)
-    for (let pc = 0; pc < n; pc++) {
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  for (let pr = 0; pr < rows; pr++)
+    for (let pc = 0; pc < cols; pc++) {
       const p = getPieceAt(state, pr, pc);
       if (p && p.color === byColor)
         if (attacksFrom(state, pr, pc, p).some(([ar, ac]) => ar === r && ac === c)) return true;
@@ -456,9 +541,10 @@ function isSquareAttackedByOrangeMercenaries(
   r: number,
   c: number,
 ): boolean {
-  const n = state.occupancy.length;
-  for (let pr = 0; pr < n; pr++)
-    for (let pc = 0; pc < n; pc++) {
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  for (let pr = 0; pr < rows; pr++)
+    for (let pc = 0; pc < cols; pc++) {
       const p = getPieceAt(state, pr, pc);
       if (
         p?.color === "orange" &&
@@ -516,6 +602,15 @@ function isInCheckState(state: ChessState, color: Color): boolean {
   );
 }
 
+export function isInCheckForSlot(state: ChessState, slot: PlayerSlot): boolean {
+  const color = slotToColor(slot);
+  const [kr, kc] = findKingForSlot(state, slot);
+  return (
+    kr !== -1 &&
+    isSquareAttackedByEnemyOrMercenary(state, kr, kc, color)
+  );
+}
+
 /** In-check from dual-layer state or from a derived `Board` grid. */
 export function isInCheck(stateOrBoard: ChessState | Board, color: Color): boolean {
   if (isChessState(stateOrBoard)) return isInCheckState(stateOrBoard, color);
@@ -529,13 +624,21 @@ function isPermaFrozenSquare(state: ChessState, r: number, c: number): boolean {
 }
 
 /** Queen-like slides for Little Big Man pawn (pseudo-legal only). */
+function pawnStartRow(state: ChessState, color: "white" | "black"): number {
+  if (is2v2Mode(state)) return color === "white" ? 6 : 1;
+  const n = getBoardRows(state);
+  const off = (n - 8) / 2;
+  return color === "white" ? 6 + off : 1 + off;
+}
+
 function pseudoQueenLikeSlidesForColor(
   state: ChessState,
   r: number,
   c: number,
   color: Color,
 ): [number, number][] {
-  const n = state.occupancy.length;
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
   const sq: [number, number][] = [];
   const dirs: [number, number][] = [
     [0, 1],
@@ -550,7 +653,7 @@ function pseudoQueenLikeSlidesForColor(
   for (const [dr, dc] of dirs) {
     let nr = r + dr,
       nc = c + dc;
-    while (inB(nr, nc, n)) {
+    while (inB(nr, nc, rows, cols)) {
       const tgt = getPieceAt(state, nr, nc);
       if (tgt) {
         if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
@@ -573,7 +676,8 @@ function pseudoMoves(
   const piece = getPieceAt(state, r, c);
   if (!piece) return [];
   const { type, color } = piece;
-  const n = state.occupancy.length;
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
   const sq: [number, number][] = [];
 
   if (type === "M") return [];
@@ -588,15 +692,18 @@ function pseudoMoves(
         return pseudoQueenLikeSlidesForColor(state, r, c, color);
     }
     const dir = color === "white" ? -1 : 1;
-    const _off = (n - 8) / 2;
-    const startRow = color === "white" ? 6 + _off : 1 + _off;
-    if (inB(r + dir, c, n) && !state.occupancy[r + dir][c]) {
+    const startRow = pawnStartRow(state, color);
+    if (inB(r + dir, c, rows, cols) && !state.occupancy[r + dir][c]) {
       sq.push([r + dir, c]);
-      if (r === startRow && inB(r + 2 * dir, c, n) && !state.occupancy[r + 2 * dir][c])
+      if (
+        r === startRow &&
+        inB(r + 2 * dir, c, rows, cols) &&
+        !state.occupancy[r + 2 * dir][c]
+      )
         sq.push([r + 2 * dir, c]);
     }
     for (const dc of [-1, 1]) {
-      if (!inB(r + dir, c + dc, n)) continue;
+      if (!inB(r + dir, c + dc, rows, cols)) continue;
       const tgt = getPieceAt(state, r + dir, c + dc);
       if (tgt && tgt.color !== color && tgt.type !== "M") sq.push([r + dir, c + dc]);
       if (enPassantTarget && enPassantTarget[0] === r + dir && enPassantTarget[1] === c + dc)
@@ -618,8 +725,9 @@ function pseudoMoves(
     ]) {
       const nr = r + dr,
         nc = c + dc;
-      const tgt = inB(nr, nc, n) ? getPieceAt(state, nr, nc) : null;
-      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      const tgt = inB(nr, nc, rows, cols) ? getPieceAt(state, nr, nc) : null;
+      if (inB(nr, nc, rows, cols) && tgt?.color !== color && tgt?.type !== "M")
+        sq.push([nr, nc]);
     }
     return sq;
   }
@@ -637,8 +745,9 @@ function pseudoMoves(
     ]) {
       const nr = r + dr,
         nc = c + dc;
-      const tgt = inB(nr, nc, n) ? getPieceAt(state, nr, nc) : null;
-      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      const tgt = inB(nr, nc, rows, cols) ? getPieceAt(state, nr, nc) : null;
+      if (inB(nr, nc, rows, cols) && tgt?.color !== color && tgt?.type !== "M")
+        sq.push([nr, nc]);
     }
     return sq;
   }
@@ -649,7 +758,7 @@ function pseudoMoves(
   for (const [dr, dc] of dirs) {
     let nr = r + dr,
       nc = c + dc;
-    while (inB(nr, nc, n)) {
+    while (inB(nr, nc, rows, cols)) {
       const tgt = getPieceAt(state, nr, nc);
       if (tgt) {
         if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
@@ -699,21 +808,40 @@ function applyMoveToState(
   }
 
   if (ent.type === "K" && Math.abs(tc - fc) === 2) {
-    const n = occ.length;
-    const off = (n - 8) / 2;
-    if (tc > fc) {
-      const rk = off + 7;
-      const rid = occ[fr][rk];
-      if (rid) {
-        occ[fr][rk] = null;
-        occ[fr][off + 5] = rid;
+    if (is2v2Mode(state)) {
+      const base = fc < 8 ? 0 : 8;
+      if (tc > fc) {
+        const rk = base + 7;
+        const rid = occ[fr][rk];
+        if (rid) {
+          occ[fr][rk] = null;
+          occ[fr][base + 5] = rid;
+        }
+      } else {
+        const rk = base;
+        const rid = occ[fr][rk];
+        if (rid) {
+          occ[fr][rk] = null;
+          occ[fr][base + 3] = rid;
+        }
       }
     } else {
-      const rk = off;
-      const rid = occ[fr][rk];
-      if (rid) {
-        occ[fr][rk] = null;
-        occ[fr][off + 3] = rid;
+      const n = occ.length;
+      const off = (n - 8) / 2;
+      if (tc > fc) {
+        const rk = off + 7;
+        const rid = occ[fr][rk];
+        if (rid) {
+          occ[fr][rk] = null;
+          occ[fr][off + 5] = rid;
+        }
+      } else {
+        const rk = off;
+        const rid = occ[fr][rk];
+        if (rid) {
+          occ[fr][rk] = null;
+          occ[fr][off + 3] = rid;
+        }
       }
     }
   }
@@ -723,11 +851,159 @@ function applyMoveToState(
   return { ...state, occupancy: occ, pieces };
 }
 
+// ─── 2v2 helpers ──────────────────────────────────────────────────────────────
+
+function fileBlockStart(col: number): number {
+  return col < 8 ? 0 : 8;
+}
+
+export function nextTurnSlot(
+  state: ChessState,
+  fromSlot?: PlayerSlot,
+): PlayerSlot {
+  const eliminated = state.eliminatedSlots ?? [];
+  const current = fromSlot ?? state.turnSlot ?? "white1";
+  const idx = TURN_ORDER_2V2.indexOf(current);
+  for (let i = 1; i <= 4; i++) {
+    const next = TURN_ORDER_2V2[(idx + i) % 4]!;
+    if (!eliminated.includes(next) && slotHasKing(state, next)) return next;
+  }
+  return current;
+}
+
+export function eliminateSlot(
+  state: ChessState,
+  slot: PlayerSlot,
+): ChessState {
+  const eliminated = [...(state.eliminatedSlots ?? [])];
+  if (!eliminated.includes(slot)) eliminated.push(slot);
+
+  const occ = cloneOccupancy(state.occupancy);
+  const pieces = clonePieces(state.pieces);
+  const rows = occ.length;
+  const cols = occ[0]?.length ?? 0;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const id = occ[r][c];
+      if (!id) continue;
+      if (pieces[id]?.slot === slot) {
+        delete pieces[id];
+        occ[r][c] = null;
+      }
+    }
+
+  const cbs = { ...(state.castlingBySlot ?? {}) };
+  delete cbs[slot];
+
+  let teamStatus: TeamStatus = state.teamStatus ?? "playing";
+  const blackOut =
+    eliminated.includes("black1") && eliminated.includes("black2");
+  const whiteOut =
+    eliminated.includes("white1") && eliminated.includes("white2");
+  if (blackOut) teamStatus = "team_win_white";
+  else if (whiteOut) teamStatus = "team_win_black";
+
+  return {
+    ...state,
+    occupancy: occ,
+    pieces,
+    eliminatedSlots: eliminated,
+    castlingBySlot: cbs,
+    teamStatus,
+    status: "playing",
+  };
+}
+
+export function hasAnyLegalMoveForSlot(
+  state: ChessState,
+  slot: PlayerSlot,
+): boolean {
+  const eliminated = state.eliminatedSlots ?? [];
+  if (eliminated.includes(slot) || !slotHasKing(state, slot)) return false;
+  const color = slotToColor(slot);
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const id = state.occupancy[r][c];
+      if (!id) continue;
+      const ent = state.pieces[id];
+      if (ent?.slot !== slot) continue;
+      const tempState: ChessState = {
+        ...state,
+        turn: color,
+        turnSlot: slot,
+      };
+      if (getLegalMoves(tempState, r, c).length > 0) return true;
+    }
+  return false;
+}
+
+function resolve2v2AfterMove(state: ChessState, movedSlot: PlayerSlot): ChessState {
+  if (state.teamStatus && state.teamStatus !== "playing") return state;
+
+  let s = state;
+  let nextSlot = nextTurnSlot(s, movedSlot);
+
+  for (let guard = 0; guard < 8; guard++) {
+    if (s.teamStatus && s.teamStatus !== "playing") break;
+    const eliminated = s.eliminatedSlots ?? [];
+    if (eliminated.includes(nextSlot) || !slotHasKing(s, nextSlot)) {
+      nextSlot = nextTurnSlot(s, nextSlot);
+      continue;
+    }
+    const probe: ChessState = {
+      ...s,
+      turn: slotToColor(nextSlot),
+      turnSlot: nextSlot,
+    };
+    if (hasAnyLegalMoveForSlot(probe, nextSlot)) {
+      const inChk = isInCheckForSlot(probe, nextSlot);
+      return {
+        ...probe,
+        status: inChk ? "check" : "playing",
+      };
+    }
+    if (isInCheckForSlot(probe, nextSlot)) {
+      s = eliminateSlot(probe, nextSlot);
+      if (s.teamStatus !== "playing") {
+        return { ...s, turn: slotToColor(nextSlot), turnSlot: nextSlot };
+      }
+      nextSlot = nextTurnSlot(s, nextSlot);
+      continue;
+    }
+    nextSlot = nextTurnSlot(s, nextSlot);
+  }
+
+  return {
+    ...s,
+    turn: slotToColor(nextSlot),
+    turnSlot: nextSlot,
+    status: "playing",
+  };
+}
+
 // ─── Legal move generation ────────────────────────────────────────────────────
 
 export function getLegalMoves(state: ChessState, r: number, c: number): [number, number][] {
   const piece = getPieceAt(state, r, c);
-  if (!piece || piece.color !== state.turn) return [];
+  if (!piece) return [];
+
+  const movingId = state.occupancy[r][c];
+  const ent = movingId ? state.pieces[movingId] : null;
+
+  if (is2v2Mode(state)) {
+    if (!ent?.slot || ent.slot !== state.turnSlot) return [];
+    if (piece.color !== state.turn) return [];
+  } else if (piece.color !== state.turn) {
+    return [];
+  }
+
+  const moverSlot = ent?.slot;
+  const checkSlot = (st: ChessState, col: Color) => {
+    if (is2v2Mode(st) && moverSlot) return !isInCheckForSlot(st, moverSlot);
+    return !isInCheck(st, col);
+  };
 
   const pseudoAll = pseudoMoves(state, r, c, state.enPassantTarget);
   const pseudo = pseudoAll.filter(([tr, tc]) => {
@@ -747,7 +1023,7 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 
   for (const [tr, tc] of pseudo) {
     const nb = applyMoveToState(state, state.enPassantTarget, [r, c], [tr, tc]);
-    if (!isInCheck(nb, piece.color)) legal.push([tr, tc]);
+    if (checkSlot(nb, piece.color)) legal.push([tr, tc]);
   }
 
   const allowCastleFromCheck =
@@ -757,41 +1033,79 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
       : piece.color === "black"
         ? !!state.freePassageBlack
         : false);
+
   if (
     piece.type === "K" &&
     (piece.color === "white" || piece.color === "black") &&
-    (!isInCheck(state, piece.color) || allowCastleFromCheck)
+    (!isInCheck(state, piece.color) || allowCastleFromCheck) &&
+    (!is2v2Mode(state) || !moverSlot || !isInCheckForSlot(state, moverSlot) || allowCastleFromCheck)
   ) {
     const side = piece.color;
-    const n = state.occupancy.length;
-    const off = (n - 8) / 2;
-    const row = side === "white" ? 7 + off : off;
-    const rights = state.castlingRights[side];
 
-    if (
-      rights.kingside &&
-      !state.occupancy[row][off + 5] &&
-      !state.occupancy[row][off + 6] &&
-      !isPermaFrozenSquare(state, row, off + 5) &&
-      !isPermaFrozenSquare(state, row, off + 6) &&
-      !isSquareAttackedByEnemyOrMercenary(state, row, off + 5, side) &&
-      !isSquareAttackedByEnemyOrMercenary(state, row, off + 6, side)
-    ) {
-      legal.push([row, off + 6]);
-    }
+    if (is2v2Mode(state) && moverSlot) {
+      const row = side === "white" ? 7 : 0;
+      const base = fileBlockStart(c);
+      const rights = state.castlingBySlot?.[moverSlot] ?? {
+        kingside: true,
+        queenside: true,
+      };
 
-    if (
-      rights.queenside &&
-      !state.occupancy[row][off + 1] &&
-      !state.occupancy[row][off + 2] &&
-      !state.occupancy[row][off + 3] &&
-      !isPermaFrozenSquare(state, row, off + 1) &&
-      !isPermaFrozenSquare(state, row, off + 2) &&
-      !isPermaFrozenSquare(state, row, off + 3) &&
-      !isSquareAttackedByEnemyOrMercenary(state, row, off + 3, side) &&
-      !isSquareAttackedByEnemyOrMercenary(state, row, off + 2, side)
-    ) {
-      legal.push([row, off + 2]);
+      if (
+        rights.kingside &&
+        !state.occupancy[row][base + 5] &&
+        !state.occupancy[row][base + 6] &&
+        !isPermaFrozenSquare(state, row, base + 5) &&
+        !isPermaFrozenSquare(state, row, base + 6) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, base + 5, side) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, base + 6, side)
+      ) {
+        legal.push([row, base + 6]);
+      }
+
+      if (
+        rights.queenside &&
+        !state.occupancy[row][base + 1] &&
+        !state.occupancy[row][base + 2] &&
+        !state.occupancy[row][base + 3] &&
+        !isPermaFrozenSquare(state, row, base + 1) &&
+        !isPermaFrozenSquare(state, row, base + 2) &&
+        !isPermaFrozenSquare(state, row, base + 3) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, base + 3, side) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, base + 2, side)
+      ) {
+        legal.push([row, base + 2]);
+      }
+    } else {
+      const n = state.occupancy.length;
+      const off = (n - 8) / 2;
+      const row = side === "white" ? 7 + off : off;
+      const rights = state.castlingRights[side];
+
+      if (
+        rights.kingside &&
+        !state.occupancy[row][off + 5] &&
+        !state.occupancy[row][off + 6] &&
+        !isPermaFrozenSquare(state, row, off + 5) &&
+        !isPermaFrozenSquare(state, row, off + 6) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, off + 5, side) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, off + 6, side)
+      ) {
+        legal.push([row, off + 6]);
+      }
+
+      if (
+        rights.queenside &&
+        !state.occupancy[row][off + 1] &&
+        !state.occupancy[row][off + 2] &&
+        !state.occupancy[row][off + 3] &&
+        !isPermaFrozenSquare(state, row, off + 1) &&
+        !isPermaFrozenSquare(state, row, off + 2) &&
+        !isPermaFrozenSquare(state, row, off + 3) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, off + 3, side) &&
+        !isSquareAttackedByEnemyOrMercenary(state, row, off + 2, side)
+      ) {
+        legal.push([row, off + 2]);
+      }
     }
   }
 
@@ -800,9 +1114,10 @@ export function getLegalMoves(state: ChessState, r: number, c: number): [number,
 
 export function hasAnyLegalMove(state: ChessState, color: Color): boolean {
   if (color === "orange") return false;
-  const n = state.occupancy.length;
-  for (let r = 0; r < n; r++)
-    for (let c = 0; c < n; c++) {
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
       if (getPieceAt(state, r, c)?.color === color) {
         const tempState = { ...state, turn: color };
         if (getLegalMoves(tempState, r, c).length > 0) return true;
@@ -836,6 +1151,12 @@ export function makeMove(
     white: { ...state.castlingRights.white },
     black: { ...state.castlingRights.black },
   };
+  let castlingBySlot = state.castlingBySlot
+    ? { ...state.castlingBySlot }
+    : undefined;
+  const moverEnt = state.pieces[movingId];
+  const moverSlot = moverEnt?.slot;
+
   const n = state.occupancy.length;
   const off = (n - 8) / 2;
   const wBack = 7 + off;
@@ -845,19 +1166,38 @@ export function makeMove(
   const bRookQ = off;
   const bRookK = off + 7;
 
-  if (piece.type === "K" && (piece.color === "white" || piece.color === "black")) {
-    cr[piece.color] = { kingside: false, queenside: false };
+  if (is2v2Mode(state) && moverSlot && castlingBySlot) {
+    const slotRights = {
+      ...(castlingBySlot[moverSlot] ?? { kingside: true, queenside: true }),
+    };
+    const row = piece.color === "white" ? 7 : 0;
+    const base = fileBlockStart(fc);
+    if (piece.type === "K") {
+      slotRights.kingside = false;
+      slotRights.queenside = false;
+    }
+    if (piece.type === "R") {
+      if (fr === row && fc === base) slotRights.queenside = false;
+      if (fr === row && fc === base + 7) slotRights.kingside = false;
+    }
+    if (tr === row && tc === base) slotRights.queenside = false;
+    if (tr === row && tc === base + 7) slotRights.kingside = false;
+    castlingBySlot[moverSlot] = slotRights;
+  } else {
+    if (piece.type === "K" && (piece.color === "white" || piece.color === "black")) {
+      cr[piece.color] = { kingside: false, queenside: false };
+    }
+    if (piece.type === "R") {
+      if (fr === wBack && fc === wRookQ) cr.white.queenside = false;
+      else if (fr === wBack && fc === wRookK) cr.white.kingside = false;
+      else if (fr === bBack && fc === bRookQ) cr.black.queenside = false;
+      else if (fr === bBack && fc === bRookK) cr.black.kingside = false;
+    }
+    if (tr === wBack && tc === wRookQ) cr.white.queenside = false;
+    if (tr === wBack && tc === wRookK) cr.white.kingside = false;
+    if (tr === bBack && tc === bRookQ) cr.black.queenside = false;
+    if (tr === bBack && tc === bRookK) cr.black.kingside = false;
   }
-  if (piece.type === "R") {
-    if (fr === wBack && fc === wRookQ) cr.white.queenside = false;
-    else if (fr === wBack && fc === wRookK) cr.white.kingside = false;
-    else if (fr === bBack && fc === bRookQ) cr.black.queenside = false;
-    else if (fr === bBack && fc === bRookK) cr.black.kingside = false;
-  }
-  if (tr === wBack && tc === wRookQ) cr.white.queenside = false;
-  if (tr === wBack && tc === wRookK) cr.white.kingside = false;
-  if (tr === bBack && tc === bRookQ) cr.black.queenside = false;
-  if (tr === bBack && tc === bRookK) cr.black.kingside = false;
 
   const newEP: [number, number] | null =
     piece.type === "P" && Math.abs(tr - fr) === 2 ? [(fr + tr) / 2, fc] : null;
@@ -896,10 +1236,11 @@ export function makeMove(
   };
 
   const nextTurn = opp(piece.color);
-  const nextState: ChessState = {
+  let nextState: ChessState = {
     ...newCore,
     turn: nextTurn,
     castlingRights: cr,
+    castlingBySlot,
     enPassantTarget: newEP,
     capturedByWhite: cbw,
     capturedByBlack: cbb,
@@ -921,7 +1262,18 @@ export function makeMove(
       state.littleBigManWhiteExpiresAtFullRound ?? null,
     littleBigManBlackExpiresAtFullRound:
       state.littleBigManBlackExpiresAtFullRound ?? null,
+    gameMode: state.gameMode,
+    turnSlot: state.turnSlot,
+    eliminatedSlots: state.eliminatedSlots
+      ? [...state.eliminatedSlots]
+      : [],
+    teamStatus: state.teamStatus ?? "playing",
   };
+
+  if (is2v2Mode(state) && moverSlot) {
+    nextState = resolve2v2AfterMove(nextState, moverSlot);
+    return nextState;
+  }
 
   const nextHasMove = hasAnyLegalMove(nextState, nextTurn);
   if (!nextHasMove) {
@@ -934,6 +1286,68 @@ export function makeMove(
 }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
+
+function placeStandardArmy(
+  board: Board,
+  slot: PlayerSlot,
+  colOffset: number,
+  setIndex: 0 | 1,
+): void {
+  const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const color = slotToColor(slot);
+  const prefix = slot.replace(/(\d)/, "$1-");
+  const backRow = color === "black" ? 0 : 7;
+  const pawnRow = color === "black" ? 1 : 6;
+  for (let c = 0; c < 8; c++) {
+    const gc = colOffset + c;
+    const f = FILES[c];
+    board[backRow][gc] = {
+      type: BACK_RANK[c]!,
+      color,
+      id: `${prefix}${BACK_RANK[c]}${f}`,
+      slot,
+      setIndex,
+    };
+    board[pawnRow][gc] = {
+      type: "P",
+      color,
+      id: `${prefix}P${c}`,
+      slot,
+      setIndex,
+    };
+  }
+}
+
+export function create2v2InitialState(): ChessState {
+  const ROWS = 8;
+  const COLS = 16;
+  const board: Board = Array(ROWS)
+    .fill(null)
+    .map(() => Array(COLS).fill(null));
+  placeStandardArmy(board, "black1", 0, 0);
+  placeStandardArmy(board, "black2", 8, 1);
+  placeStandardArmy(board, "white1", 0, 0);
+  placeStandardArmy(board, "white2", 8, 1);
+
+  const shell = createEmptyChessStateShell();
+  const base = syncStateFromBoard(shell, board);
+  const castlingBySlot: NonNullable<ChessState["castlingBySlot"]> = {
+    white1: { kingside: true, queenside: true },
+    white2: { kingside: true, queenside: true },
+    black1: { kingside: true, queenside: true },
+    black2: { kingside: true, queenside: true },
+  };
+  return {
+    ...base,
+    gameMode: "2v2",
+    turn: "white",
+    turnSlot: "white1",
+    eliminatedSlots: [],
+    teamStatus: "playing",
+    castlingBySlot,
+    status: "playing",
+  };
+}
 
 export function createInitialState(): ChessState {
   const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -961,6 +1375,19 @@ export function materialAdvantage(state: ChessState): { white: number; black: nu
 
 /** Recompute playing / check / mate / stalemate after board mutations (e.g. mercenary). */
 export function recomputeChessStatus(g: ChessState): ChessState {
+  if (is2v2Mode(g) && g.turnSlot) {
+    if (g.teamStatus && g.teamStatus !== "playing") return g;
+    const slot = g.turnSlot;
+    if (!hasAnyLegalMoveForSlot(g, slot)) {
+      if (isInCheckForSlot(g, slot)) {
+        const eliminated = eliminateSlot(g, slot);
+        return resolve2v2AfterMove(eliminated, slot);
+      }
+      return { ...g, status: "stalemate" };
+    }
+    const status: GameStatus = isInCheckForSlot(g, slot) ? "check" : "playing";
+    return { ...g, status };
+  }
   const [wkr] = findKing(g, "white");
   const [bkr] = findKing(g, "black");
   if (wkr === -1) return { ...g, status: "checkmate", turn: "black" };

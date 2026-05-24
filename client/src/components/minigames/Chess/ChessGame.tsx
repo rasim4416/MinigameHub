@@ -7,20 +7,27 @@ import {
   PIECE_UNICODE,
   PIECE_VALUE,
   createInitialState,
+  create2v2InitialState,
   getLegalMoves,
   makeMove,
   materialAdvantage,
   opp,
   cloneBoard,
   findKing,
+  findKingForSlot,
   isInCheck,
   hasAnyLegalMove,
   setBoardSize,
   getDerivedBoard,
+  getBoardRows,
+  getBoardCols,
+  is2v2Mode,
+  slotToColor,
   syncStateFromBoard,
   normalizeChessState,
   castlingRightsAfterSwap,
   type Piece,
+  type PlayerSlot,
 } from "./engine";
 import {
   BOARD_THEMES,
@@ -686,8 +693,12 @@ function expandGameBoard(g: ChessState, expander: Color): ChessState {
   );
 }
 
-function getFileChar(col: number, boardSize: number): string {
-  if (boardSize === 8) return String.fromCharCode(97 + col);
+function getFileChar(col: number, boardSize: number, boardCols?: number): string {
+  const cols = boardCols ?? boardSize;
+  if (cols === 16 && boardSize === 8) {
+    return String.fromCharCode(97 + col);
+  }
+  if (boardSize === 8 && cols === 8) return String.fromCharCode(97 + col);
   const off = (boardSize - 8) / 2;
   const innerRight = boardSize - 1 - off;
   if (boardSize >= 12) {
@@ -704,9 +715,11 @@ function getFileChar(col: number, boardSize: number): string {
   return "?";
 }
 
-function getRankLabel(row: number, boardSize: number): string {
-  if (boardSize === 8) return String(8 - row);
-  const off = (boardSize - 8) / 2;
+function getRankLabel(row: number, boardRows: number, boardCols?: number): string {
+  const cols = boardCols ?? boardRows;
+  if (boardRows === 8 && cols === 8) return String(8 - row);
+  if (boardRows === 8 && cols === 16) return String(8 - row);
+  const off = (boardRows - 8) / 2;
   return String(8 + off - row);
 }
 
@@ -728,6 +741,8 @@ function SquareEl({
   isPermaWinter = false,
   onClick,
   boardSize,
+  boardCols: boardColsProp,
+  showTeamSetMarker,
   deathNoteCount,
   isNuke,
   nukeMovesLeft,
@@ -756,6 +771,8 @@ function SquareEl({
   isPermaWinter?: boolean;
   onClick: () => void;
   boardSize: number;
+  boardCols?: number;
+  showTeamSetMarker?: boolean;
   deathNoteCount?: number;
   isNuke?: boolean;
   nukeMovesLeft?: number;
@@ -767,6 +784,8 @@ function SquareEl({
   isIlkkan?: boolean;
 }) {
   const vf = !!viewFlipped;
+  const boardCols = boardColsProp ?? boardSize;
+  const boardRows = boardSize;
   const pal = squarePalette;
   const light = (row + col) % 2 === 0;
   let bg = light ? pal.light : pal.dark;
@@ -793,7 +812,7 @@ function SquareEl({
         overflow: "hidden",
       }}
     >
-      {(vf ? col === boardSize - 1 : col === 0) && (
+      {(vf ? col === boardCols - 1 : col === 0) && (
         <span
           style={{
             position: "absolute",
@@ -806,10 +825,10 @@ function SquareEl({
             lineHeight: 1,
           }}
         >
-          {getRankLabel(row, boardSize)}
+          {getRankLabel(row, boardRows, boardCols)}
         </span>
       )}
-      {(vf ? row === 0 : row === boardSize - 1) && (
+      {(vf ? row === 0 : row === boardRows - 1) && (
         <span
           style={{
             position: "absolute",
@@ -822,8 +841,24 @@ function SquareEl({
             lineHeight: 1,
           }}
         >
-          {getFileChar(col, boardSize)}
+          {getFileChar(col, boardRows, boardCols)}
         </span>
+      )}
+      {showTeamSetMarker && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 3,
+            left: 3,
+            width: 7,
+            height: 7,
+            background: "#3b82f6",
+            borderRadius: "50%",
+            pointerEvents: "none",
+            boxShadow: "0 0 4px rgba(59,130,246,0.9)",
+            zIndex: 3,
+          }}
+        />
       )}
       {isCenter && (
         <div
@@ -1290,8 +1325,10 @@ function PromotionDialog({
 
 export interface MpConfig {
   myColor: Color;
-  initialWhiteAugment: Augment;
-  initialBlackAugment: Augment;
+  mySlot?: PlayerSlot;
+  gameMode?: "standard" | "2v2";
+  initialWhiteAugment?: Augment;
+  initialBlackAugment?: Augment;
   onSnapshot: (snap: Record<string, unknown>) => void;
   incomingSnapshot: Record<string, unknown> | null;
   opponentLeft: boolean;
@@ -1300,16 +1337,23 @@ export interface MpConfig {
 }
 
 export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
+  const is2v2 =
+    mpConfig?.gameMode === "2v2" ||
+    false;
   const boardStageRef = useRef<HTMLDivElement>(null);
   const [boardThemeId, setBoardThemeId] = useState<BoardThemeId>("classic");
   const boardPalette = BOARD_THEMES[boardThemeId].palette;
 
-  const [game, setGame] = useState<ChessState>(createInitialState);
+  const [game, setGame] = useState<ChessState>(() =>
+    is2v2 ? create2v2InitialState() : createInitialState(),
+  );
 
   useEffect(() => {
-    const n = game.occupancy.length;
+    const rows = game.occupancy.length;
+    const cols = game.occupancy[0]?.length ?? rows;
+    const n = Math.max(rows, cols);
     if (n >= 8 && n <= 16) setBoardSize(n);
-  }, [game.occupancy.length]);
+  }, [game.occupancy.length, game.occupancy[0]?.length]);
 
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
@@ -1322,12 +1366,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
   const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
   const [whiteAugments, setWhiteAugments] = useState<Augment[]>(
-    mpConfig ? [mpConfig.initialWhiteAugment] : [],
+    mpConfig?.initialWhiteAugment ? [mpConfig.initialWhiteAugment] : [],
   );
   const [blackAugments, setBlackAugments] = useState<Augment[]>(
-    mpConfig ? [mpConfig.initialBlackAugment] : [],
+    mpConfig?.initialBlackAugment ? [mpConfig.initialBlackAugment] : [],
   );
-  const [mpReady, setMpReady] = useState(!mpConfig);
+  const [mpReady, setMpReady] = useState(!mpConfig || is2v2);
 
   useEffect(() => {
     const hasIlkkan =
@@ -1570,12 +1614,17 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     ...EMPTY_TIER,
   });
 
-  const boardSize = game.occupancy.length;
-  const { boardPx, sqSize, stageMinHeight } = useBoardDimensions(
-    boardSize,
+  const boardRows = getBoardRows(game);
+  const boardCols = getBoardCols(game);
+  const boardSize = boardRows;
+  const gameIs2v2 = is2v2Mode(game) || is2v2;
+  const { boardPxW, boardPxH, sqSize, stageMinHeight } = useBoardDimensions(
+    boardRows,
     boardStageRef,
+    boardCols,
   );
   const showCenterMarkers =
+    !gameIs2v2 &&
     phase === "playing" &&
     [...whiteAugments, ...blackAugments].some(
       (a) => a.id === "king-of-the-hill",
@@ -1585,7 +1634,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     : new Set<string>();
 
   /** Online black sees the board from their side (pieces at bottom); white unchanged. */
-  const mpViewFlipped = mpConfig?.myColor === "black";
+  const mpViewFlipped = gameIs2v2
+    ? !!mpConfig?.mySlot?.startsWith("black")
+    : mpConfig?.myColor === "black";
 
   // ── Grant effects ────────────────────────────────────────────────────────
 
@@ -2070,6 +2121,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // MP: initialize augment effects on mount
   useEffect(() => {
     if (!mpConfig) return;
+    if (mpConfig.gameMode === "2v2") {
+      setMpReady(true);
+      return;
+    }
+    if (!mpConfig.initialWhiteAugment || !mpConfig.initialBlackAugment) return;
     setWhiteAugments([mpConfig.initialWhiteAugment]);
     setBlackAugments([mpConfig.initialBlackAugment]);
     grantPickedEffects(mpConfig.initialWhiteAugment, "white", [
@@ -2605,7 +2661,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       // ── Event trigger (full round = after black completes a half-move) ───
-      if (movingColor === "black") {
+      if (movingColor === "black" && !is2v2Mode(newGame)) {
         const fullRoundsCompleted = newTurnCount;
         if (fullRoundsCompleted >= nextEventTurn) {
           const event = rollEvent();
@@ -3586,13 +3642,18 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Square click ─────────────────────────────────────────────────────────
 
-  const isMyTurn = !mpConfig || game.turn === mpConfig.myColor;
+  const isMyTurn =
+    !mpConfig ||
+    (gameIs2v2 && mpConfig.mySlot
+      ? game.turnSlot === mpConfig.mySlot
+      : game.turn === mpConfig.myColor);
 
   const handleSquareClick = useCallback(
     (r: number, c: number) => {
       if (phase !== "playing" || currentTrigger !== null || blindRagePickColor)
         return;
       if (!isMyTurn) return;
+      if (game.teamStatus && game.teamStatus !== "playing") return;
       if (game.status === "checkmate" || game.status === "stalemate") return;
       if (promotionPending) return;
       const piece = getDerivedBoard(game)[r][c];
@@ -4455,7 +4516,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
           const movingPiece = getDerivedBoard(game)[selected[0]][selected[1]]!;
-          const promRowBlack = getDerivedBoard(game).length - 1;
+          const promRowBlack = boardRows - 1;
           const isPromotion =
             movingPiece.type === "P" &&
             ((movingPiece.color === "white" && r === 0) ||
@@ -4478,7 +4539,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           }
           return;
         }
-        if (piece && piece.color === game.turn && !isFrozenPiece) {
+        const canSelect = (() => {
+          if (!piece || piece.color !== game.turn || isFrozenPiece) return false;
+          if (!gameIs2v2) return true;
+          const pid = game.occupancy[r]?.[c];
+          const ent = pid ? game.pieces[pid] : null;
+          if (mpConfig?.mySlot) return ent?.slot === mpConfig.mySlot;
+          return ent?.slot === game.turnSlot;
+        })();
+        if (canSelect) {
           setSelected([r, c]);
           setValidMoves(computeMoves(r, c));
           return;
@@ -4487,12 +4556,21 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setValidMoves([]);
         return;
       }
-      if (
-        piece &&
-        piece.color === game.turn &&
-        piece.type !== "M" &&
-        !isFrozenPiece
-      ) {
+      const canSelectPiece = (() => {
+        if (
+          !piece ||
+          piece.color !== game.turn ||
+          piece.type === "M" ||
+          isFrozenPiece
+        )
+          return false;
+        if (!gameIs2v2) return true;
+        const pid = game.occupancy[r]?.[c];
+        const ent = pid ? game.pieces[pid] : null;
+        if (mpConfig?.mySlot) return ent?.slot === mpConfig.mySlot;
+        return ent?.slot === game.turnSlot;
+      })();
+      if (canSelectPiece) {
         setSelected([r, c]);
         setValidMoves(computeMoves(r, c));
       }
@@ -4581,7 +4659,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   const resetGame = () => {
-    setGame(createInitialState());
+    setGame(is2v2 ? create2v2InitialState() : createInitialState());
     setSelected(null);
     setValidMoves([]);
     setPromotionPending(null);
@@ -4712,8 +4790,17 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const adv = materialAdvantage(game);
-  const isOver = game.status === "checkmate" || game.status === "stalemate";
+  const isTeamOver =
+    !!game.teamStatus && game.teamStatus !== "playing";
+  const isOver =
+    isTeamOver ||
+    game.status === "checkmate" ||
+    game.status === "stalemate";
   const statusText = (() => {
+    if (game.teamStatus === "team_win_white")
+      return { label: "WHITE TEAM WINS", color: "#4ade80" };
+    if (game.teamStatus === "team_win_black")
+      return { label: "BLACK TEAM WINS", color: "#4ade80" };
     if (game.status === "checkmate")
       return {
         label: `${opp(game.turn).toUpperCase()} WINS  ·  Checkmate`,
@@ -4723,8 +4810,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       return { label: "DRAW  ·  Stalemate", color: "#94a3b8" };
     if (game.status === "check")
       return {
-        label: `${game.turn.toUpperCase()}  ·  CHECK!`,
+        label: gameIs2v2 && game.turnSlot
+          ? `${game.turnSlot.toUpperCase()}  ·  CHECK!`
+          : `${game.turn.toUpperCase()}  ·  CHECK!`,
         color: "#f87171",
+      };
+    if (gameIs2v2 && game.turnSlot)
+      return {
+        label: `${game.turnSlot.toUpperCase()}'S TURN`,
+        color: "#e2e8f0",
       };
     return { label: `${game.turn.toUpperCase()}'S TURN`, color: "#e2e8f0" };
   })();
@@ -5216,7 +5310,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       )}
       {mpConfig && !isMyTurn && !isOver && (
         <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/75 px-4 py-1 text-[11px] font-bold tracking-wide text-slate-400">
-          Opponent&apos;s turn…
+          {gameIs2v2 ? "Waiting for other players…" : "Opponent\u2019s turn…"}
         </div>
       )}
       {mpConfig?.connectionLost && !mpConfig.opponentLeft && (
@@ -5256,27 +5350,28 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
       <div ref={boardStageRef} className="w-full flex-shrink-0">
         <BoardStage
-          boardPx={boardPx}
+          boardPxW={boardPxW}
+          boardPxH={boardPxH}
           stageMinHeight={stageMinHeight}
           boardThemeId={boardThemeId}
           onThemeChange={setBoardThemeId}
-          showEventBanner={phase === "playing" && !isOver}
+          showEventBanner={phase === "playing" && !isOver && !gameIs2v2}
           eventBanner={eventBannerEl}
           overlays={boardOverlays}
         >
           <div
             className="grid shrink-0 rounded-sm border-[3px] border-[#5c3d1e] shadow-[0_8px_40px_rgba(0,0,0,0.8),0_2px_8px_rgba(0,0,0,0.5)]"
             style={{
-              width: boardPx,
-              height: boardPx,
-              gridTemplateColumns: `repeat(${boardSize},${sqSize}px)`,
-              gridTemplateRows: `repeat(${boardSize},${sqSize}px)`,
+              width: boardPxW,
+              height: boardPxH,
+              gridTemplateColumns: `repeat(${boardCols},${sqSize}px)`,
+              gridTemplateRows: `repeat(${boardRows},${sqSize}px)`,
             }}
           >
-          {Array.from({ length: boardSize }, (_, dr) =>
-            Array.from({ length: boardSize }, (_, dc) => {
-              const r = mpViewFlipped ? boardSize - 1 - dr : dr;
-              const c = mpViewFlipped ? boardSize - 1 - dc : dc;
+          {Array.from({ length: boardRows }, (_, dr) =>
+            Array.from({ length: boardCols }, (_, dc) => {
+              const r = mpViewFlipped ? boardRows - 1 - dr : dr;
+              const c = mpViewFlipped ? boardCols - 1 - dc : dc;
               const piece = getDerivedBoard(game)[r]?.[c] ?? null;
               const isSel = selected?.[0] === r && selected?.[1] === c;
               const isVM = validMoves.some(([vr, vc]) => vr === r && vc === c);
@@ -5285,11 +5380,21 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                 ((game.lastMove.from[0] === r && game.lastMove.from[1] === c) ||
                   (game.lastMove.to[0] === r && game.lastMove.to[1] === c))
               );
-              const isCK = !!(
-                piece?.type === "K" &&
-                piece.color === game.turn &&
-                (game.status === "check" || game.status === "checkmate")
-              );
+              const isCK = (() => {
+                if (piece?.type !== "K") return false;
+                if (game.status !== "check" && game.status !== "checkmate")
+                  return false;
+                if (gameIs2v2 && game.turnSlot) {
+                  const [kr, kc] = findKingForSlot(game, game.turnSlot);
+                  return kr === r && kc === c;
+                }
+                return (
+                  piece.color === game.turn &&
+                  (game.status === "check" || game.status === "checkmate")
+                );
+              })();
+              const showTeamSetMarker =
+                gameIs2v2 && piece?.setIndex === 1;
               const isCenter =
                 showCenterMarkers && centerSquares.has(`${r},${c}`);
               const isFrozen = !!(
@@ -5357,7 +5462,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                   isFrozen={isFrozen}
                   isPermaWinter={isPermaWinter}
                   onClick={() => handleSquareClick(r, c)}
-                  boardSize={boardSize}
+                  boardSize={boardRows}
+                  boardCols={boardCols}
+                  showTeamSetMarker={showTeamSetMarker}
                   deathNoteCount={dn?.turnsLeft}
                   isNuke={isNukeSquare}
                   nukeMovesLeft={
@@ -5396,7 +5503,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       />
 
       <ShopPanel
-        open={shopOpen && phase === "playing" && !isOver}
+        open={shopOpen && phase === "playing" && !isOver && !gameIs2v2}
         playerColor={game.turn}
         gold={activePlayerGold}
         tierBought={activeTierBought}
