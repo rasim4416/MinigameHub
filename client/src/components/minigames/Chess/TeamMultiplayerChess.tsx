@@ -31,7 +31,24 @@ interface ResumeSession {
 
 const TEAM_SLOTS: PlayerSlot[] = ["white1", "white2", "black1", "black2"];
 
-function useTeamChessSocket() {
+const EMPTY_SLOTS: Record<PlayerSlot, string | null> = {
+  white1: null,
+  white2: null,
+  black1: null,
+  black2: null,
+};
+
+function emptyLobbyState(yourPlayerId = ""): LobbyState {
+  return {
+    slots: { ...EMPTY_SLOTS },
+    slotNames: { ...EMPTY_SLOTS },
+    neutral: [],
+    playerCount: 0,
+    yourPlayerId,
+  };
+}
+
+function useTeamChessSocket(onMessage: (msg: WsMsg) => void) {
   const wsRef = useRef<WebSocket | null>(null);
   const closingIntentionallyRef = useRef(false);
   const resumeSessionRef = useRef<ResumeSession | null>(null);
@@ -39,10 +56,12 @@ function useTeamChessSocket() {
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const pingIntervalRef = useRef<number | null>(null);
+  const pendingSendRef = useRef<object[]>([]);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   const [connected, setConnected] = useState(false);
   const [connectionLost, setConnectionLost] = useState(false);
-  const [lastMsg, setLastMsg] = useState<WsMsg | null>(null);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -91,6 +110,11 @@ function useTeamChessSocket() {
             sessionToken: cred.sessionToken,
           }),
         );
+      } else {
+        for (const msg of pendingSendRef.current) {
+          ws.send(JSON.stringify(msg));
+        }
+        pendingSendRef.current = [];
       }
 
       clearPingInterval();
@@ -104,7 +128,7 @@ function useTeamChessSocket() {
 
     ws.onmessage = (e) => {
       try {
-        setLastMsg(JSON.parse(e.data));
+        onMessageRef.current(JSON.parse(e.data) as WsMsg);
       } catch {
         /* ignore */
       }
@@ -148,6 +172,7 @@ function useTeamChessSocket() {
     clearPingInterval();
     resumeEnabledRef.current = false;
     resumeSessionRef.current = null;
+    pendingSendRef.current = [];
     setConnectionLost(false);
     const w = wsRef.current;
     if (w) {
@@ -160,7 +185,12 @@ function useTeamChessSocket() {
 
   const send = useCallback((msg: object) => {
     const w = wsRef.current;
-    if (w?.readyState === WebSocket.OPEN) w.send(JSON.stringify(msg));
+    if (w?.readyState === WebSocket.OPEN) {
+      w.send(JSON.stringify(msg));
+      return true;
+    }
+    pendingSendRef.current.push(msg);
+    return false;
   }, []);
 
   const setResumeSession = useCallback((session: ResumeSession | null) => {
@@ -183,7 +213,6 @@ function useTeamChessSocket() {
   return {
     connected,
     connectionLost,
-    lastMsg,
     connect,
     disconnect,
     send,
@@ -194,14 +223,26 @@ function useTeamChessSocket() {
 }
 
 function parseLobbyState(msg: WsMsg): LobbyState | null {
-  if (!msg.slots || typeof msg.slots !== "object") return null;
-  const slots = msg.slots as Record<PlayerSlot, string | null>;
-  const slotNames = (msg.slotNames as Record<PlayerSlot, string | null>) ?? {
-    white1: null,
-    white2: null,
-    black1: null,
-    black2: null,
-  };
+  const rawSlots = msg.slots;
+  const slots: Record<PlayerSlot, string | null> =
+    rawSlots && typeof rawSlots === "object"
+      ? {
+          white1: (rawSlots as Record<string, string | null>).white1 ?? null,
+          white2: (rawSlots as Record<string, string | null>).white2 ?? null,
+          black1: (rawSlots as Record<string, string | null>).black1 ?? null,
+          black2: (rawSlots as Record<string, string | null>).black2 ?? null,
+        }
+      : { ...EMPTY_SLOTS };
+  const rawNames = msg.slotNames;
+  const slotNames: Record<PlayerSlot, string | null> =
+    rawNames && typeof rawNames === "object"
+      ? {
+          white1: (rawNames as Record<string, string | null>).white1 ?? null,
+          white2: (rawNames as Record<string, string | null>).white2 ?? null,
+          black1: (rawNames as Record<string, string | null>).black1 ?? null,
+          black2: (rawNames as Record<string, string | null>).black2 ?? null,
+        }
+      : { ...EMPTY_SLOTS };
   const neutral = Array.isArray(msg.neutral)
     ? (msg.neutral as LobbyNeutralPlayer[])
     : [];
@@ -210,7 +251,7 @@ function parseLobbyState(msg: WsMsg): LobbyState | null {
     slotNames,
     neutral,
     playerCount: typeof msg.playerCount === "number" ? msg.playerCount : 0,
-    yourPlayerId: String(msg.yourPlayerId ?? ""),
+    yourPlayerId: String(msg.yourPlayerId ?? msg.playerId ?? ""),
   };
 }
 
@@ -337,18 +378,6 @@ function SlotCard({
 }
 
 export default function TeamMultiplayerChess({ onBack }: { onBack: () => void }) {
-  const {
-    connected,
-    connectionLost,
-    lastMsg,
-    connect,
-    disconnect,
-    send,
-    setResumeSession,
-    setResumeEnabled,
-    clearConnectionLost,
-  } = useTeamChessSocket();
-
   const [lobbyPhase, setLobbyPhase] = useState<LobbyPhase>("menu");
   const [roomId, setRoomId] = useState("");
   const [joinInput, setJoinInput] = useState("");
@@ -363,24 +392,28 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
   );
   const [opponentLeft, setOpponentLeft] = useState(false);
 
+  const shellStyle: React.CSSProperties = {
+    width: "100%",
+    minHeight: "min(720px, 85vh)",
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    background: "#0f1117",
+    color: "#fff",
+    fontFamily: "system-ui, sans-serif",
+    boxSizing: "border-box",
+  };
+
   const containerStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    flex: 1,
     width: "100%",
-    height: "100%",
-    background: "#0f1117",
-    color: "#fff",
-    fontFamily: "system-ui, sans-serif",
     padding: 24,
     boxSizing: "border-box",
   };
-
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
 
   const applyLobby = useCallback((msg: WsMsg) => {
     const state = parseLobbyState(msg);
@@ -398,29 +431,41 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     if (assigned) setMyColor(slotToColor(assigned));
   }, []);
 
-  useEffect(() => {
-    if (!lastMsg) return;
-    switch (lastMsg.type) {
+  const wsHandlerRef = useRef<(msg: WsMsg) => void>(() => {});
+
+  const {
+    connected,
+    connectionLost,
+    connect,
+    disconnect,
+    send,
+    setResumeSession,
+    setResumeEnabled,
+    clearConnectionLost,
+  } = useTeamChessSocket((msg) => wsHandlerRef.current(msg));
+
+  wsHandlerRef.current = (msg: WsMsg) => {
+    switch (msg.type) {
       case "created":
       case "joined":
       case "lobby_state": {
-        applyLobby(lastMsg);
-        if (lastMsg.type === "created" || lastMsg.type === "joined") {
-          setRoomId(String(lastMsg.roomId ?? ""));
-          setMyPlayerId(String(lastMsg.playerId ?? lastMsg.yourPlayerId ?? ""));
-          const token = String(lastMsg.sessionToken ?? "");
+        applyLobby(msg);
+        if (msg.type === "created" || msg.type === "joined") {
+          setRoomId(String(msg.roomId ?? ""));
+          setMyPlayerId(String(msg.playerId ?? msg.yourPlayerId ?? ""));
+          const token = String(msg.sessionToken ?? "");
           setSessionToken(token);
-          if (token && lastMsg.roomId) {
+          if (token && msg.roomId) {
             setResumeSession({
-              roomId: String(lastMsg.roomId),
-              playerId: String(lastMsg.playerId ?? lastMsg.yourPlayerId),
+              roomId: String(msg.roomId),
+              playerId: String(msg.playerId ?? msg.yourPlayerId),
               sessionToken: token,
             });
             setResumeEnabled(true);
           }
-        } else if (lastMsg.type === "lobby_state") {
-          if (lastMsg.roomId) setRoomId(String(lastMsg.roomId));
-          const yid = String(lastMsg.yourPlayerId ?? "");
+        } else if (msg.type === "lobby_state") {
+          if (msg.roomId) setRoomId(String(msg.roomId));
+          const yid = String(msg.yourPlayerId ?? "");
           if (yid) setMyPlayerId((prev) => prev || yid);
         }
         setLobbyPhase((phase) => (phase === "playing" ? "playing" : "lobby"));
@@ -428,15 +473,16 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
       }
       case "resumed":
         clearConnectionLost();
-        applyLobby(lastMsg);
-        if (lastMsg.gameStarted && lastMsg.slot) {
-          setMySlot(lastMsg.slot as PlayerSlot);
-          setMyColor(slotToColor(lastMsg.slot as PlayerSlot));
+        applyLobby(msg);
+        if (msg.roomId) setRoomId(String(msg.roomId));
+        if (msg.gameStarted && msg.slot) {
+          setMySlot(msg.slot as PlayerSlot);
+          setMyColor(slotToColor(msg.slot as PlayerSlot));
         }
-        setLobbyPhase(lastMsg.gameStarted ? "playing" : "lobby");
+        setLobbyPhase(msg.gameStarted ? "playing" : "lobby");
         break;
       case "start": {
-        const slot = lastMsg.slot as PlayerSlot;
+        const slot = msg.slot as PlayerSlot;
         setMySlot(slot);
         setMyColor(slotToColor(slot));
         setLobbyPhase("playing");
@@ -445,7 +491,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
       case "move":
         clearConnectionLost();
         setIncomingSnapshot({
-          ...(lastMsg.snapshot as Record<string, unknown>),
+          ...(msg.snapshot as Record<string, unknown>),
           _ts: Date.now(),
         });
         break;
@@ -453,17 +499,23 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
         setResumeEnabled(false);
         setResumeSession(null);
         setOpponentLeft(true);
+        setLobbyPhase("opponent_left");
         break;
       case "error":
-        setJoinError(String(lastMsg.msg ?? ""));
+        setJoinError(String(msg.msg ?? ""));
         setLobbyPhase((phase) => (phase === "creating" ? "menu" : phase));
-        if (/resume|session|not exist/i.test(String(lastMsg.msg))) {
+        if (/resume|session|not exist/i.test(String(msg.msg))) {
           setResumeEnabled(false);
           setResumeSession(null);
         }
         break;
     }
-  }, [lastMsg, applyLobby, setResumeSession, setResumeEnabled, clearConnectionLost]);
+  };
+
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
 
   const handleCreate = () => {
     setJoinError("");
@@ -503,37 +555,45 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
       : undefined;
 
   if (lobbyPhase === "playing" && mpConfig) {
-    return <ChessGame mpConfig={mpConfig} />;
-  }
-
-  const filledSlots = lobby
-    ? TEAM_SLOTS.filter((s) => lobby.slots[s] !== null).length
-    : 0;
-  const canStart = lobby && lobby.playerCount === 4 && filledSlots === 4;
-
-  if (lobbyPhase === "creating") {
     return (
-      <div style={containerStyle}>
-        <p style={{ color: "#9ca3af", fontSize: 14 }}>Creating room…</p>
+      <div style={shellStyle}>
+        <ChessGame mpConfig={mpConfig} />
       </div>
     );
   }
 
-  if (lobbyPhase === "lobby" && lobby) {
+  const lobbyView = lobby ?? emptyLobbyState(myPlayerId);
+
+  const filledSlots = TEAM_SLOTS.filter((s) => lobbyView.slots[s] !== null).length;
+  const canStart = lobbyView.playerCount === 4 && filledSlots === 4;
+
+  if (lobbyPhase === "creating") {
     return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          background: "#0f1117",
-          color: "#fff",
-          fontFamily: "system-ui, sans-serif",
-          overflow: "auto",
-        }}
-      >
+      <div style={shellStyle}>
+        <div style={containerStyle}>
+          <p style={{ color: "#9ca3af", fontSize: 14 }}>Creating room…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (lobbyPhase === "lobby") {
+    return (
+      <div style={{ ...shellStyle, overflow: "auto" }}>
+        {!lobby && (
+          <div style={{ ...containerStyle, padding: "12px 24px" }}>
+            <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>Loading lobby…</p>
+          </div>
+        )}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "auto",
+          }}
+        >
         <header
           style={{
             flexShrink: 0,
@@ -555,7 +615,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, color: "#9ca3af" }}>
               Players connected:{" "}
-              <strong style={{ color: "#e2e8f0" }}>{lobby.playerCount}/4</strong>
+              <strong style={{ color: "#e2e8f0" }}>{lobbyView.playerCount}/4</strong>
             </div>
             <div style={{ fontSize: 13, color: canStart ? "#4ade80" : "#fbbf24", marginTop: 4 }}>
               {canStart
@@ -603,15 +663,15 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
               White Team
             </h3>
             {(["white1", "white2"] as PlayerSlot[]).map((slot) => {
-              const pid = lobby.slots[slot];
+              const pid = lobbyView.slots[slot];
               const empty = !pid;
-              const isYou = pid === lobby.yourPlayerId;
+              const isYou = pid === lobbyView.yourPlayerId;
               return (
                 <SlotCard
                   key={slot}
                   slot={slot}
                   label={slot === "white1" ? "White 1" : "White 2"}
-                  occupantName={lobby.slotNames[slot]}
+                  occupantName={lobbyView.slotNames[slot]}
                   isYou={isYou}
                   empty={empty}
                   theme="white"
@@ -653,7 +713,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
               New players appear here. Click an empty team slot to join White or Black.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-              {lobby.neutral.length === 0 ? (
+              {lobbyView.neutral.length === 0 ? (
                 <div
                   style={{
                     padding: 16,
@@ -667,7 +727,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
                   No unassigned players
                 </div>
               ) : (
-                lobby.neutral.map((p) => (
+                lobbyView.neutral.map((p) => (
                   <div
                     key={p.playerId}
                     style={{
@@ -675,7 +735,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
                       borderRadius: 8,
                       background: "#1e2130",
                       border:
-                        p.playerId === lobby.yourPlayerId
+                        p.playerId === lobbyView.yourPlayerId
                           ? "2px solid #6366f1"
                           : "1px solid #2d3148",
                       fontSize: 14,
@@ -683,7 +743,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
                     }}
                   >
                     {p.name}
-                    {p.playerId === lobby.yourPlayerId && (
+                    {p.playerId === lobbyView.yourPlayerId && (
                       <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 8 }}>
                         (you)
                       </span>
@@ -724,15 +784,15 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
               Black Team
             </h3>
             {(["black1", "black2"] as PlayerSlot[]).map((slot) => {
-              const pid = lobby.slots[slot];
+              const pid = lobbyView.slots[slot];
               const empty = !pid;
-              const isYou = pid === lobby.yourPlayerId;
+              const isYou = pid === lobbyView.yourPlayerId;
               return (
                 <SlotCard
                   key={slot}
                   slot={slot}
                   label={slot === "black1" ? "Black 1" : "Black 2"}
-                  occupantName={lobby.slotNames[slot]}
+                  occupantName={lobbyView.slotNames[slot]}
                   isYou={isYou}
                   empty={empty}
                   theme="black"
@@ -765,12 +825,32 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
             Leave lobby
           </Btn>
         </footer>
+        </div>
+      </div>
+    );
+  }
+
+  if (lobbyPhase === "opponent_left") {
+    return (
+      <div style={shellStyle}>
+        <div style={containerStyle}>
+          <p style={{ color: "#f87171", marginBottom: 16 }}>A player left the match.</p>
+          <Btn
+            onClick={() => {
+              disconnect();
+              onBack();
+            }}
+          >
+            Back to menu
+          </Btn>
+        </div>
       </div>
     );
   }
 
   if (lobbyPhase === "menu") {
     return (
+      <div style={shellStyle}>
       <div style={containerStyle}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>👥</div>
         <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 700 }}>
@@ -801,11 +881,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Btn onClick={handleCreate} disabled={!connected}>
-              {connected
-                ? lobbyPhase === "creating"
-                  ? "Creating…"
-                  : "Create Team Room"
-                : "Connecting…"}
+              {connected ? "Create Team Room" : "Connecting…"}
             </Btn>
             <div style={{ display: "flex", gap: 8 }}>
               <input
@@ -854,8 +930,15 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
           ← Back
         </button>
       </div>
+      </div>
     );
   }
 
-  return null;
+  return (
+    <div style={shellStyle}>
+      <div style={containerStyle}>
+        <p style={{ color: "#9ca3af", fontSize: 14 }}>Connecting…</p>
+      </div>
+    </div>
+  );
 }
