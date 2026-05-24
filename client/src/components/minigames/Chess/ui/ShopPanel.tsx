@@ -23,9 +23,9 @@ export function ShopPanel({
   gold,
   tierBought,
   playerAugments,
-  augmentLevels,
+  augmentLevels = {},
   onBuy,
-  onImprove,
+  onImprove = () => {},
   onClose,
   pawnShopNextPrice,
   onBuyPawn,
@@ -36,9 +36,9 @@ export function ShopPanel({
   gold: number;
   tierBought: TierBought;
   playerAugments: Augment[];
-  augmentLevels: AugmentUpgradeLevels;
+  augmentLevels?: AugmentUpgradeLevels;
   onBuy: (aug: Augment) => void;
-  onImprove: (augId: string) => void;
+  onImprove?: (augId: string) => void;
   onClose: () => void;
   pawnShopNextPrice: number | null;
   onBuyPawn: (() => void) | null;
