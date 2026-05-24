@@ -242,12 +242,12 @@ export function setupWebSocket(server: Server) {
               myPlayerId = player.playerId;
               rooms.set(id, room);
               send(ws, {
+                ...buildLobbyPayload(room, player.playerId),
                 type: "created",
                 roomId: id,
                 mode: "2v2",
                 playerId: player.playerId,
                 sessionToken: player.sessionToken,
-                ...buildLobbyPayload(room, player.playerId),
               });
               broadcastLobby(room);
             } else {
@@ -305,12 +305,12 @@ export function setupWebSocket(server: Server) {
               const player = addTeamPlayer(r, ws);
               myPlayerId = player.playerId;
               send(ws, {
+                ...buildLobbyPayload(r, player.playerId),
                 type: "joined",
                 roomId: r.id,
                 mode: "2v2",
                 playerId: player.playerId,
                 sessionToken: player.sessionToken,
-                ...buildLobbyPayload(r, player.playerId),
               });
               broadcastLobby(r);
             } else {
@@ -418,6 +418,7 @@ export function setupWebSocket(server: Server) {
               room = r;
               myPlayerId = playerId;
               send(ws, {
+                ...buildLobbyPayload(r, playerId),
                 type: "resumed",
                 roomId: r.id,
                 mode: "2v2",
@@ -425,7 +426,6 @@ export function setupWebSocket(server: Server) {
                 slot: p.assignedSlot,
                 color: p.assignedSlot ? slotToTeam(p.assignedSlot) : null,
                 gameStarted: r.gameStarted,
-                ...buildLobbyPayload(r, playerId),
               });
               if (r.gameStarted && r.lastSnapshot) {
                 send(ws, { type: "move", snapshot: r.lastSnapshot });

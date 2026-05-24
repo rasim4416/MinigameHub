@@ -363,6 +363,20 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
   );
   const [opponentLeft, setOpponentLeft] = useState(false);
 
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+    background: "#0f1117",
+    color: "#fff",
+    fontFamily: "system-ui, sans-serif",
+    padding: 24,
+    boxSizing: "border-box",
+  };
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -389,7 +403,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     switch (lastMsg.type) {
       case "created":
       case "joined":
-      case "lobby_state":
+      case "lobby_state": {
         applyLobby(lastMsg);
         if (lastMsg.type === "created" || lastMsg.type === "joined") {
           setRoomId(String(lastMsg.roomId ?? ""));
@@ -404,9 +418,14 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
             });
             setResumeEnabled(true);
           }
-          setLobbyPhase("lobby");
+        } else if (lastMsg.type === "lobby_state") {
+          if (lastMsg.roomId) setRoomId(String(lastMsg.roomId));
+          const yid = String(lastMsg.yourPlayerId ?? "");
+          if (yid) setMyPlayerId((prev) => prev || yid);
         }
+        setLobbyPhase((phase) => (phase === "playing" ? "playing" : "lobby"));
         break;
+      }
       case "resumed":
         clearConnectionLost();
         applyLobby(lastMsg);
@@ -437,6 +456,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
         break;
       case "error":
         setJoinError(String(lastMsg.msg ?? ""));
+        setLobbyPhase((phase) => (phase === "creating" ? "menu" : phase));
         if (/resume|session|not exist/i.test(String(lastMsg.msg))) {
           setResumeEnabled(false);
           setResumeSession(null);
@@ -455,6 +475,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     if (!joinInput.trim()) return;
     setJoinError("");
     send({ type: "join", roomId: joinInput.trim().toUpperCase() });
+    setLobbyPhase("creating");
   };
 
   const assignSlot = (slot: PlayerSlot | null) => {
@@ -489,6 +510,14 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     ? TEAM_SLOTS.filter((s) => lobby.slots[s] !== null).length
     : 0;
   const canStart = lobby && lobby.playerCount === 4 && filledSlots === 4;
+
+  if (lobbyPhase === "creating") {
+    return (
+      <div style={containerStyle}>
+        <p style={{ color: "#9ca3af", fontSize: 14 }}>Creating room…</p>
+      </div>
+    );
+  }
 
   if (lobbyPhase === "lobby" && lobby) {
     return (
@@ -740,21 +769,7 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     );
   }
 
-  const containerStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    height: "100%",
-    background: "#0f1117",
-    color: "#fff",
-    fontFamily: "system-ui, sans-serif",
-    padding: 24,
-    boxSizing: "border-box",
-  };
-
-  if (lobbyPhase === "menu" || lobbyPhase === "creating") {
+  if (lobbyPhase === "menu") {
     return (
       <div style={containerStyle}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>👥</div>
