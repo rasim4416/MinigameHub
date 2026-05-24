@@ -1,13 +1,21 @@
-// Mercenary piece images — served from client/public (PNG preferred, SVG fallback).
+// Mercenary piece images — bundled via Vite (PNG preferred, SVG fallback).
 import type { Piece, PieceType } from "./engine";
 import { isMercenaryPiece, MERCENARY_ID_MARKER } from "./mercenaryMoves";
 
-const PIECE_STEM: Partial<Record<PieceType, string>> = {
-  P: "pawn",
-  N: "knight",
-  R: "rook",
-  B: "bishop",
-  Q: "queen",
+import pawnPng from "../../../assets/mercenary/chess-orange-mercenary-pawn.png";
+import knightPng from "../../../assets/mercenary/chess-orange-mercenary-knight.png";
+import pawnSvg from "../../../assets/mercenary/chess-orange-mercenary-pawn.svg?url";
+import knightSvg from "../../../assets/mercenary/chess-orange-mercenary-knight.svg?url";
+import rookSvg from "../../../assets/mercenary/chess-orange-mercenary-rook.svg?url";
+import bishopSvg from "../../../assets/mercenary/chess-orange-mercenary-bishop.svg?url";
+import queenSvg from "../../../assets/mercenary/chess-orange-mercenary-queen.svg?url";
+
+const MERCENARY_IMAGE_CANDIDATES: Partial<Record<PieceType, string[]>> = {
+  P: [pawnPng, pawnSvg],
+  N: [knightPng, knightSvg],
+  R: [rookSvg],
+  B: [bishopSvg],
+  Q: [queenSvg],
 };
 
 /** Root-relative public URL with Vite base path (subpath deploys). */
@@ -17,20 +25,15 @@ export function publicAssetUrl(filename: string): string {
   return `${prefix}${filename.replace(/^\//, "")}`;
 }
 
-/** Candidate URLs for a mercenary piece type (PNG first, then SVG). */
+/** Candidate URLs for a mercenary piece type (PNG first when bundled, then SVG). */
 export function mercenaryImageCandidates(type: PieceType): string[] {
-  const stem = PIECE_STEM[type];
-  if (!stem) return [];
-  return [
-    publicAssetUrl(`chess-orange-mercenary-${stem}.png`),
-    publicAssetUrl(`chess-orange-mercenary-${stem}.svg`),
-  ];
+  return MERCENARY_IMAGE_CANDIDATES[type] ?? [];
 }
 
 /** Orange board pieces that should use mercenary art (all orange pieces are mercenaries). */
 export function shouldRenderMercenaryImage(piece: Piece | null): boolean {
   if (!piece || piece.color !== "orange") return false;
-  return piece.type in PIECE_STEM;
+  return piece.type in MERCENARY_IMAGE_CANDIDATES;
 }
 
 /**
