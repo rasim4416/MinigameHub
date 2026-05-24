@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import {
   ChessState,
   PieceType,
@@ -22,8 +22,6 @@ import {
   castlingRightsAfterSwap,
   type Piece,
 } from "./engine";
-import { getOrangeMercenaryPieceImageCandidates } from "./mercenaryAssets";
-import { MercenaryPieceImg } from "./MercenaryPieceImg";
 import {
   BOARD_THEMES,
   type BoardThemeId,
@@ -112,6 +110,40 @@ function isRookFileCol(c: number, boardSize: number): boolean {
   const off = (boardSize - 8) / 2;
   return c === off || c === off + 7;
 }
+
+/** White piece glyphs; orange mercenaries get a strong orange glow in SquareEl. */
+function pieceGlyph(piece: Piece): string {
+  if (piece.color === "orange") return PIECE_UNICODE.white[piece.type];
+  return PIECE_UNICODE[piece.color][piece.type];
+}
+
+function pieceGlyphStyle(piece: Piece, size: number): CSSProperties {
+  const base: CSSProperties = {
+    fontSize: size * 0.72,
+    lineHeight: 1,
+    userSelect: "none",
+    pointerEvents: "none",
+    position: "relative",
+    zIndex: 1,
+  };
+  if (piece.color === "orange") {
+    return {
+      ...base,
+      color: "#ffffff",
+      textShadow:
+        "0 0 3px #fdba74, 0 0 7px #fb923c, 0 0 12px #f97316, 0 0 18px #ea580c, 0 0 24px rgba(234,88,12,0.9), 1px 1px 0 rgba(0,0,0,0.65)",
+    };
+  }
+  return {
+    ...base,
+    color: piece.color === "white" ? "#ffffff" : "#1a0f00",
+    textShadow:
+      piece.color === "white"
+        ? "0 0 3px #000,0 0 6px #000,1px 1px 0 #222"
+        : "0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",
+  };
+}
+
 
 function isPermaFrostSquare(state: ChessState, r: number, c: number): boolean {
   return (
@@ -598,13 +630,9 @@ function getRoyalHouseholdDests(
       const nr = kr + dr * s,
         nc = kc + dc * s;
       if (nr < 0 || nr >= bs || nc < 0 || nc >= bs) break;
-      if (getDerivedBoard(game)[nr][nc]?.type === "K") break;
       const nb = cloneBoard(getDerivedBoard(game));
       nb[kr][kc] = null;
-      for (let t = 1; t <= s; t++) {
-        if (getDerivedBoard(game)[kr + dr * t][kc + dc * t]?.type === "K") break;
-        nb[kr + dr * t][kc + dc * t] = null;
-      }
+      for (let t = 1; t <= s; t++) nb[kr + dr * t][kc + dc * t] = null;
       const k = getDerivedBoard(game)[kr][kc];
       nb[nr][nc] = k ? { ...k } : { type: "K", color };
       if (!isInCheck(nb, color)) dests.push([nr, nc]);
@@ -749,7 +777,6 @@ function SquareEl({
   const dot = size * 0.3,
     ring = size * 0.07;
   const isMonolith = piece?.type === "M";
-  const mercenaryImgCandidates = getOrangeMercenaryPieceImageCandidates(piece);
   return (
     <div
       onClick={onClick}
@@ -1052,26 +1079,8 @@ function SquareEl({
                   : "0 0 0 2px #1a0f00,0 0 6px rgba(255,255,255,0.5)",
             }}
           />
-        ) : mercenaryImgCandidates.length > 0 ? (
-          <MercenaryPieceImg candidates={mercenaryImgCandidates} size={size} />
         ) : (
-          <span
-            style={{
-              fontSize: size * 0.72,
-              lineHeight: 1,
-              color: piece.color === "white" ? "#ffffff" : "#1a0f00",
-              textShadow:
-                piece.color === "white"
-                  ? "0 0 3px #000,0 0 6px #000,1px 1px 0 #222"
-                  : "0 0 3px rgba(255,255,255,0.7),1px 1px 0 rgba(255,255,255,0.5)",
-              userSelect: "none",
-              pointerEvents: "none",
-              position: "relative",
-              zIndex: 1,
-            }}
-          >
-            {PIECE_UNICODE[piece.color][piece.type]}
-          </span>
+          <span style={pieceGlyphStyle(piece, size)}>{pieceGlyph(piece)}</span>
         ))}
     </div>
   );
@@ -3338,7 +3347,12 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const pawns: [number, number][] = [];
       getDerivedBoard(game).forEach((row, r) =>
         row.forEach((p, c) => {
-          if (p?.type === "P" && p.color === game.turn && p.id)
+          if (
+            p?.type === "P" &&
+            p.color === game.turn &&
+            p.id &&
+            isRookFileCol(c, bs)
+          )
             pawns.push([r, c]);
         }),
       );
@@ -3682,11 +3696,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       if (littleBigManMode) {
+        const bsLbm = getDerivedBoard(game).length;
         if (
           piece &&
           piece.type === "P" &&
           piece.color === game.turn &&
-          piece.id
+          piece.id &&
+          isRookFileCol(c, bsLbm)
         ) {
           const fullR = Math.min(whiteTurnCount, blackTurnCount) + 4;
           const pid = piece.id;
@@ -4211,15 +4227,33 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
           const movingColor = game.turn;
+          const enemyColorRH = opp(movingColor);
           const [kr, kc] = findKing(game, movingColor);
           const dr = Math.sign(r - kr),
             dc = Math.sign(c - kc);
+          // Detect enemy king anywhere in the rampage path (inclusive of dest)
+          let enemyKingInPath = false;
+          {
+            let sc: [number, number] = [kr + dr, kc + dc];
+            while (sc[0] !== r || sc[1] !== c) {
+              if (
+                getDerivedBoard(game)[sc[0]][sc[1]]?.type === "K" &&
+                getDerivedBoard(game)[sc[0]][sc[1]]?.color === enemyColorRH
+              )
+                enemyKingInPath = true;
+              sc = [sc[0] + dr, sc[1] + dc];
+            }
+            if (
+              getDerivedBoard(game)[r][c]?.type === "K" &&
+              getDerivedBoard(game)[r][c]?.color === enemyColorRH
+            )
+              enemyKingInPath = true;
+          }
           const nb = cloneBoard(getDerivedBoard(game));
           nb[kr][kc] = null;
           let cur: [number, number] = [kr + dr, kc + dc];
           while (cur[0] !== r || cur[1] !== c) {
-            if (getDerivedBoard(game)[cur[0]][cur[1]]?.type !== "K")
-              nb[cur[0]][cur[1]] = null;
+            nb[cur[0]][cur[1]] = null;
             cur = [cur[0] + dr, cur[1] + dc];
           }
           const kingMoved = getDerivedBoard(game)[kr][kc];
@@ -4279,6 +4313,8 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
               blackTurnCount,
             ),
           );
+          // Instant win if rampage killed the enemy king
+          if (enemyKingInPath) newGame = { ...newGame, status: "checkmate" };
           setGame(newGame);
           if (movingColor === "white") setWhiteRoyalHouseholdUsed(true);
           else setBlackRoyalHouseholdUsed(true);
@@ -4956,7 +4992,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
   const modeBanner = (() => {
     if (littleBigManMode)
       return {
-        text: "👶👑 Little Big Man — click one of your pawns",
+        text: "👶👑 Little Big Man — click one of your pawns on the a- or h-file",
         color: "#eab308",
       };
     if (bloodbendingPlusMode)
