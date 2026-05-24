@@ -36,6 +36,9 @@ interface Room {
   /** 2v2 lobby + in-game connections */
   teamPlayers?: Map<string, TeamPlayer>;
   teamSlots?: Record<PlayerSlot, string | null>;
+  teamWhiteAugmentId?: string | null;
+  teamBlackAugmentId?: string | null;
+  augmentPhase?: boolean;
   gameStarted: boolean;
   createdAt: number;
   lastSnapshot: Record<string, unknown> | null;
@@ -153,8 +156,9 @@ function tryStart1v1(r: Room) {
   }
 }
 
-function tryStart2v2(r: Room) {
-  if (r.gameStarted || r.mode !== "2v2" || !r.teamPlayers || !r.teamSlots) return;
+function tryEnterAugmentPhase2v2(r: Room) {
+  if (r.gameStarted || r.augmentPhase || r.mode !== "2v2" || !r.teamPlayers || !r.teamSlots)
+    return;
   if (r.teamPlayers.size !== 4) return;
   const allFilled = ALL_TEAM_SLOTS.every((s) => r.teamSlots![s] !== null);
   if (!allFilled) return;
@@ -163,13 +167,27 @@ function tryStart2v2(r: Room) {
   );
   if (!allConnected) return;
 
+  r.augmentPhase = true;
+  for (const [, p] of Array.from(r.teamPlayers.entries())) {
+    send(p.ws, { type: "augment_phase", roomId: r.id });
+  }
+}
+
+function tryStart2v2(r: Room) {
+  if (r.gameStarted || r.mode !== "2v2" || !r.teamPlayers || !r.teamSlots) return;
+  if (!r.augmentPhase) return;
+  if (!r.teamWhiteAugmentId || !r.teamBlackAugmentId) return;
+
   r.gameStarted = true;
+  r.augmentPhase = false;
   for (const [, p] of Array.from(r.teamPlayers.entries())) {
     if (!p.assignedSlot) continue;
     send(p.ws, {
       type: "start",
       slot: p.assignedSlot,
       color: slotToTeam(p.assignedSlot),
+      whiteAugmentId: r.teamWhiteAugmentId,
+      blackAugmentId: r.teamBlackAugmentId,
     });
   }
 }
@@ -385,7 +403,7 @@ export function setupWebSocket(server: Server) {
             }
 
             broadcastLobby(room);
-            tryStart2v2(room);
+            tryEnterAugmentPhase2v2(room);
             break;
           }
           case "resume": {
@@ -469,17 +487,49 @@ export function setupWebSocket(server: Server) {
             break;
           }
           case "ready": {
-            if (!room || room.mode !== "1v1" || !myKey) return;
-            const player = room.players.get(myKey);
-            if (!player || player.ws !== ws) return;
-            player.ready = true;
-            player.augmentId = msg.augmentId ?? null;
-            relay(
-              room,
-              { type: "opponent_augment", color: myKey, augmentId: msg.augmentId },
-              myKey,
-            );
-            tryStart1v1(room);
+            if (!room) return;
+            if (room.mode === "2v2") {
+              if (!myPlayerId || !room.teamPlayers || !room.augmentPhase) return;
+              const tp = room.teamPlayers.get(myPlayerId);
+              if (!tp || tp.ws !== ws || !tp.assignedSlot) return;
+              const slot = tp.assignedSlot;
+              if (slot !== "white1" && slot !== "black1") {
+                send(ws, {
+                  type: "error",
+                  msg: "Only team captains (White 1 / Black 1) pick the starting augment.",
+                });
+                return;
+              }
+              const augmentId = String(msg.augmentId ?? "").trim() || null;
+              if (slot === "white1") {
+                room.teamWhiteAugmentId = augmentId;
+                relayTeam(room, {
+                  type: "team_augment",
+                  team: "white",
+                  augmentId,
+                }, myPlayerId);
+              } else {
+                room.teamBlackAugmentId = augmentId;
+                relayTeam(room, {
+                  type: "team_augment",
+                  team: "black",
+                  augmentId,
+                }, myPlayerId);
+              }
+              tryStart2v2(room);
+            } else {
+              if (!myKey) return;
+              const player = room.players.get(myKey);
+              if (!player || player.ws !== ws) return;
+              player.ready = true;
+              player.augmentId = msg.augmentId ?? null;
+              relay(
+                room,
+                { type: "opponent_augment", color: myKey, augmentId: msg.augmentId },
+                myKey,
+              );
+              tryStart1v1(room);
+            }
             break;
           }
           case "move": {
