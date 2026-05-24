@@ -10,6 +10,9 @@ type RoomMode = "1v1" | "2v2";
 const DISCONNECT_GRACE_MS = 45_000;
 const ALL_TEAM_SLOTS: PlayerSlot[] = ["white1", "white2", "black1", "black2"];
 
+const WHITE_SLOTS: PlayerSlot[] = ["white1", "white2"];
+const BLACK_SLOTS: PlayerSlot[] = ["black1", "black2"];
+
 interface Player {
   key: PlayerKey;
   team: Color;
