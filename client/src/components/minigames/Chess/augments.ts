@@ -533,7 +533,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square." },
   { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages UP TO 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
   { id:"domain-expansion", name:"DOMAIN EXPANSION", rarity:"legendary", icon:"♾️", description:"Each player with this augment may expand once (up to two per game). First: 8×8→10×10, adds files x/i and ranks 0/9; you get two rooks on those new outer files on your back rank. Second: 10×10→12×12, adds files y/j and ranks -1/10; expander gets two rooks there. Pieces keep the same squares relative to the center; coordinates shift outward with padding." },
-  { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Spell: choose a rook-file pawn (a/h). For 4 full rounds it moves and captures like a queen, then reverts." },
+  { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Spell: choose any of your pawns. For 4 full rounds it moves and captures like a queen, then reverts." },
   { id:"bloodbending-plus", name:"Bloodbending+", rarity:"legendary", icon:"🩸✨", description:"Spell: flip one enemy knight, bishop, or rook to your color (requires Bloodbending)." },
   { id:"necromancer-plus-plus", name:"Necromancer++", rarity:"legendary", icon:"💀💫", description:"Spell: place a revived queen on an empty home-rank square (requires Necromancer+)." },
 ];
