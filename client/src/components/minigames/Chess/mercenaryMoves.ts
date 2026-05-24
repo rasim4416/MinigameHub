@@ -8,7 +8,10 @@ import type { Board, ChessState, Piece, PieceType } from "./engine";
 import {
   PIECE_VALUE,
   cloneBoard,
+  getBoardCols,
+  getBoardRows,
   getDerivedBoard,
+  is2v2Mode,
   recomputeChessStatus,
   syncStateFromBoard,
 } from "./engine";
@@ -226,6 +229,19 @@ export function applyLostMercenaryAfterFullMove(
 }
 
 /** Spawn Lost Mercenary on a random empty square on the left files (a–b lane). */
+function flankColumns(state: ChessState): { leftCol: number; rightCol: number } {
+  const rows = getBoardRows(state);
+  const cols = getBoardCols(state);
+  if (is2v2Mode(state) || cols > rows) {
+    return { leftCol: 0, rightCol: cols - 1 };
+  }
+  const off = (rows - 8) / 2;
+  return {
+    leftCol: Math.max(0, Math.min(cols - 1, off)),
+    rightCol: Math.max(0, Math.min(cols - 1, cols - 1 - off)),
+  };
+}
+
 export function spawnLostMercenaryOnBoard(
   state: ChessState,
   wallSquares: { row: number; col: number }[] = [],
@@ -234,9 +250,10 @@ export function spawnLostMercenaryOnBoard(
   const board = getDerivedBoard(state);
   if (findLostMercenary(board)) return state;
 
-  const n = board.length;
-  const off = (n - 8) / 2;
-  const leftCols = [off, off + 1].filter((col) => col >= 0 && col < n);
+  const rows = board.length;
+  const cols = board[0]?.length ?? rows;
+  const { leftCol } = flankColumns(state);
+  const leftCols = [leftCol, leftCol + 1].filter((col) => col >= 0 && col < cols);
   const empties: [number, number][] = [];
   const wallCtx: MercenaryStepContext = {
     wallSquares,
@@ -247,7 +264,7 @@ export function spawnLostMercenaryOnBoard(
     permaFrozenSquares,
   };
   for (const col of leftCols)
-    for (let row = 0; row < n; row++) {
+    for (let row = 0; row < rows; row++) {
       if (
         !board[row][col] &&
         !isWall(wallCtx, row, col) &&
@@ -484,10 +501,8 @@ export function spawnMercenaryPatrolKnights(
   permaFrozenSquares: { row: number; col: number }[] = [],
 ): ChessState {
   const board = getDerivedBoard(state);
-  const n = board.length;
-  const off = (n - 8) / 2;
-  const leftCol = Math.max(0, Math.min(n - 1, off));
-  const rightCol = Math.max(0, Math.min(n - 1, n - 1 - off));
+  const rows = board.length;
+  const { leftCol, rightCol } = flankColumns(state);
   const nb = cloneBoard(board);
   const wallCtx: MercenaryStepContext = {
     wallSquares,
@@ -499,17 +514,17 @@ export function spawnMercenaryPatrolKnights(
   };
 
   const pickRow = (b: Board, col: number): number | null => {
-    const rows: number[] = [];
-    for (let row = 0; row < n; row++) {
+    const rowCandidates: number[] = [];
+    for (let row = 0; row < rows; row++) {
       if (
         !b[row][col] &&
         !isWall(wallCtx, row, col) &&
         !isPermaFrozen(wallCtx, row, col)
       )
-        rows.push(row);
+        rowCandidates.push(row);
     }
-    if (rows.length === 0) return null;
-    return rows[Math.floor(Math.random() * rows.length)]!;
+    if (rowCandidates.length === 0) return null;
+    return rowCandidates[Math.floor(Math.random() * rowCandidates.length)]!;
   };
 
   const ts = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -542,10 +557,8 @@ export function spawnMercenarySiegePatrol(
   permaFrozenSquares: { row: number; col: number }[] = [],
 ): ChessState {
   const board = getDerivedBoard(state);
-  const n = board.length;
-  const off = (n - 8) / 2;
-  const leftCol = Math.max(0, Math.min(n - 1, off));
-  const rightCol = Math.max(0, Math.min(n - 1, n - 1 - off));
+  const rows = board.length;
+  const { leftCol, rightCol } = flankColumns(state);
   const nb = cloneBoard(board);
   const wallCtx: MercenaryStepContext = {
     wallSquares,
@@ -556,17 +569,17 @@ export function spawnMercenarySiegePatrol(
     permaFrozenSquares,
   };
   const pickRow = (b: Board, col: number): number | null => {
-    const rows: number[] = [];
-    for (let row = 0; row < n; row++) {
+    const rowCandidates: number[] = [];
+    for (let row = 0; row < rows; row++) {
       if (
         !b[row][col] &&
         !isWall(wallCtx, row, col) &&
         !isPermaFrozen(wallCtx, row, col)
       )
-        rows.push(row);
+        rowCandidates.push(row);
     }
-    if (rows.length === 0) return null;
-    return rows[Math.floor(Math.random() * rows.length)]!;
+    if (rowCandidates.length === 0) return null;
+    return rowCandidates[Math.floor(Math.random() * rowCandidates.length)]!;
   };
   const ts = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const lr = pickRow(nb, leftCol);

@@ -1,9 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Augment,
+  AUGMENT_POOL,
+  rollBonusAugments,
+  pickAugmentCount,
+} from "./augments";
+import { AugmentCardPick } from "./ui/AugmentCard";
 import ChessGame, { MpConfig } from "./ChessGame";
 import type { PlayerSlot } from "./engine";
 import { slotToColor } from "./engine";
 
-type LobbyPhase = "menu" | "creating" | "lobby" | "playing" | "opponent_left";
+type LobbyPhase =
+  | "menu"
+  | "creating"
+  | "lobby"
+  | "picking_augment"
+  | "waiting_augment"
+  | "playing"
+  | "opponent_left";
 
 interface WsMsg {
   type: string;
@@ -391,6 +405,14 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     null,
   );
   const [opponentLeft, setOpponentLeft] = useState(false);
+  const [offeredAugs, setOfferedAugs] = useState<Augment[]>([]);
+  const [myAugment, setMyAugment] = useState<Augment | null>(null);
+  const [teamWhiteAugmentId, setTeamWhiteAugmentId] = useState<string | null>(
+    null,
+  );
+  const [teamBlackAugmentId, setTeamBlackAugmentId] = useState<string | null>(
+    null,
+  );
 
   const shellStyle: React.CSSProperties = {
     width: "100%",
@@ -432,6 +454,10 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
   }, []);
 
   const wsHandlerRef = useRef<(msg: WsMsg) => void>(() => {});
+  const mySlotRef = useRef<PlayerSlot | null>(null);
+  const myPlayerIdRef = useRef("");
+  mySlotRef.current = mySlot;
+  myPlayerIdRef.current = myPlayerId;
 
   const {
     connected,
@@ -481,10 +507,31 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
         }
         setLobbyPhase(msg.gameStarted ? "playing" : "lobby");
         break;
+      case "augment_phase": {
+        const slot = mySlotRef.current;
+        if (slot === "white1" || slot === "black1") {
+          setOfferedAugs(rollBonusAugments(pickAugmentCount([]), []));
+          setLobbyPhase("picking_augment");
+        } else {
+          setLobbyPhase("waiting_augment");
+        }
+        break;
+      }
+      case "team_augment": {
+        const team = msg.team as string;
+        const aid = String(msg.augmentId ?? "");
+        if (team === "white") setTeamWhiteAugmentId(aid || null);
+        if (team === "black") setTeamBlackAugmentId(aid || null);
+        break;
+      }
       case "start": {
         const slot = msg.slot as PlayerSlot;
         setMySlot(slot);
         setMyColor(slotToColor(slot));
+        const wId = String(msg.whiteAugmentId ?? teamWhiteAugmentId ?? "");
+        const bId = String(msg.blackAugmentId ?? teamBlackAugmentId ?? "");
+        if (wId) setTeamWhiteAugmentId(wId);
+        if (bId) setTeamBlackAugmentId(bId);
         setLobbyPhase("playing");
         break;
       }
@@ -541,18 +588,39 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
     [send],
   );
 
+  const whiteAugment =
+    teamWhiteAugmentId
+      ? AUGMENT_POOL.find((a) => a.id === teamWhiteAugmentId) ?? null
+      : mySlot === "white1"
+        ? myAugment
+        : null;
+  const blackAugment =
+    teamBlackAugmentId
+      ? AUGMENT_POOL.find((a) => a.id === teamBlackAugmentId) ?? null
+      : mySlot === "black1"
+        ? myAugment
+        : null;
+
   const mpConfig: MpConfig | undefined =
-    lobbyPhase === "playing" && mySlot
+    lobbyPhase === "playing" && mySlot && whiteAugment && blackAugment
       ? {
           gameMode: "2v2",
           mySlot,
           myColor,
+          initialWhiteAugment: whiteAugment,
+          initialBlackAugment: blackAugment,
           onSnapshot: handleSnapshot,
           incomingSnapshot,
           opponentLeft,
           connectionLost,
         }
       : undefined;
+
+  const handlePickAugment = (aug: Augment) => {
+    setMyAugment(aug);
+    send({ type: "ready", augmentId: aug.id });
+    setLobbyPhase("waiting_augment");
+  };
 
   if (lobbyPhase === "playing" && mpConfig) {
     return (
@@ -843,6 +911,42 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
           >
             Back to menu
           </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (lobbyPhase === "picking_augment") {
+    return (
+      <div style={shellStyle}>
+        <div style={containerStyle}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Team starting augment</h2>
+          <p style={{ color: "#9ca3af", fontSize: 13, margin: "0 0 20px", textAlign: "center" }}>
+            {mySlot === "white1"
+              ? "You are White 1 — pick for the White team"
+              : "You are Black 1 — pick for the Black team"}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 420 }}>
+            {offeredAugs.map((aug) => (
+              <AugmentCardPick key={aug.id} aug={aug} onPick={() => handlePickAugment(aug)} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (lobbyPhase === "waiting_augment") {
+    return (
+      <div style={shellStyle}>
+        <div style={containerStyle}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>{myAugment?.icon ?? "⏳"}</div>
+          <p style={{ fontWeight: 700, margin: "0 0 8px" }}>
+            {myAugment ? `You chose: ${myAugment.name}` : "Waiting for team captains…"}
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>
+            White 1 and Black 1 are picking team augments. Match starts when both are ready.
+          </p>
         </div>
       </div>
     );

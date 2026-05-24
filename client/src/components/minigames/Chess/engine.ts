@@ -157,6 +157,58 @@ export function slotToColor(slot: PlayerSlot): "white" | "black" {
   return slot.startsWith("white") ? "white" : "black";
 }
 
+export function slotSetIndex(slot: PlayerSlot): 0 | 1 {
+  return slot.endsWith("2") ? 1 : 0;
+}
+
+/** Column range [start, end) for a player's 8-file army (16-wide core, padded when expanded). */
+export function slotColRange(
+  slot: PlayerSlot,
+  cols = 16,
+): { start: number; end: number } {
+  const setIndex = slotSetIndex(slot);
+  const pad = Math.max(0, Math.floor((cols - 16) / 2));
+  const start = pad + setIndex * 8;
+  return { start, end: start + 8 };
+}
+
+export function isPawnSpawnSquareForSlot(
+  r: number,
+  c: number,
+  slot: PlayerSlot,
+  rows: number,
+  cols: number,
+): boolean {
+  const color = slotToColor(slot);
+  const { start, end } = slotColRange(slot, cols);
+  if (c < start || c >= end) return false;
+  const rowOff = (rows - 8) / 2;
+  const pawnRow = color === "white" ? 6 + rowOff : 1 + rowOff;
+  return r === pawnRow;
+}
+
+let summonCounter = 0;
+
+export function summonedPiece(
+  type: PieceType,
+  slot: PlayerSlot,
+  id?: string,
+): Piece {
+  const color = slotToColor(slot);
+  const setIndex = slotSetIndex(slot);
+  const pieceId =
+    id ?? `sum-${slot}-${type}-${++summonCounter}-${Date.now().toString(36)}`;
+  return { type, color, id: pieceId, slot, setIndex };
+}
+
+export function isTeamRoundComplete(
+  moverSlot: PlayerSlot | null | undefined,
+  state: ChessState,
+): boolean {
+  if (!is2v2Mode(state)) return false;
+  return moverSlot === "black2";
+}
+
 export function getBoardRows(state: ChessState): number {
   return state.occupancy.length;
 }
