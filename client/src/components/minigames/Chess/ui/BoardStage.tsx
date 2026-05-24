@@ -7,6 +7,8 @@ import { chessShell } from "../chessTheme";
 
 export function BoardStage({
   boardPx,
+  boardPxW,
+  boardPxH,
   stageMinHeight,
   boardThemeId,
   onThemeChange,
@@ -15,7 +17,9 @@ export function BoardStage({
   children,
   overlays,
 }: {
-  boardPx: number;
+  boardPx?: number;
+  boardPxW?: number;
+  boardPxH?: number;
   stageMinHeight: number;
   boardThemeId: BoardThemeId;
   onThemeChange: (id: BoardThemeId) => void;
@@ -24,6 +28,9 @@ export function BoardStage({
   children: ReactNode;
   overlays?: ReactNode;
 }) {
+  const w = boardPxW ?? boardPx ?? 320;
+  const h = boardPxH ?? boardPx ?? 320;
+
   return (
     <section
       className="relative flex w-full flex-shrink-0 flex-col items-center justify-center px-4 py-3"
@@ -52,7 +59,7 @@ export function BoardStage({
 
       <div
         className="relative flex-shrink-0"
-        style={{ width: boardPx, height: boardPx }}
+        style={{ width: w, height: h }}
       >
         {children}
         {overlays}
