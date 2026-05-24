@@ -72,7 +72,7 @@ export function PlayerBar({
         <SpellButton icon="💀💫" label="REVIVE++" active={spells.necroPPActive} onClick={spells.onNecroPP} title="Place a revived queen on an empty square of your back rank" />
       )}
       {canAct && spells.littleBigManCharges > 0 && (
-        <SpellButton icon="👶👑" label="LBM" active={spells.littleBigManActive} count={spells.littleBigManCharges} onClick={spells.onLittleBigMan} title="Choose a rook-file pawn (a/h) — queen movement for 4 full rounds" />
+        <SpellButton icon="👶👑" label="LBM" active={spells.littleBigManActive} count={spells.littleBigManCharges} onClick={spells.onLittleBigMan} title="Choose any of your pawns — queen movement for 4 full rounds" />
       )}
       {canAct && spells.ilkkanAvailable && (
         <SpellButton icon="🧑" label="ILKKAN" active={spells.ilkkanActive} onClick={spells.onIlkkan} title="Make a pawn İlkkan" />
@@ -96,7 +96,7 @@ export function PlayerBar({
         <SpellButton icon="☠️" label="DEATH" active={spells.deathNoteActive} onClick={spells.onDeathNote} title="Mark an enemy piece to die in 16 half-moves" />
       )}
       {canAct && spells.domainAvailable && (
-        <SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="Expand the board (8→10→12); 2 rooks on new outer files (once per player)" />
+        <SpellButton icon="♾️" label="DOMAIN" onClick={spells.onDomain} title="Expand the board to 10×10" />
       )}
       {canAct && spells.monolithPlaceAvailable && (
         <SpellButton icon="🗿" label="PLACE" active={spells.monolithPlaceActive} onClick={spells.onMonolithPlace} title="Place a monolith (spends a turn)" />

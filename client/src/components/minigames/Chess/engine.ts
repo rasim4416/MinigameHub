@@ -527,6 +527,11 @@ function isPermaFrozenSquare(state: ChessState, r: number, c: number): boolean {
   );
 }
 
+/** Kings and monoliths cannot be captured or removed by normal moves. */
+function isCapturableTarget(tgt: Piece): boolean {
+  return tgt.type !== "K" && tgt.type !== "M";
+}
+
 /** Queen-like slides for Little Big Man pawn (pseudo-legal only). */
 function pseudoQueenLikeSlidesForColor(
   state: ChessState,
@@ -552,7 +557,7 @@ function pseudoQueenLikeSlidesForColor(
     while (inB(nr, nc, n)) {
       const tgt = getPieceAt(state, nr, nc);
       if (tgt) {
-        if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
+        if (tgt.color !== color && isCapturableTarget(tgt)) sq.push([nr, nc]);
         break;
       }
       sq.push([nr, nc]);
@@ -597,7 +602,7 @@ function pseudoMoves(
     for (const dc of [-1, 1]) {
       if (!inB(r + dir, c + dc, n)) continue;
       const tgt = getPieceAt(state, r + dir, c + dc);
-      if (tgt && tgt.color !== color && tgt.type !== "M") sq.push([r + dir, c + dc]);
+      if (tgt && tgt.color !== color && isCapturableTarget(tgt)) sq.push([r + dir, c + dc]);
       if (enPassantTarget && enPassantTarget[0] === r + dir && enPassantTarget[1] === c + dc)
         sq.push([r + dir, c + dc]);
     }
@@ -618,7 +623,12 @@ function pseudoMoves(
       const nr = r + dr,
         nc = c + dc;
       const tgt = inB(nr, nc, n) ? getPieceAt(state, nr, nc) : null;
-      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      if (
+        inB(nr, nc, n) &&
+        tgt?.color !== color &&
+        (!tgt || isCapturableTarget(tgt))
+      )
+        sq.push([nr, nc]);
     }
     return sq;
   }
@@ -637,7 +647,12 @@ function pseudoMoves(
       const nr = r + dr,
         nc = c + dc;
       const tgt = inB(nr, nc, n) ? getPieceAt(state, nr, nc) : null;
-      if (inB(nr, nc, n) && tgt?.color !== color && tgt?.type !== "M") sq.push([nr, nc]);
+      if (
+        inB(nr, nc, n) &&
+        tgt?.color !== color &&
+        (!tgt || isCapturableTarget(tgt))
+      )
+        sq.push([nr, nc]);
     }
     return sq;
   }
@@ -651,7 +666,7 @@ function pseudoMoves(
     while (inB(nr, nc, n)) {
       const tgt = getPieceAt(state, nr, nc);
       if (tgt) {
-        if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
+        if (tgt.color !== color && isCapturableTarget(tgt)) sq.push([nr, nc]);
         break;
       }
       sq.push([nr, nc]);
@@ -681,6 +696,7 @@ function applyMoveToState(
   if (!ent) return state;
 
   const capturedId = occ[tr][tc];
+  if (capturedId && pieces[capturedId]?.type === "K") return state;
 
   if (ent.type === "P" && fc !== tc && !capturedId) {
     const epId = occ[fr][tc];
@@ -824,6 +840,7 @@ export function makeMove(
   const movingId = state.occupancy[fr][fc]!;
   const capturedId = state.occupancy[tr][tc];
   const captured: Square = capturedId ? entityToPiece(state.pieces[capturedId]!) : null;
+  if (captured?.type === "K") return state;
 
   const isEP = piece.type === "P" && fc !== tc && !captured;
   const epVictimId = isEP ? state.occupancy[fr][tc] : null;
