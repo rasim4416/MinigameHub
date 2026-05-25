@@ -5,6 +5,7 @@ export function SpellButton({
   onClick,
   title,
   count,
+  tutorialId,
 }: {
   icon: string;
   label: string;
@@ -12,10 +13,12 @@ export function SpellButton({
   onClick: () => void;
   title?: string;
   count?: number;
+  tutorialId?: string;
 }) {
   return (
     <button
       type="button"
+      data-tutorial-id={tutorialId}
       onClick={onClick}
       title={title}
       className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-extrabold tracking-wide transition-all ${

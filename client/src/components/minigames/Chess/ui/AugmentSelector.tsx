@@ -15,12 +15,14 @@ export function AugmentSelector({
   onSelect,
   trigger,
   pickMode = "normal",
+  enabledIds,
 }: {
   playerColor: Color;
   offered: Augment[];
   onSelect: (aug: Augment) => void;
   trigger?: AugmentTrigger | null;
   pickMode?: "normal" | "blind-rage";
+  enabledIds?: Set<string>;
 }) {
   const isWhite = playerColor === "white";
   const badgeLabel =
@@ -151,13 +153,19 @@ export function AugmentSelector({
           justifyContent: "center",
         }}
       >
-        {offered.map((aug) => (
-          <AugmentCard
-            key={aug.id}
-            augment={aug}
-            onSelect={() => onSelect(aug)}
-          />
-        ))}
+        {offered.map((aug) => {
+          const enabled =
+            !enabledIds || enabledIds.has(aug.id);
+          return (
+            <AugmentCard
+              key={aug.id}
+              augment={aug}
+              disabled={!enabled}
+              highlighted={enabled && !!enabledIds}
+              onSelect={() => onSelect(aug)}
+            />
+          );
+        })}
       </div>
       <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>
         Click a card to select it

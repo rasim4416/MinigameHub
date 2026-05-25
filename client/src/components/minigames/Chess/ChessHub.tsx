@@ -2,11 +2,12 @@ import { useState } from "react";
 import type { Language } from "../../../lib/language";
 import { LANGUAGES } from "../../../lib/language";
 import ChessGame from "./ChessGame";
+import TutorialChess from "./TutorialChess";
 import MultiplayerChess from "./MultiplayerChess";
 import TeamMultiplayerChess from "./TeamMultiplayerChess";
 import { ChessLanguageProvider } from "./ChessLanguageContext";
 
-type Mode = "local" | "online" | "team2v2";
+type Mode = "local" | "online" | "team2v2" | "tutorial";
 
 function LanguageToggle({
   language,
@@ -67,6 +68,9 @@ export default function ChessHub() {
 
   return (
     <ChessLanguageProvider language={language}>
+      {mode === "tutorial" && (
+        <TutorialChess onBack={() => setMode(null)} />
+      )}
       {mode === "local" && <ChessGame />}
       {mode === "online" && (
         <MultiplayerChess onBack={() => setMode(null)} />
@@ -106,6 +110,38 @@ export default function ChessHub() {
               justifyContent: "center",
             }}
           >
+            <button
+              onClick={() => setMode("tutorial")}
+              style={{
+                background: "linear-gradient(160deg,#1a1520,#1e2130)",
+                border: "2px solid #a855f7",
+                borderRadius: 12,
+                padding: "20px 32px",
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: 600,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                transition: "border-color 0.2s",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.borderColor = "#c084fc")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.borderColor = "#a855f7")
+              }
+            >
+              <span style={{ fontSize: 32 }}>📖</span>
+              Tutorial
+              <span
+                style={{ color: "#6b7280", fontSize: 12, fontWeight: 400 }}
+              >
+                Learn augments, spells & economy
+              </span>
+            </button>
             <button
               onClick={() => setMode("local")}
               style={{

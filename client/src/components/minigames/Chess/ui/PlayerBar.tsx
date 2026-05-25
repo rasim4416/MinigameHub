@@ -81,7 +81,7 @@ export function PlayerBar({
         <SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)" />
       )}
       {canAct && spells.whatAvailable && (
-        <SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} title="Move one pawn sideways one square (one time)" />
+        <SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} tutorialId="spell-what" title="Move one pawn sideways one square (one time)" />
       )}
       {canAct && spells.sakoAvailable && (
         <SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece on your half (free action)" />
@@ -117,7 +117,7 @@ export function PlayerBar({
         <SpellButton icon="💨" label="EVADE" active={spells.evadeActive} count={spells.evadeCharges} onClick={spells.onEvade} title="Block opponent spells/shop next turn" />
       )}
       {canAct && (
-        <SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} title="Open the augment shop" />
+        <SpellButton icon="🏪" label="SHOP" active={spells.shopOpen} onClick={spells.onToggleShop} tutorialId="shop-button" title="Open the augment shop" />
       )}
     </>
   );
