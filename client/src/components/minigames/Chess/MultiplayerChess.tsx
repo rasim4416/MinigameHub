@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getAugmentName } from "../../../locales/chess";
 import { Augment, AUGMENT_POOL, rollBonusAugments, pickAugmentCount } from "./augments";
+import { useChessLanguage } from "./ChessLanguageContext";
 import ChessGame, { MpConfig } from "./ChessGame";
 import { AugmentCardPick } from "./ui/AugmentCard";
 
@@ -231,6 +233,7 @@ function Btn({ children, onClick, disabled, variant = "primary", style }: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
+  const lang = useChessLanguage();
   const {
     connected,
     connectionLost,
@@ -521,7 +524,7 @@ export default function MultiplayerChess({ onBack }: { onBack: () => void }) {
             {myAugment?.icon ?? "⏳"}
           </div>
           <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
-            You chose: {myAugment?.name}
+            You chose: {myAugment ? getAugmentName(myAugment.id, lang) : ""}
           </p>
           <p style={{ color: "#9ca3af", fontSize: 13, margin: "0 0 16px" }}>
             Waiting for your opponent to pick their augment…

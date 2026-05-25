@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { Color } from "../engine";
 import type { Augment, AugmentUpgradeLevels } from "../augments";
+import { getAugmentDisplayDescription } from "../../../../locales/chess";
+import { useChessLanguage } from "../ChessLanguageContext";
 import {
   AUGMENT_IMPROVEMENTS,
   AUGMENT_POOL,
   augmentUnlockedForShop,
   canImproveAugment,
-  getAugmentDisplayDescription,
   getNextImproveTier,
   getShopCost,
   MAX_STACK,
@@ -44,6 +45,7 @@ export function ShopPanel({
   onBuyPawn: (() => void) | null;
   pawnPlacePending: boolean;
 }) {
+  const lang = useChessLanguage();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -99,7 +101,7 @@ export function ShopPanel({
       aug.id,
       playerAugments,
     );
-    const description = getAugmentDisplayDescription(aug, augmentLevels);
+    const description = getAugmentDisplayDescription(aug, augmentLevels, lang);
 
     return (
       <ShopRow

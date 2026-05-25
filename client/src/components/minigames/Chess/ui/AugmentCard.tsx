@@ -1,4 +1,9 @@
 import { useState } from "react";
+import {
+  getAugmentDescription,
+  getAugmentName,
+} from "../../../../locales/chess";
+import { useChessLanguage } from "../ChessLanguageContext";
 import type { Augment } from "../augments";
 import { RARITY_META } from "../augments";
 
@@ -9,8 +14,11 @@ export function AugmentCard({
   augment: Augment;
   onSelect: () => void;
 }) {
+  const lang = useChessLanguage();
   const [hov, setHov] = useState(false);
   const m = RARITY_META[augment.rarity];
+  const name = getAugmentName(augment.id, lang);
+  const description = getAugmentDescription(augment.id, lang);
   return (
     <div
       onClick={onSelect}
@@ -73,7 +81,7 @@ export function AugmentCard({
             letterSpacing: "0.01em",
           }}
         >
-          {augment.name}
+          {name}
         </p>
         <p
           style={{
@@ -83,7 +91,7 @@ export function AugmentCard({
             lineHeight: 1.45,
           }}
         >
-          {augment.description}
+          {description}
         </p>
       </div>
       <div

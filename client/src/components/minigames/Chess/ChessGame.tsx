@@ -98,6 +98,12 @@ import {
   rollEvent,
   rollFullRoundsUntilNextEvent,
 } from "./events";
+import {
+  getEventDescription,
+  getEventFlavor,
+  getEventName,
+} from "../../../locales/chess";
+import { useChessLanguage } from "./ChessLanguageContext";
 
 function getExcludeForPlayer(augments: Augment[]): string[] {
   return getRollExcludeIds(augments);
@@ -1234,7 +1240,11 @@ function EventAnnouncement({
   peaceTreatyLeft: number;
   onClose: () => void;
 }) {
+  const lang = useChessLanguage();
   const meta = EVENT_RARITY_META[event.rarity];
+  const eventName = getEventName(event.id, lang);
+  const eventDescription = getEventDescription(event.id, lang);
+  const eventFlavor = getEventFlavor(event.id, lang);
   return (
     <div
       style={{
@@ -1289,7 +1299,7 @@ function EventAnnouncement({
             letterSpacing: "0.02em",
           }}
         >
-          {event.name}
+          {eventName}
         </div>
         <div
           style={{
@@ -1299,14 +1309,14 @@ function EventAnnouncement({
             maxWidth: 300,
           }}
         >
-          {event.description}
+          {eventDescription}
         </div>
         {event.id === "peace-treaty" && peaceTreatyLeft > 0 && (
           <div style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>
             ({peaceTreatyLeft} half-moves remaining)
           </div>
         )}
-        {event.flavor && (
+        {eventFlavor && (
           <div
             style={{
               fontSize: 12,
@@ -1316,7 +1326,7 @@ function EventAnnouncement({
               opacity: 0.85,
             }}
           >
-            {event.flavor}
+            {eventFlavor}
           </div>
         )}
         <button

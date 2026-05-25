@@ -1,4 +1,5 @@
-export type Language = 'english' | 'türkçe';
+export type { Language } from "../../../lib/language";
+import type { Language } from "../../../lib/language";
 
 // ─── English ─────────────────────────────────────────────────────────────────
 

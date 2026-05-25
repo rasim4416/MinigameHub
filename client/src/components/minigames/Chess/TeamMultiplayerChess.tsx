@@ -5,6 +5,8 @@ import {
   rollBonusAugments,
   pickAugmentCount,
 } from "./augments";
+import { getAugmentName } from "../../../locales/chess";
+import { useChessLanguage } from "./ChessLanguageContext";
 import { AugmentCardPick } from "./ui/AugmentCard";
 import ChessGame, { MpConfig } from "./ChessGame";
 import type { PlayerSlot } from "./engine";
@@ -392,6 +394,7 @@ function SlotCard({
 }
 
 export default function TeamMultiplayerChess({ onBack }: { onBack: () => void }) {
+  const lang = useChessLanguage();
   const [lobbyPhase, setLobbyPhase] = useState<LobbyPhase>("menu");
   const [roomId, setRoomId] = useState("");
   const [joinInput, setJoinInput] = useState("");
@@ -942,7 +945,9 @@ export default function TeamMultiplayerChess({ onBack }: { onBack: () => void })
         <div style={containerStyle}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>{myAugment?.icon ?? "⏳"}</div>
           <p style={{ fontWeight: 700, margin: "0 0 8px" }}>
-            {myAugment ? `You chose: ${myAugment.name}` : "Waiting for team captains…"}
+            {myAugment
+              ? `You chose: ${getAugmentName(myAugment.id, lang)}`
+              : "Waiting for team captains…"}
           </p>
           <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>
             White 1 and Black 1 are picking team augments. Match starts when both are ready.
