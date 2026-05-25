@@ -28,6 +28,7 @@ export function ShopPanel({
   onBuy,
   onImprove = () => {},
   onClose,
+  enabledShopIds,
   pawnShopNextPrice,
   onBuyPawn,
   pawnPlacePending,
@@ -41,6 +42,7 @@ export function ShopPanel({
   onBuy: (aug: Augment) => void;
   onImprove?: (augId: string) => void;
   onClose: () => void;
+  enabledShopIds?: Set<string>;
   pawnShopNextPrice: number | null;
   onBuyPawn: (() => void) | null;
   pawnPlacePending: boolean;
@@ -103,15 +105,20 @@ export function ShopPanel({
     );
     const description = getAugmentDisplayDescription(aug, augmentLevels, lang);
 
+    const shopEnabled =
+      !enabledShopIds || enabledShopIds.has(aug.id);
+
     return (
       <ShopRow
         key={aug.id}
         augment={aug}
         description={description}
         cost={buyCost}
-        canAfford={canAfford}
+        canAfford={canAfford && shopEnabled}
         isMaxed={isMaxed}
-        showBuy={showBuy}
+        showBuy={showBuy && shopEnabled}
+        disabled={!shopEnabled}
+        tutorialId={aug.id === "miner" ? "shop-miner" : undefined}
         onBuy={() => onBuy(aug)}
         showImprove={showImprove}
         improveCost={improveTier?.cost}

@@ -15,6 +15,8 @@ export function ShopRow({
   canAffordImprove,
   showImprove,
   onImprove,
+  disabled = false,
+  tutorialId,
 }: {
   augment: Augment;
   description?: string;
@@ -23,6 +25,8 @@ export function ShopRow({
   isMaxed: boolean;
   onBuy: () => void;
   showBuy?: boolean;
+  disabled?: boolean;
+  tutorialId?: string;
   improveCost?: number;
   canAffordImprove?: boolean;
   showImprove?: boolean;
@@ -31,7 +35,7 @@ export function ShopRow({
   const lang = useChessLanguage();
   const m = RARITY_META[augment.rarity];
   const name = getAugmentName(augment.id, lang);
-  const canClickBuy = canAfford && !isMaxed;
+  const canClickBuy = canAfford && !isMaxed && !disabled;
   const canClickImprove =
     showImprove &&
     improveCost != null &&
@@ -41,8 +45,13 @@ export function ShopRow({
 
   return (
     <div
+      data-tutorial-id={tutorialId}
       className={`flex min-h-11 items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
-        isMaxed && !showImprove ? "opacity-55" : "hover:border-slate-600 hover:bg-slate-900/80"
+        disabled
+          ? "pointer-events-none opacity-40"
+          : isMaxed && !showImprove
+            ? "opacity-55"
+            : "hover:border-slate-600 hover:bg-slate-900/80"
       }`}
       style={{ borderColor: `${m.border}44` }}
     >

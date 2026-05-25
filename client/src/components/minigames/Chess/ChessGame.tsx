@@ -46,6 +46,21 @@ import { ShopPanel } from "./ui/ShopPanel";
 import { AugmentSelector } from "./ui/AugmentSelector";
 import { StartScreen } from "./ui/StartScreen";
 import {
+  useTutorial,
+  useTutorialRestrictions,
+  useTutorialEmit,
+} from "./tutorial/TutorialContext";
+import {
+  tutorialAllowsAugment,
+  tutorialAllowsShopBuy,
+  tutorialAllowsSpell,
+  tutorialAllowsSquareSelect,
+  tutorialBlocksBoard,
+  tutorialFilterMoves,
+  tutorialMatchMove,
+} from "./tutorial/helpers";
+import type { TutorialBridge } from "./tutorial/types";
+import {
   applyLostMercenaryAfterFullMove,
   applyMercenaryPatrolAfterFullMove,
   isMercenaryPiece,
@@ -860,6 +875,7 @@ function SquareEl({
   isWall,
   isPuppet,
   isIlkkan,
+  isTutorialHighlight = false,
   viewFlipped,
   squarePalette,
 }: {
@@ -890,6 +906,7 @@ function SquareEl({
   isWall?: boolean;
   isPuppet?: boolean;
   isIlkkan?: boolean;
+  isTutorialHighlight?: boolean;
 }) {
   const vf = !!viewFlipped;
   const boardCols = boardColsProp ?? boardSize;
@@ -917,6 +934,9 @@ function SquareEl({
         justifyContent: "center",
         cursor: "pointer",
         transition: "background-color 0.1s",
+        boxShadow: isTutorialHighlight
+          ? "inset 0 0 0 3px rgba(251,191,36,0.85), 0 0 12px rgba(251,191,36,0.45)"
+          : undefined,
         overflow: "hidden",
       }}
     >
@@ -1448,7 +1468,10 @@ export interface MpConfig {
   connectionLost?: boolean;
 }
 
-export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
+export default function ChessGame({
+  mpConfig,
+  tutorialMode = false,
+}: { mpConfig?: MpConfig; tutorialMode?: boolean } = {}) {
   const is2v2 =
     mpConfig?.gameMode === "2v2" ||
     false;
@@ -1474,7 +1497,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     to: [number, number];
   } | null>(null);
 
-  const [phase, setPhase] = useState<GamePhase>(mpConfig ? "playing" : "start");
+  const [phase, setPhase] = useState<GamePhase>(
+    tutorialMode || mpConfig ? "playing" : "start",
+  );
+  const tutorialRestrictions = useTutorialRestrictions();
+  const tutorialEmit = useTutorialEmit();
+  const { registerBridge: registerTutorialBridge } = useTutorial();
+  const executeMoveRef = useRef<
+    (
+      from: [number, number],
+      to: [number, number],
+      promotion?: PieceType,
+      capturedType?: PieceType | null,
+    ) => void
+  >(() => {});
   const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
   const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
   const [whiteAugments, setWhiteAugments] = useState<Augment[]>(
@@ -2312,8 +2348,20 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     setPhase("white-augment");
   };
   const handleWhitePick = (aug: Augment) => {
+    if (
+      tutorialMode &&
+      tutorialRestrictions &&
+      !tutorialAllowsAugment(aug.id, tutorialRestrictions)
+    ) {
+      return;
+    }
     setWhiteAugments([aug]);
     grantPickedEffects(aug, "white", [aug], []);
+    if (tutorialMode) {
+      tutorialEmit?.({ type: "augment", id: aug.id });
+      setPhase("playing");
+      return;
+    }
     setOfferedToBlack(rollBonusAugments(pickAugmentCount([aug]), [aug]));
     setPhase("black-augment");
   };
@@ -2327,13 +2375,14 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   const showTrigger = useCallback(
     (trigger: AugmentTrigger, wAugs: Augment[], bAugs: Augment[]) => {
+      if (tutorialMode) return;
       setCurrentTrigger(trigger);
       const playerAugs = trigger.color === "white" ? wAugs : bAugs;
       setMidGameOffered(
         rollBonusAugments(pickAugmentCount(playerAugs), playerAugs),
       );
     },
-    [],
+    [tutorialMode],
   );
 
   const handleMidGamePick = useCallback(
@@ -2418,6 +2467,13 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   const handleBuy = useCallback(
     (aug: Augment) => {
+      if (
+        tutorialMode &&
+        tutorialRestrictions &&
+        !tutorialAllowsShopBuy(aug.id, tutorialRestrictions)
+      ) {
+        return;
+      }
       const color = game.turn;
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const ownedCount = playerAugs.filter((a) => a.id === aug.id).length;
@@ -2450,6 +2506,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       const setter =
         color === "white" ? setWhiteTierBought : setBlackTierBought;
       setter((prev) => ({ ...prev, [aug.rarity]: prev[aug.rarity] + 1 }));
+      if (tutorialMode) tutorialEmit?.({ type: "shop-buy", id: aug.id });
       requestSnapshot();
     },
     [
@@ -2460,6 +2517,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       blackAugments,
       grantPickedEffects,
       requestSnapshot,
+      tutorialMode,
+      tutorialRestrictions,
+      tutorialEmit,
     ],
   );
   const applyImproveSideEffects = useCallback(
@@ -3264,7 +3324,11 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         playerAugs.some((a) => a.id === "blind-rage");
       const brDone =
         movingColor === "white" ? whiteBlindRageDone : blackBlindRageDone;
-      if (blindEligible && !brDone) {
+      if (tutorialMode && tutorialEmit && tutorialMatchMove(from, to, tutorialRestrictions)) {
+        tutorialEmit({ type: "move", from, to });
+      }
+
+      if (blindEligible && !brDone && !tutorialMode) {
         if (movingColor === "white") setWhiteBlindRageDone(true);
         else setBlackBlindRageDone(true);
         triggersAfterBlindRageRef.current = [...milestoneTriggers];
@@ -3278,7 +3342,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         setBlindRageOffered(
           rollBonusAugments(pickAugmentCount(pAugsForRoll), pAugsForRoll),
         );
-      } else if (milestoneTriggers.length > 0) {
+      } else if (milestoneTriggers.length > 0 && !tutorialMode) {
         const [first, ...rest] = milestoneTriggers;
         const wAugs =
           movingColor === "white" ? [...whiteAugments] : whiteAugments;
@@ -3341,8 +3405,54 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       blackPawnShopBuys,
       blindRagePickColor,
       blindRageOffered,
+      tutorialMode,
+      tutorialEmit,
+      tutorialRestrictions,
     ],
   );
+
+  useEffect(() => {
+    executeMoveRef.current = executeMove;
+  }, [executeMove]);
+
+  useEffect(() => {
+    if (!tutorialMode) {
+      registerTutorialBridge(null);
+      return;
+    }
+    const bridge: TutorialBridge = {
+      getPhase: () => phase,
+      setPhase,
+      setOfferedToWhite,
+      setShopOpen,
+      setGoldWhite: (gold) =>
+        setGame((g) => ({ ...g, goldWhite: gold })),
+      getTurn: () => game.turn,
+      getWhiteWhatUsed: () => whiteWhatUsed,
+      executeScriptedMove: (from, to) => executeMoveRef.current(from, to),
+      findWhiteDPawnSquare: () => {
+        const db = getDerivedBoard(game);
+        for (let r = 0; r < db.length; r++) {
+          for (let c = 0; c < (db[r]?.length ?? 0); c++) {
+            const p = db[r][c];
+            if (p?.type === "P" && p.color === "white" && c === 3) return [r, c];
+          }
+        }
+        return null;
+      },
+    };
+    registerTutorialBridge(bridge);
+    return () => registerTutorialBridge(null);
+  }, [
+    tutorialMode,
+    phase,
+    game,
+    whiteWhatUsed,
+    registerTutorialBridge,
+    setPhase,
+    setOfferedToWhite,
+    setShopOpen,
+  ]);
 
   // ── Undo ─────────────────────────────────────────────────────────────────
 
@@ -3798,16 +3908,18 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   // ── Square click ─────────────────────────────────────────────────────────
 
-  const isMyTurn =
-    !mpConfig ||
-    (gameIs2v2 && mpConfig.mySlot
-      ? game.turnSlot === mpConfig.mySlot
-      : game.turn === mpConfig.myColor);
+  const isMyTurn = tutorialMode
+    ? game.turn === "white"
+    : !mpConfig ||
+      (gameIs2v2 && mpConfig.mySlot
+        ? game.turnSlot === mpConfig.mySlot
+        : game.turn === mpConfig.myColor);
 
   const handleSquareClick = useCallback(
     (r: number, c: number) => {
       if (phase !== "playing" || currentTrigger !== null || blindRagePickColor)
         return;
+      if (tutorialMode && tutorialBlocksBoard(tutorialRestrictions)) return;
       if (!isMyTurn) return;
       if (game.teamStatus && game.teamStatus !== "playing") return;
       if (game.status === "checkmate" || game.status === "stalemate") return;
@@ -4570,6 +4682,15 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
       }
 
       if (whatMode) {
+        if (
+          !whatSelected &&
+          tutorialRestrictions?.highlightSquares?.length &&
+          !tutorialRestrictions.highlightSquares.some(
+            ([hr, hc]) => hr === r && hc === c,
+          )
+        ) {
+          return;
+        }
         if (!whatSelected) {
           if (piece?.type === "P" && piece.color === game.turn) {
             const moves: [number, number][] = [];
@@ -4597,8 +4718,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
           executeMove(whatSelected, [r, c], undefined, null);
-          if (game.turn === "white") setWhiteWhatUsed(true);
-          else setBlackWhatUsed(true);
+          if (game.turn === "white") {
+            setWhiteWhatUsed(true);
+            if (tutorialMode) tutorialEmit?.({ type: "spell", id: "what" });
+          } else setBlackWhatUsed(true);
         }
         setWhatMode(false);
         setWhatSelected(null);
@@ -4661,7 +4784,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
             !getDerivedBoard(game)[tr][tc] ||
             !blessedSquares.some((b) => b.row === tr && b.col === tc),
         );
-        return moves;
+        return tutorialFilterMoves(moves, [pr, pc], tutorialRestrictions);
       };
 
       // Puppet force: the puppeted player must move the puppet piece
@@ -4729,7 +4852,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
           if (mpConfig?.mySlot) return ent?.slot === mpConfig.mySlot;
           return ent?.slot === game.turnSlot;
         })();
-        if (canSelect) {
+        if (
+          canSelect &&
+          tutorialAllowsSquareSelect([r, c], tutorialRestrictions)
+        ) {
           setSelected([r, c]);
           setValidMoves(computeMoves(r, c));
           return;
@@ -4752,7 +4878,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         if (mpConfig?.mySlot) return ent?.slot === mpConfig.mySlot;
         return ent?.slot === game.turnSlot;
       })();
-      if (canSelectPiece) {
+      if (
+        canSelectPiece &&
+        tutorialAllowsSquareSelect([r, c], tutorialRestrictions)
+      ) {
         setSelected([r, c]);
         setValidMoves(computeMoves(r, c));
       }
@@ -4760,6 +4889,9 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
     [
       phase,
       currentTrigger,
+      tutorialMode,
+      tutorialRestrictions,
+      tutorialEmit,
       game,
       selected,
       validMoves,
@@ -5109,12 +5241,18 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
 
   const turnGuard = (fn: () => void) => () => {
     if (!isMyTurn && mpConfig) return;
+    if (tutorialMode && tutorialRestrictions?.blockShopToggle) return;
     fn();
   };
 
-  const spellGuard = (fn: () => void) => () => {
+  const spellGuard = (fn: () => void, spellId?: string) => () => {
     if (!isMyTurn && mpConfig) return;
     if (augmentSpellBlockedFor && game.turn === augmentSpellBlockedFor) return;
+    if (tutorialMode && tutorialRestrictions) {
+      if (spellId && !tutorialAllowsSpell(spellId, tutorialRestrictions))
+        return;
+      if (!spellId && tutorialRestrictions.blockAllSpells) return;
+    }
     fn();
   };
 
@@ -5177,7 +5315,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         ? !whiteWhatUsed && whiteAugments.some((a) => a.id === "what")
         : !blackWhatUsed && blackAugments.some((a) => a.id === "what"),
     whatActive: whatMode && canUseSpells,
-    onWhat: spellGuard(handleToggleWhat),
+    onWhat: spellGuard(handleToggleWhat, "what"),
     sakoAvailable:
       color === "white"
         ? !whiteSakoUsed && whiteAugments.some((a) => a.id === "sako-bosphorus")
@@ -5644,6 +5782,10 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                 (piece.id === whiteIlkkanId || piece.id === blackIlkkanId)
               );
               const isPermaWinter = isPermaFrostSquare(game, r, c);
+              const isTutorialHighlight =
+                tutorialRestrictions?.highlightSquares?.some(
+                  ([hr, hc]) => hr === r && hc === c,
+                ) ?? false;
               return (
                 <SquareEl
                   key={`${dr}-${dc}`}
@@ -5674,6 +5816,7 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
                   isWall={isWall}
                   isPuppet={isPuppet}
                   isIlkkan={isIlkkanSq}
+                  isTutorialHighlight={isTutorialHighlight}
                   squarePalette={boardPalette}
                 />
               );
@@ -5711,19 +5854,34 @@ export default function ChessGame({ mpConfig }: { mpConfig?: MpConfig } = {}) {
         }
         onBuy={handleBuy}
         onImprove={handleImprove}
-        onClose={() => setShopOpen(false)}
+        onClose={() => {
+          if (tutorialMode && tutorialRestrictions?.blockShopClose) return;
+          setShopOpen(false);
+        }}
+        enabledShopIds={
+          tutorialRestrictions?.allowedShopIds
+            ? new Set(tutorialRestrictions.allowedShopIds)
+            : undefined
+        }
         pawnShopNextPrice={pawnShopNextPrice}
         onBuyPawn={pawnShopNextPrice != null ? handleBuyPawn : null}
         pawnPlacePending={pawnPlaceFor !== null || pawnPlaceSlot !== null}
       />
 
       {/* Phase overlays */}
-      {phase === "start" && <StartScreen onStart={handleStart} />}
+      {phase === "start" && !tutorialMode && (
+        <StartScreen onStart={handleStart} />
+      )}
       {phase === "white-augment" && (
         <AugmentSelector
           playerColor="white"
           offered={offeredToWhite}
           onSelect={handleWhitePick}
+          enabledIds={
+            tutorialRestrictions?.allowedAugmentIds
+              ? new Set(tutorialRestrictions.allowedAugmentIds)
+              : undefined
+          }
         />
       )}
       {phase === "black-augment" && (

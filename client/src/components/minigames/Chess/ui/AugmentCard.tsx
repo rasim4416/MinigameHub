@@ -10,9 +10,13 @@ import { RARITY_META } from "../augments";
 export function AugmentCard({
   augment,
   onSelect,
+  disabled = false,
+  highlighted = false,
 }: {
   augment: Augment;
   onSelect: () => void;
+  disabled?: boolean;
+  highlighted?: boolean;
 }) {
   const lang = useChessLanguage();
   const [hov, setHov] = useState(false);
@@ -21,24 +25,34 @@ export function AugmentCard({
   const description = getAugmentDescription(augment.id, lang);
   return (
     <div
-      onClick={onSelect}
-      onMouseEnter={() => setHov(true)}
+      onClick={disabled ? undefined : onSelect}
+      onMouseEnter={() => !disabled && setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
         width: 155,
         padding: "18px 14px 14px",
         borderRadius: 14,
         position: "relative",
-        border: `2px solid ${hov ? m.border : "rgba(255,255,255,0.07)"}`,
-        background: hov ? "#0b1120" : "#080e1a",
-        cursor: "pointer",
+        border: `2px solid ${
+          highlighted
+            ? "#fbbf24"
+            : hov && !disabled
+              ? m.border
+              : "rgba(255,255,255,0.07)"
+        }`,
+        background: hov && !disabled ? "#0b1120" : "#080e1a",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.4 : 1,
+        pointerEvents: disabled ? "none" : "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         gap: 10,
-        boxShadow: hov
-          ? `0 0 22px ${m.glow},0 4px 16px rgba(0,0,0,0.5)`
-          : "0 2px 8px rgba(0,0,0,0.4)",
+        boxShadow: highlighted
+          ? "0 0 20px rgba(251,191,36,0.45)"
+          : hov
+            ? `0 0 22px ${m.glow},0 4px 16px rgba(0,0,0,0.5)`
+            : "0 2px 8px rgba(0,0,0,0.4)",
         transform: hov
           ? "translateY(-5px) scale(1.02)"
           : "translateY(0) scale(1)",
