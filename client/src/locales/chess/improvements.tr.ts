@@ -1,59 +1,59 @@
 export const IMPROVEMENTS_TR: Record<string, string[]> = {
   "miner": [
-    "Her 2 turda bir 2 altın kazan (önceden 3). Sonsuz yığılabilir."
+    "Her 3>2 turda bir 2 altın kazan. Sonsuz stacklenebilir."
   ],
   "alternative": [
-    "Her piyon ilk hamlede yol açıksa 3 kareye kadar ilerleyebilir."
+    "Her piyon ilk hamlede 3 kareye kadar ilerleyebilir."
   ],
   "investment": [
-    "Her tam tur sonunda sahip olduğun her 10 altın için 1 altın kazan (20g → 2g, 40g → 4g, vb.)."
+    "Her tur sonunda sahip olduğun her 10 altın için 1 altın kazan."
   ],
   "efficient": [
-    "Taş aldığında +2 ekstra altın (normal ödülle birleşir).",
-    "Taş aldığında +3 ekstra altın (normal ödülle birleşir)."
+    "Taş aldığında +1>+2 ekstra altın.",
+    "Taş aldığında +2>+3 ekstra altın."
   ],
   "thief": [
-    "Tur sonunda Hırsız yığını başına %2 şansla 50 altın.",
-    "Tur sonunda Hırsız yığını başına %5 şansla 50 altın.",
-    "Tur sonunda Hırsız yığını başına %10 şansla 50 altın."
+    "Tur sonunda stack başına %1>2 şansla 50 altın.",
+    "Tur sonunda stack başına %2>5 şansla 50 altın.",
+    "Tur sonunda stack başına %5>10 şansla 50 altın."
   ],
   "king-of-the-hill": [
-    "d4/d5/e4/e5 üzerindeki her taş tur başına 2 altın kazandırır."
+    "d4/d5/e4/e5 üzerindeki her taş tur başına 1>2 altın kazandırır."
   ],
   "jew": [
-    "Rakip piyonlarını aldığında alınan piyon başına 3 altın.",
-    "Rakip piyon alımlarında: ilki 3g, ikincisi 6g, üçüncüsü 9g… ölçeklenir."
+    "Rakip piyonlarını aldığında alınan piyon başına 2>3 altın.",
+    "Rakip piyonlarını aldığında kazandığın para katlanarak artar."
   ],
   "contract-killer": [
-    "Bir rakip taş işaretle (şah/piyon değil). Alırsan taban değerinin 5 katı altın."
+    "Bir rakip taş işaretle. Alırsan taban değerinin 4>5 katı altın."
   ],
   "tax-man": [
-    "Yarım tur bitince rakibin o turda kazandığı her 8 altın için 3 altın (yığın başına).",
-    "Yarım tur bitince rakibin o turda kazandığı her 5 altın için 3 altın (yığın başına)."
+    "Tur bitince rakibin o turda kazandığı her 10>8 altın için 1>3 altın.",
+    "Tur bitince rakibin o turda kazandığı her 8>5 altın için 3 altın."
   ],
   "frost": [
-    "Bir rakip taşı dondur — 2 tur hareket edemez."
+    "Bir rakip taşı dondur — 1>2 tur hareket edemez."
   ],
   "blessed-water-spell": [
-    "Herhangi bir kareyi kutsala. Üzerindeki taş 3 tur alınamaz."
+    "Herhangi bir kareyi kutsa. Üzerindeki taş 2>3 tur alınamaz."
   ],
   "pawn-shop": [
-    "Dükkandan piyon al; fiyat 5g'den başlar, her alımda +5g.",
+    "Dükkandan piyon al; fiyat 10>5g'den başlar, her alımda +10>+5g.",
     "Dükkandan piyon al; sabit 10g (fiyat artmaz)."
   ],
   "i-am-danger": [
-    "Rakip şaha her şah çektiğinde 5 altın (yığın başına)."
+    "Rakip şaha her şah çektiğinde 4>5 altın (stack başına)."
   ],
   "bloodlust": [
-    "Her 3 rakip taş alımında 1 bonus artırıcı seçimi.",
-    "Her 3 rakip taş alımında 2 bonus artırıcı seçimi."
+    "Her 4>3 rakip taş alımında 1 bonus augment seçimi.",
+    "Her 3 rakip taş alımında 1>2 bonus augment seçimi."
   ],
   "royal-education": [
-    "Şahın iki kez at gibi hareket edebilir (büyünün 2 yükü)."
+    "Şahın 1>2 kez at gibi hareket edebilir (büyünün 2 yükü olur)."
   ],
   "death-note": [
-    "Lanetli taş 12 yarım tur sonra ölür (zamanlayıcı taş kimliğini izler).",
-    "Lanetli taş 4 yarım tur sonra ölür (zamanlayıcı taş kimliğini izler).",
-    "Lanetli taş seçildiğinde anında ölür (zamanlayıcı yok)."
+    "Lanetli taş 16>12 yarım tur sonra ölür.",
+    "Lanetli taş 12>4 yarım tur sonra ölür.",
+    "Lanetli taş seçildiğinde anında ölür."
   ]
 };
