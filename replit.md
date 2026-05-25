@@ -29,6 +29,7 @@ A React-based minigame hub with a 4x4 grid menu. Each game is a self-contained c
 - Component: `client/src/components/minigames/SpeedTyper/SimplifiedSpeedTyper.tsx`
 
 ### Chess (`chess`) — COMPLETE (base game; roguelike augments planned for Phase 2)
+- Language toggle (augments/events only): English / Türkçe — edit `client/src/locales/chess/*.tr.ts`
 - Full 2-player local chess engine (pure TypeScript, no libraries)
 - All piece moves: King, Queen, Rook, Bishop, Knight, Pawn
 - Special moves: castling (both sides), en passant, pawn promotion (dialog)

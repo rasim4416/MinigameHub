@@ -1,3 +1,8 @@
+import {
+  getAugmentDescription,
+  getAugmentName,
+} from "../../../../locales/chess";
+import { useChessLanguage } from "../ChessLanguageContext";
 import type { Augment } from "../augments";
 import { RARITY_META } from "../augments";
 
@@ -8,10 +13,13 @@ export function AugmentIconChip({
   augment: Augment;
   stacked?: boolean;
 }) {
+  const lang = useChessLanguage();
   const m = RARITY_META[augment.rarity];
+  const name = getAugmentName(augment.id, lang);
+  const description = getAugmentDescription(augment.id, lang);
   return (
     <div
-      title={`${augment.name}${stacked ? " ★ (×2)" : ""} — ${augment.description}`}
+      title={`${name}${stacked ? " ★ (×2)" : ""} — ${description}`}
       className="relative h-6 w-6 shrink-0 cursor-default"
     >
       <div

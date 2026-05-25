@@ -234,18 +234,6 @@ export function getNextImproveTier(
   return tiers[level] ?? null;
 }
 
-export function getAugmentDisplayDescription(
-  aug: Augment,
-  levels: AugmentUpgradeLevels,
-): string {
-  const level = getImproveLevel(levels, aug.id);
-  const tiers = AUGMENT_IMPROVEMENTS[aug.id];
-  if (level > 0 && tiers) {
-    const idx = Math.min(level, tiers.length) - 1;
-    return tiers[idx]!.description;
-  }
-  return aug.description;
-}
 
 /** Miner payout interval in half-moves (player turns). */
 export function getMinerInterval(level: number): number {

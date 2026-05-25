@@ -1,3 +1,5 @@
+import { getAugmentName } from "../../../../locales/chess";
+import { useChessLanguage } from "../ChessLanguageContext";
 import type { Augment } from "../augments";
 import { RARITY_META } from "../augments";
 
@@ -26,7 +28,9 @@ export function ShopRow({
   showImprove?: boolean;
   onImprove?: () => void;
 }) {
+  const lang = useChessLanguage();
   const m = RARITY_META[augment.rarity];
+  const name = getAugmentName(augment.id, lang);
   const canClickBuy = canAfford && !isMaxed;
   const canClickImprove =
     showImprove &&
@@ -53,7 +57,7 @@ export function ShopRow({
           className="text-[11px] font-extrabold leading-tight tracking-wide"
           style={{ color: m.text }}
         >
-          {augment.name}
+          {name}
           {isMaxed && showBuy && (
             <span className="ml-1.5 text-[9px] font-bold tracking-widest text-amber-400">
               MAX
