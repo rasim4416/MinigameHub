@@ -78,7 +78,7 @@ export function AuctionPanel({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 28 }}>{PIECE_UNICODE[pieceType]}</span>
+          <span style={{ fontSize: 28 }}>{PIECE_UNICODE.white[pieceType]}</span>
           <div>
             <div
               style={{

@@ -5125,6 +5125,7 @@ export default function ChessGame({
             blackAugments,
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
+            movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
           );
           newGame = recomputeStatus(
             expireLittleBigManAfterHalfMove(
@@ -5770,7 +5771,9 @@ export default function ChessGame({
     littleBigManActive: littleBigManMode && canUseSpells,
     onLittleBigMan: spellGuard(handleToggleLittleBigMan),
     sacrificeAvailable:
-      playerAugments.some((a) => a.id === "sacrifice") && canUseSpells,
+      (color === "white" ? whiteAugments : blackAugments).some(
+        (a) => a.id === "sacrifice",
+      ) && canUseSpells,
     sacrificeActive: sacrificeMode && canUseSpells,
     onSacrifice: spellGuard(handleToggleSacrifice),
     ilkkanAvailable:
