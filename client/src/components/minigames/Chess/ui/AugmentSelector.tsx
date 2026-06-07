@@ -44,7 +44,7 @@ export function AugmentSelector({
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: pickMode === "blind-rage" ? 90 : 80,
+        zIndex: pickMode === "blind-rage" ? 110 : 100,
         background: "linear-gradient(160deg,#030712 0%,#080e1f 100%)",
         display: "flex",
         flexDirection: "column",

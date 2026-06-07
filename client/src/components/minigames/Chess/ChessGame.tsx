@@ -6069,6 +6069,11 @@ export default function ChessGame({
     !!auctionPlaceFor &&
     (!mpConfig || mpConfig.myColor === auctionPlaceFor.color);
 
+  const preGamePhase =
+    phase === "start" ||
+    phase === "white-augment" ||
+    phase === "black-augment";
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (mpConfig && !mpReady) {
@@ -6208,7 +6213,10 @@ export default function ChessGame({
         spells={makeSpells("black")}
       />
 
-      <div ref={boardStageRef} className="w-full flex-shrink-0">
+      <div
+        ref={boardStageRef}
+        className={`w-full flex-shrink-0 ${preGamePhase ? "pointer-events-none" : ""}`}
+      >
         <BoardStage
           boardPxW={boardPxW}
           boardPxH={boardPxH}
@@ -6407,28 +6415,38 @@ export default function ChessGame({
         pawnPlacePending={pawnPlaceFor !== null || pawnPlaceSlot !== null}
       />
 
-      {/* Phase overlays */}
-      {phase === "start" && !tutorialMode && (
-        <StartScreen onStart={handleStart} />
-      )}
-      {phase === "white-augment" && (
-        <AugmentSelector
-          playerColor="white"
-          offered={offeredToWhite}
-          onSelect={handleWhitePick}
-          enabledIds={
-            tutorialRestrictions?.allowedAugmentIds
-              ? new Set(tutorialRestrictions.allowedAugmentIds)
-              : undefined
-          }
-        />
-      )}
-      {phase === "black-augment" && (
-        <AugmentSelector
-          playerColor="black"
-          offered={offeredToBlack}
-          onSelect={handleBlackPick}
-        />
+      {/* Phase overlays — above board; board input disabled until playing */}
+      {preGamePhase && !tutorialMode && (
+        <div className="pointer-events-none absolute inset-0 z-[100]">
+          {phase === "start" && (
+            <div className="pointer-events-auto h-full w-full">
+              <StartScreen onStart={handleStart} />
+            </div>
+          )}
+          {phase === "white-augment" && (
+            <div className="pointer-events-auto h-full w-full">
+              <AugmentSelector
+                playerColor="white"
+                offered={offeredToWhite}
+                onSelect={handleWhitePick}
+                enabledIds={
+                  tutorialRestrictions?.allowedAugmentIds
+                    ? new Set(tutorialRestrictions.allowedAugmentIds)
+                    : undefined
+                }
+              />
+            </div>
+          )}
+          {phase === "black-augment" && (
+            <div className="pointer-events-auto h-full w-full">
+              <AugmentSelector
+                playerColor="black"
+                offered={offeredToBlack}
+                onSelect={handleBlackPick}
+              />
+            </div>
+          )}
+        </div>
       )}
       {phase === "playing" &&
         currentTrigger !== null &&

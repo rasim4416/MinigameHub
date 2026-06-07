@@ -6,6 +6,7 @@ import TutorialChess from "./TutorialChess";
 import MultiplayerChess from "./MultiplayerChess";
 import TeamMultiplayerChess from "./TeamMultiplayerChess";
 import { ChessLanguageProvider } from "./ChessLanguageContext";
+import { ChessErrorBoundary } from "./ui/ChessErrorBoundary";
 
 type Mode = "local" | "online" | "team2v2" | "tutorial";
 
@@ -69,9 +70,17 @@ export default function ChessHub() {
   return (
     <ChessLanguageProvider language={language}>
       {mode === "tutorial" && (
-        <TutorialChess onBack={() => setMode(null)} />
+        <ChessErrorBoundary>
+          <TutorialChess onBack={() => setMode(null)} />
+        </ChessErrorBoundary>
       )}
-      {mode === "local" && <ChessGame />}
+      {mode === "local" && (
+        <ChessErrorBoundary>
+          <div className="flex min-h-[min(720px,calc(100dvh-8rem))] w-full flex-col">
+            <ChessGame />
+          </div>
+        </ChessErrorBoundary>
+      )}
       {mode === "online" && (
         <MultiplayerChess onBack={() => setMode(null)} />
       )}

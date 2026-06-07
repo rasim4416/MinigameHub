@@ -5,7 +5,7 @@ export function StartScreen({ onStart }: { onStart: () => void }) {
   const [hov, setHov] = useState(false);
 
   return (
-    <div className={`${chessShell.overlay} z-[80]`}>
+    <div className={chessShell.overlay}>
       <div className="mb-1 grid grid-cols-4 gap-px opacity-15">
         {Array.from({ length: 16 }, (_, i) => (
           <div
