@@ -110,6 +110,13 @@ export function serveStatic(app: Express) {
       res.status(404).end();
       return;
     }
+    // Stale cached index.html can reference missing hashed bundles; returning
+    // HTML for /assets/* breaks module loading and yields a blank page.
+    if (req.path.startsWith("/assets/")) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
