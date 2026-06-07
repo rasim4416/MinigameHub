@@ -2600,7 +2600,7 @@ export default function ChessGame({
     }
     setActiveAuction(null);
     requestSnapshot();
-  }, [activeAuction, requestSnapshot]);
+  }, [activeAuction, requestSnapshot, currentTrigger, blindRagePickColor]);
 
   const handleAuctionBid = useCallback(
     (amount: number) => {
