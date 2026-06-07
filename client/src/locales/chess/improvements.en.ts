@@ -32,7 +32,7 @@ export const IMPROVEMENTS_EN: Record<string, string[]> = {
     "When you finish a half-move, earn 3 gold per 5 gold your opponent gained that half-move (per stack)."
   ],
   "frost": [
-    "Freeze one enemy piece — it cannot move for 2 turns."
+    "Freeze one enemy piece — it cannot move for 3 half-turns."
   ],
   "blessed-water-spell": [
     "Bless any square. The piece on that square cannot be captured for 3 rounds."

@@ -8,7 +8,7 @@ export const EVENTS_EN: Record<string, EventLocaleEntry> = {
   },
   "peace-treaty": {
     "name": "Peace Treaty",
-    "description": "No gold earned from capturing pieces for the next 5 rounds.",
+    "description": "No gold earned from capturing pieces for the next 3 rounds.",
     "flavor": "A temporary ceasefire has been declared."
   },
   "blessed-waters": {
@@ -75,5 +75,30 @@ export const EVENTS_EN: Record<string, EventLocaleEntry> = {
     "name": "Valar Morghulis",
     "description": "All normal white and black pawns are removed from the board. Orange mercenary pawns are spared. İlkkan is cleared if it was a pawn.",
     "flavor": "All men must die."
+  },
+  "more-more-moreeee": {
+    "name": "More-More-MOREEEE",
+    "description": "Both players gain an additional augment choosing option. Guaranteed rare or higher tier.",
+    "flavor": "Both players gain an additional augment."
+  },
+  "tea-party": {
+    "name": "Tea Party",
+    "description": "Gain King of the Hill and 2 pawns on the hill squares. If you already own King of the Hill, improve it instead.",
+    "flavor": "Gain King of the hill and 2 pawns."
+  },
+  "capitulations": {
+    "name": "Capitulations",
+    "description": "Shop prices reset to their original values. Improvements are not reverted.",
+    "flavor": "Shop prices have been reset."
+  },
+  "common-knowledge": {
+    "name": "Common Knowledge",
+    "description": "Both players gain an additional augment choosing option. Guaranteed rare or lower tier.",
+    "flavor": "Gain an additional augment option."
+  },
+  "apocalypse": {
+    "name": "Apocalypse",
+    "description": "Edge files and ranks are marked. After 10 full rounds, all pieces in those zones are destroyed.",
+    "flavor": "Time is ticking."
   }
 } as Record<string, EventLocaleEntry>;

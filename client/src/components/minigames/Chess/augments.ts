@@ -137,7 +137,7 @@ export const AUGMENT_IMPROVEMENTS: Partial<Record<string, ImproveTier[]>> = {
   frost: [
     {
       cost: 30,
-      description: "Freeze one enemy piece — it cannot move for 2 turns.",
+      description: "Freeze one enemy piece — it cannot move for 3 half-turns.",
     },
   ],
   "blessed-water-spell": [
@@ -272,7 +272,7 @@ export function getTaxManParams(level: number): { divisor: number; goldPer: numb
 }
 
 export function getFrostFreezeTurns(level: number): number {
-  return level >= 1 ? 2 : 1;
+  return level >= 1 ? 3 : 2;
 }
 
 export function getBlessedWaterMovesLeft(level: number): number {
@@ -409,6 +409,63 @@ export function rollBonusAugments(
   return applyGuaranteedUpgradeSlot(rolled, owned, exclude);
 }
 
+const RARITY_ORDER: Rarity[] = [
+  "common",
+  "uncommon",
+  "rare",
+  "epic",
+  "legendary",
+];
+
+function applyRarityFilter(
+  weights: RarityWeights,
+  min?: Rarity,
+  max?: Rarity,
+): RarityWeights {
+  const out = { ...weights };
+  if (min) {
+    const minIdx = RARITY_ORDER.indexOf(min);
+    for (const r of RARITY_ORDER) {
+      if (RARITY_ORDER.indexOf(r) < minIdx) out[r] = 0;
+    }
+  }
+  if (max) {
+    const maxIdx = RARITY_ORDER.indexOf(max);
+    for (const r of RARITY_ORDER) {
+      if (RARITY_ORDER.indexOf(r) > maxIdx) out[r] = 0;
+    }
+  }
+  return out;
+}
+
+/** Bonus rolls with optional min/max rarity constraints (for board events). */
+export function rollBonusAugmentsFiltered(
+  count: number,
+  owned: Augment[],
+  opts?: {
+    minRarity?: Rarity;
+    maxRarity?: Rarity;
+    weights?: RarityWeights;
+  },
+): Augment[] {
+  const exclude = getRollExcludeIds(owned);
+  let w = opts?.weights ?? getWeightsForPlayer(owned);
+  w = applyRarityFilter(w, opts?.minRarity, opts?.maxRarity);
+  const rolled = rollAugments(count, exclude, w);
+  return applyGuaranteedUpgradeSlot(rolled, owned, exclude);
+}
+
+export const AUCTION_MIN_BID: Record<"P" | "N" | "B" | "R" | "Q", number> = {
+  P: 5,
+  N: 20,
+  B: 20,
+  R: 40,
+  Q: 70,
+};
+
+export const AUCTION_PIECE_TYPES = ["P", "N", "B", "R", "Q"] as const;
+export type AuctionPieceType = (typeof AUCTION_PIECE_TYPES)[number];
+
 // ─── Max stack per augment ────────────────────────────────────────────────────
 
 /** 1 = cannot be held twice; 99 = effectively infinite stacking. */
@@ -434,6 +491,7 @@ export const MAX_STACK: Record<string, number> = {
   "impassable":          1,
   "puppet":              1,
   "contract-killer":     1,
+  "sacrifice":           1,
   "blessed-water-spell": 2,
   "instant-cash":        99,
   "ilkkan":              1,
@@ -469,6 +527,7 @@ export const NON_PURCHASABLE = new Set<string>([
   "instant-cash",
   "prize-money",
   "double-gold",
+  "domain-expansion",
 ]);
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -492,11 +551,12 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"mastermind-plus", name:"Mastermind+", rarity:"uncommon", icon:"🧠✨", description:"Further boosts roll chances (Rare↑↑ Epic↑↑ Legendary↑). Cannot be purchased in shop." },
   { id:"contract-killer",  name:"Contract Killer",  rarity:"uncommon", icon:"🎯", description:"Mark one enemy piece (not king or pawn). If you capture it, earn 4× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure)." },
   { id:"evade", name:"Evade", rarity:"uncommon", icon:"💨", description:"Spend a charge: during your opponent's next turn, they cannot use augment spells (shop still allowed)." },
+  { id:"sacrifice", name:"Sacrifice", rarity:"uncommon", icon:"♜", description:"Spell: sacrifice one of your rooks. Gain a minimum rare-tier augment pick." },
   { id:"tax-man", name:"Tax Man", rarity:"uncommon", icon:"🧾", description:"When you finish a half-move, you earn 1 gold per full 10 gold your opponent gained from any source that half-move (per stack)." },
   { id:"free-passage", name:"Free Passage", rarity:"uncommon", icon:"🚪", description:"Your king may castle even while in check (normal castling path rules otherwise apply)." },
   { id:"augmented", name:"Augmented", rarity:"uncommon", icon:"✨", description:"You are offered 4 augment choices instead of 3 when rolling bonus picks." },
   // ── Rare ──────────────────────────────────────────────────────────────────
-  { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn." },
+  { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 2 half-turns." },
   { id:"what",         name:"What?",        rarity:"uncommon", icon:"↔️",   description:"Once, one of your pawns may move one square sideways to an empty square." },
   { id:"oops",         name:"Oops",         rarity:"rare",     icon:"↩️",   description:"Gain 1 undo. Roll back the last 2 half-moves once per game." },
   { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). Once removed, it is gone forever." },

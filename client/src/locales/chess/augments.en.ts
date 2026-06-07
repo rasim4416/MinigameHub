@@ -65,6 +65,10 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
     "name": "Evade",
     "description": "Spend a charge: during your opponent's next turn, they cannot use augment spells (shop still allowed)."
   },
+  "sacrifice": {
+    "name": "Sacrifice",
+    "description": "Sacrifice a rook. Gain a high tier augment."
+  },
   "tax-man": {
     "name": "Tax Man",
     "description": "When you finish a half-move, you earn 1 gold per full 10 gold your opponent gained from any source that half-move (per stack)."
@@ -79,7 +83,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "frost": {
     "name": "Frost",
-    "description": "Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 1 turn."
+    "description": "Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 2 half-turns."
   },
   "what": {
     "name": "What?",

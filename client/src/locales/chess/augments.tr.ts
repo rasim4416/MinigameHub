@@ -65,6 +65,10 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
     "name": "Kaçınma",
     "description": "Bir yük harca: rakibin sonraki turunda büyüleri kullanamaz."
   },
+  "sacrifice": {
+    "name": "Kurban",
+    "description": "Bir kale feda et. Yüksek nadirlikte bir augment kazan."
+  },
   "tax-man": {
     "name": "Vergi Memuru",
     "description": "Yarım tur bitince, rakibin o yarım turda kazandığı her 10 altın için 1 altın al (stack başına)."
@@ -79,7 +83,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "frost": {
     "name": "Don",
-    "description": "1 dondurma büyüsü kazan. Bir rakip taşı dondur — 1 tur hareket edemez."
+    "description": "1 dondurma büyüsü kazan. Bir rakip taşı dondur — 2 yarım tur hareket edemez."
   },
   "what": {
     "name": "Ne?",

@@ -32,7 +32,7 @@ export const IMPROVEMENTS_TR: Record<string, string[]> = {
     "Tur bitince rakibin o turda kazandığı her 8>5 altın için 3 altın."
   ],
   "frost": [
-    "Bir rakip taşı dondur — 1>2 tur hareket edemez."
+    "Bir rakip taşı dondur — 3 yarım tur hareket edemez."
   ],
   "blessed-water-spell": [
     "Herhangi bir kareyi kutsa. Üzerindeki taş 2>3 tur alınamaz."

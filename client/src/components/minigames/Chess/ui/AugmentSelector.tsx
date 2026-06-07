@@ -28,8 +28,10 @@ export function AugmentSelector({
   const badgeLabel =
     pickMode === "blind-rage"
       ? "😤 Blind Rage — bonus pick!"
-      : trigger?.reason === "bloodlust"
-        ? "🩸 Bloodlust Bonus!"
+      : trigger?.reason === "event"
+        ? "✨ Event Bonus!"
+        : trigger?.reason === "bloodlust"
+          ? "🩸 Bloodlust Bonus!"
         : trigger?.reason === "promotion"
           ? "♕ Promotion bonus!"
           : trigger?.reason === "queen-capture"

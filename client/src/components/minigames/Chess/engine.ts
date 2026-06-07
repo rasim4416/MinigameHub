@@ -506,6 +506,29 @@ function attacksFrom(state: ChessState, r: number, c: number, piece: Piece): [nu
         if (inB(r + dr, c + dc, rows, cols)) sq.push([r + dr, c + dc]);
       return sq;
     }
+    const movingId = piece.id;
+    const isLbm =
+      (color === "white" && state.littleBigManWhiteId === movingId) ||
+      (color === "black" && state.littleBigManBlackId === movingId);
+    if (isLbm && movingId) {
+      const dirs: [number, number][] = [
+        [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1],
+      ];
+      for (const [dr, dc] of dirs) {
+        let nr = r + dr, nc = c + dc;
+        while (inB(nr, nc, rows, cols)) {
+          const tgt = getPieceAt(state, nr, nc);
+          if (tgt) {
+            if (tgt.color !== color && tgt.type !== "M") sq.push([nr, nc]);
+            break;
+          }
+          sq.push([nr, nc]);
+          nr += dr;
+          nc += dc;
+        }
+      }
+      return sq;
+    }
     const dir = color === "white" ? -1 : 1;
     for (const dc of [-1, 1])
       if (inB(r + dir, c + dc, rows, cols)) sq.push([r + dir, c + dc]);
