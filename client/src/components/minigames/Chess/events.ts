@@ -57,7 +57,7 @@ export const EVENT_POOL: GameEvent[] = [
     name: "Peace Treaty",
     rarity: "common",
     icon: "🕊️",
-    description: "No gold earned from capturing pieces for the next 5 rounds.",
+    description: "No gold earned from capturing pieces for the next 3 rounds.",
     flavor: "A temporary ceasefire has been declared.",
   },
   {
@@ -171,6 +171,51 @@ export const EVENT_POOL: GameEvent[] = [
       "All normal white and black pawns are removed from the board. Orange mercenary pawns are spared. İlkkan is cleared if it was a pawn.",
     flavor: "All men must die.",
   },
+  {
+    id: "more-more-moreeee",
+    name: "More-More-MOREEEE",
+    rarity: "uncommon",
+    icon: "📢",
+    description:
+      "Both players gain an additional augment choosing option. Guaranteed rare or higher tier.",
+    flavor: "Both players gain an additional augment.",
+  },
+  {
+    id: "tea-party",
+    name: "Tea Party",
+    rarity: "rare",
+    icon: "🍵",
+    description:
+      "Gain King of the Hill and 2 pawns on the hill squares. If you already own King of the Hill, improve it instead.",
+    flavor: "Gain King of the hill and 2 pawns.",
+  },
+  {
+    id: "capitulations",
+    name: "Capitulations",
+    rarity: "common",
+    icon: "📜",
+    description:
+      "Shop prices reset to their original values (scaling cleared). Improvements are not reverted.",
+    flavor: "Shop prices have been reset.",
+  },
+  {
+    id: "common-knowledge",
+    name: "Common Knowledge",
+    rarity: "common",
+    icon: "📚",
+    description:
+      "Both players gain an additional augment choosing option. Guaranteed rare or lower tier.",
+    flavor: "Gain an additional augment option.",
+  },
+  {
+    id: "apocalypse",
+    name: "Apocalypse",
+    rarity: "legendary",
+    icon: "🌋",
+    description:
+      "Columns A, B, G, H and rows 1, 2, 7, 8 are marked. After 10 full rounds, all pieces in those zones are destroyed.",
+    flavor: "Time is ticking.",
+  },
 ];
 
 // ─── Weighted roll ────────────────────────────────────────────────────────────
@@ -183,7 +228,9 @@ const RARITY_WEIGHTS: Record<EventRarity, number> = {
   legendary:  2,
 };
 
-export function rollEvent(): GameEvent {
+export function rollEvent(exhaustedIds: string[] = []): GameEvent {
+  const availablePool = EVENT_POOL.filter((e) => !exhaustedIds.includes(e.id));
+  const poolToUse = availablePool.length > 0 ? availablePool : EVENT_POOL;
   const total = (Object.values(RARITY_WEIGHTS) as number[]).reduce((a, b) => a + b, 0);
   let roll = Math.random() * total;
   let chosenRarity: EventRarity = "common";
@@ -191,8 +238,8 @@ export function rollEvent(): GameEvent {
     roll -= entry[1];
     if (roll <= 0) { chosenRarity = entry[0]; break; }
   }
-  const pool = EVENT_POOL.filter(e => e.rarity === chosenRarity);
-  if (!pool.length) return EVENT_POOL[0];
+  const pool = poolToUse.filter(e => e.rarity === chosenRarity);
+  if (!pool.length) return poolToUse[0] ?? EVENT_POOL[0];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -206,4 +253,9 @@ function randIntInclusive(min: number, max: number): number {
  */
 export function rollFullRoundsUntilNextEvent(justChaosActive: boolean): number {
   return justChaosActive ? 5 : randIntInclusive(5, 13);
+}
+
+/** Full rounds until the next mercenary auction (independent of board events). */
+export function rollFullRoundsUntilNextAuction(): number {
+  return randIntInclusive(10, 15);
 }

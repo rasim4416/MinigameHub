@@ -5,7 +5,9 @@ export type GamePhase = "start" | "white-augment" | "black-augment" | "playing";
 
 export type AugmentTrigger = {
   color: Color;
-  reason: "milestone" | "bloodlust" | "promotion" | "queen-capture";
+  reason: "milestone" | "bloodlust" | "promotion" | "queen-capture" | "event";
+  /** When reason is "event", controls augment roll filter for this pick. */
+  eventRollFilter?: { minRarity?: import("./augments").Rarity; maxRarity?: import("./augments").Rarity };
   milestoneType?: PieceType;
 };
 
@@ -42,6 +44,9 @@ export type SpellState = {
   littleBigManCharges: number;
   littleBigManActive: boolean;
   onLittleBigMan: () => void;
+  sacrificeAvailable: boolean;
+  sacrificeActive: boolean;
+  onSacrifice: () => void;
   ilkkanAvailable: boolean;
   ilkkanActive: boolean;
   onIlkkan: () => void;

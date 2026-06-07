@@ -8,7 +8,7 @@ export const EVENTS_TR: Record<string, EventLocaleEntry> = {
   },
   "peace-treaty": {
     "name": "Ateşkes Antlaşması",
-    "description": "Sonraki 5 tur boyunca taş alımlarından altın kazanılmaz.",
+    "description": "Sonraki 3 tur boyunca taş alımlarından altın kazanılmaz.",
     "flavor": "Geçici bir ateşkes ilan edildi."
   },
   "blessed-waters": {
@@ -75,5 +75,30 @@ export const EVENTS_TR: Record<string, EventLocaleEntry> = {
     "name": "Valar Morghulis",
     "description": "Bütün piyonlar katledildi. ",
     "flavor": "Valar Dohaeris."
+  },
+  "more-more-moreeee": {
+    "name": "Açım",
+    "description": "İki oyuncu da fazladan bir augment seçimi kazanır. Garanti nadir veya üstü.",
+    "flavor": "İki oyuncu da fazladan bir augment kazanır."
+  },
+  "tea-party": {
+    "name": "Çay Partisi",
+    "description": "Tepenin kralı augmenti ve 2 piyon kazanırsın. Zaten sahipsen geliştirilir.",
+    "flavor": "Tepenin kralı augmenti ve 2 piyon kazanırsın."
+  },
+  "capitulations": {
+    "name": "Kapitülasyon",
+    "description": "Market fiyatları sıfırlandı. Geliştirmeler geri alınmaz.",
+    "flavor": "Market fiyatları sıfırlandı."
+  },
+  "common-knowledge": {
+    "name": "Genel Kültür",
+    "description": "Fazladan bir augment seçimi kazan. Garanti nadir veya altı.",
+    "flavor": "Fazladan bir augment seçimi kazan."
+  },
+  "apocalypse": {
+    "name": "Kıyamet",
+    "description": "Kenar sütun ve sıralar işaretlendi. 10 tam tur sonra o bölgelerdeki taşlar yok edilir.",
+    "flavor": "Zaman daralıyor."
   }
 } as Record<string, EventLocaleEntry>;

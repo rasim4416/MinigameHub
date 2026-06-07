@@ -98,6 +98,11 @@ import {
   MAX_STACK,
   rollAugments,
   rollBonusAugments,
+  rollBonusAugmentsFiltered,
+  AUGMENT_IMPROVEMENTS,
+  AUCTION_MIN_BID,
+  AUCTION_PIECE_TYPES,
+  type AuctionPieceType,
   RARITY_META,
   RarityWeights,
   getWeightsForPlayer,
@@ -112,7 +117,10 @@ import {
   EVENT_RARITY_META,
   rollEvent,
   rollFullRoundsUntilNextEvent,
+  rollFullRoundsUntilNextAuction,
+  EVENT_POOL,
 } from "./events";
+import { AuctionPanel, type AuctionState } from "./ui/AuctionPanel";
 import {
   getEventDescription,
   getEventFlavor,
@@ -218,7 +226,7 @@ type AugmentSnapshot = {
   wallSquares: { row: number; col: number }[];
   wallMovesLeft: number;
   activeNuke: { topRow: number; leftCol: number; movesLeft: number } | null;
-  peaceTreatyMovesLeft: number;
+  peaceTreatyRoundsLeft: number;
   whiteLostPawnCols: number[];
   blackLostPawnCols: number[];
   whiteCaptureCount: number;
@@ -271,6 +279,41 @@ function getCenterSquares(bs: number): Set<string> {
     `${mid},${mid}`,
     `${mid - 1},${mid}`,
   ]);
+}
+
+/** Edge columns A/B/G/H and rows 1/2/7/8 (board-relative). */
+function isApocalypseSquare(
+  r: number,
+  c: number,
+  rows: number,
+  cols: number,
+): boolean {
+  const edgeCol = c <= 1 || c >= cols - 2;
+  const edgeRow = r <= 1 || r >= rows - 2;
+  return edgeCol || edgeRow;
+}
+
+function spawnTeaPartyPawns(
+  g: ChessState,
+  color: Color,
+): ChessState {
+  const nb = cloneBoard(getDerivedBoard(g));
+  const rows = nb.length;
+  const centerKeys = Array.from(getCenterSquares(rows));
+  const candidates = centerKeys
+    .map((k) => {
+      const [rr, cc] = k.split(",").map(Number);
+      return [rr, cc] as [number, number];
+    })
+    .filter(([rr, cc]) => !nb[rr]?.[cc])
+    .sort((a, b) => (color === "white" ? b[0] - a[0] : a[0] - b[0]));
+  let placed = 0;
+  for (const [rr, cc] of candidates) {
+    if (placed >= 2) break;
+    nb[rr][cc] = { type: "P", color };
+    placed++;
+  }
+  return syncStateFromBoard({ ...g }, nb);
 }
 const KNIGHT_OFFSETS: [number, number][] = [
   [-2, -1],
@@ -869,6 +912,7 @@ function SquareEl({
   deathNoteCount,
   isNuke,
   nukeMovesLeft,
+  isApocalypse,
   isBlessed,
   isColdWind,
   contractMark,
@@ -900,6 +944,7 @@ function SquareEl({
   deathNoteCount?: number;
   isNuke?: boolean;
   nukeMovesLeft?: number;
+  isApocalypse?: boolean;
   isBlessed?: boolean;
   isColdWind?: boolean;
   contractMark?: boolean;
@@ -1013,6 +1058,19 @@ function SquareEl({
             boxShadow: "inset 0 0 8px rgba(147,210,255,0.5)",
             pointerEvents: "none",
             zIndex: 2,
+          }}
+        />
+      )}
+      {isApocalypse && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(220,38,38,0.22)",
+            border: "2px solid rgba(220,38,38,0.75)",
+            pointerEvents: "none",
+            zIndex: 2,
+            boxShadow: "inset 0 0 6px rgba(220,38,38,0.5)",
           }}
         />
       )}
@@ -1333,7 +1391,7 @@ function EventAnnouncement({
         </div>
         {event.id === "peace-treaty" && peaceTreatyLeft > 0 && (
           <div style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>
-            ({peaceTreatyLeft} half-moves remaining)
+            ({peaceTreatyLeft} rounds remaining)
           </div>
         )}
         {eventFlavor && (
@@ -1639,15 +1697,32 @@ export default function ChessGame({
     rollFullRoundsUntilNextEvent(false),
   );
   const [pendingEvent, setPendingEvent] = useState<GameEvent | null>(null);
-  const [peaceTreatyMovesLeft, setPeaceTreatyMovesLeft] = useState(0);
+  const [peaceTreatyRoundsLeft, setPeaceTreatyRoundsLeft] = useState(0);
   const [activeNuke, setActiveNuke] = useState<{
     topRow: number;
     leftCol: number;
     movesLeft: number;
   } | null>(null);
+  const [activeApocalypse, setActiveApocalypse] = useState<{
+    fullRoundsLeft: number;
+  } | null>(null);
+  const [exhaustedEventIds, setExhaustedEventIds] = useState<string[]>([]);
 
   /** After "Just Chaos", board events are scheduled every 5 full rounds. */
   const [chaosEventTiming, setChaosEventTiming] = useState(false);
+
+  // Mercenary auction (every 10–15 full rounds)
+  const [nextAuctionTurn, setNextAuctionTurn] = useState(() =>
+    rollFullRoundsUntilNextAuction(),
+  );
+  const [activeAuction, setActiveAuction] = useState<AuctionState | null>(null);
+  const [auctionPlaceFor, setAuctionPlaceFor] = useState<{
+    color: Color;
+    pieceType: PieceType;
+  } | null>(null);
+  const [auctionAnnouncement, setAuctionAnnouncement] = useState<string | null>(
+    null,
+  );
 
   // Great Wall of Hatay (event)
   const [wallSquares, setWallSquares] = useState<
@@ -1749,6 +1824,7 @@ export default function ChessGame({
   const [whiteLittleBigManCharges, setWhiteLittleBigManCharges] = useState(0);
   const [blackLittleBigManCharges, setBlackLittleBigManCharges] = useState(0);
   const [littleBigManMode, setLittleBigManMode] = useState(false);
+  const [sacrificeMode, setSacrificeMode] = useState(false);
   const [whiteBlindRageDone, setWhiteBlindRageDone] = useState(false);
   const [blackBlindRageDone, setBlackBlindRageDone] = useState(false);
 
@@ -1919,7 +1995,7 @@ export default function ChessGame({
     wallSquares,
     wallMovesLeft,
     activeNuke,
-    peaceTreatyMovesLeft,
+    peaceTreatyRoundsLeft,
     whiteLostPawnCols,
     blackLostPawnCols,
     whiteCaptureCount,
@@ -1958,7 +2034,7 @@ export default function ChessGame({
     activePuppetSquare, activePuppetColor, whiteContractTarget, blackContractTarget,
     whiteContractPieceId, blackContractPieceId, whiteIlkkanId, blackIlkkanId,
     blessedSquares, coldWindsSquares, coldWindsMovesLeft, wallSquares, wallMovesLeft,
-    activeNuke, peaceTreatyMovesLeft, whiteLostPawnCols, blackLostPawnCols,
+    activeNuke, peaceTreatyRoundsLeft, whiteLostPawnCols, blackLostPawnCols,
     whiteCaptureCount, blackCaptureCount, whiteBloodlustNext, blackBloodlustNext,
     whiteLostMinors, blackLostMinors, nextEventTurn, chaosEventTiming,
     prizeFirstCaptureOfGameDone, whiteBlindRageDone, blackBlindRageDone,
@@ -1973,7 +2049,16 @@ export default function ChessGame({
 
   // Build a plain-JSON snapshot of all game state
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const buildSnapshot = () => ({
+  const buildSnapshot = () => {
+    const shareMidOffers =
+      !mpConfig ||
+      !currentTrigger ||
+      isLocalAugmentPicker(currentTrigger.color, augmentPickSlot);
+    const shareBlindOffers =
+      !mpConfig ||
+      !blindRagePickColor ||
+      isLocalAugmentPicker(blindRagePickColor, blindRagePickSlot);
+    return {
     game,
     whiteTurnCount,
     blackTurnCount,
@@ -2018,7 +2103,7 @@ export default function ChessGame({
     blackDomainUsed,
     nextEventTurn,
     pendingEvent,
-    peaceTreatyMovesLeft,
+    peaceTreatyRoundsLeft,
     activeNuke,
     chaosEventTiming,
     wallSquares,
@@ -2040,7 +2125,7 @@ export default function ChessGame({
     blackTierBought,
     augmentQueue,
     currentTrigger,
-    midGameOffered,
+    midGameOffered: shareMidOffers ? midGameOffered : [],
     whiteNecroPlusCharges,
     blackNecroPlusCharges,
     whiteLostMinors,
@@ -2061,7 +2146,7 @@ export default function ChessGame({
     blackPawnShopBuys,
     pawnPlaceFor,
     blindRagePickColor,
-    blindRageOffered,
+    blindRageOffered: shareBlindOffers ? blindRageOffered : [],
     whiteDoubleGoldFullRoundsLeft,
     blackDoubleGoldFullRoundsLeft,
     whiteBloodbendingCharges,
@@ -2075,7 +2160,13 @@ export default function ChessGame({
     augmentPickSlot,
     blindRagePickSlot,
     pawnPlaceSlot,
-  });
+    exhaustedEventIds,
+    activeApocalypse,
+    nextAuctionTurn,
+    activeAuction,
+    auctionPlaceFor,
+  };
+  };
 
   // Apply a snapshot received from the opponent
   const applySnapshot = (s: Record<string, unknown>) => {
@@ -2133,13 +2224,31 @@ export default function ChessGame({
     setBlackDomainUsed(!!g.blackDomainUsed);
     setNextEventTurn(g.nextEventTurn as number);
     setPendingEvent(g.pendingEvent as GameEvent | null);
-    setPeaceTreatyMovesLeft(g.peaceTreatyMovesLeft as number);
+    setPeaceTreatyRoundsLeft(g.peaceTreatyRoundsLeft as number);
     setActiveNuke(
       g.activeNuke as {
         topRow: number;
         leftCol: number;
         movesLeft: number;
       } | null,
+    );
+    setActiveApocalypse(
+      (g as { activeApocalypse?: { fullRoundsLeft: number } | null })
+        .activeApocalypse ?? null,
+    );
+    setExhaustedEventIds(
+      (g as { exhaustedEventIds?: string[] }).exhaustedEventIds ?? [],
+    );
+    setNextAuctionTurn(
+      (g as { nextAuctionTurn?: number }).nextAuctionTurn ??
+        rollFullRoundsUntilNextAuction(),
+    );
+    setActiveAuction(
+      (g as { activeAuction?: AuctionState | null }).activeAuction ?? null,
+    );
+    setAuctionPlaceFor(
+      (g as { auctionPlaceFor?: { color: Color; pieceType: PieceType } | null })
+        .auctionPlaceFor ?? null,
     );
     setChaosEventTiming(
       typeof g.chaosEventTiming === "boolean"
@@ -2173,7 +2282,17 @@ export default function ChessGame({
     setBlackTierBought(g.blackTierBought as TierBought);
     setAugmentQueue(g.augmentQueue as AugmentTrigger[]);
     setCurrentTrigger(g.currentTrigger as AugmentTrigger | null);
-    setMidGameOffered(g.midGameOffered as Augment[]);
+    const remoteTrigger = g.currentTrigger as AugmentTrigger | null;
+    const remotePickSlot = g.augmentPickSlot as PlayerSlot | null | undefined;
+    const myMidPick =
+      !mpConfig ||
+      !remoteTrigger ||
+      (gameIs2v2
+        ? remotePickSlot === mpConfig.mySlot
+        : remoteTrigger.color === mpConfig.myColor);
+    setMidGameOffered(
+      myMidPick ? (g.midGameOffered as Augment[]) : [],
+    );
     setWhiteNecroPlusCharges(g.whiteNecroPlusCharges as number);
     setBlackNecroPlusCharges(g.blackNecroPlusCharges as number);
     setWhiteLostMinors(g.whiteLostMinors as PieceType[]);
@@ -2205,8 +2324,21 @@ export default function ChessGame({
     setBlindRagePickColor(
       (g as { blindRagePickColor?: Color | null }).blindRagePickColor ?? null,
     );
+    const remoteBlindColor =
+      (g as { blindRagePickColor?: Color | null }).blindRagePickColor ?? null;
+    const remoteBlindSlot =
+      (g as { blindRagePickSlot?: PlayerSlot | null }).blindRagePickSlot ??
+      null;
+    const myBlindPick =
+      !mpConfig ||
+      !remoteBlindColor ||
+      (gameIs2v2
+        ? remoteBlindSlot === mpConfig.mySlot
+        : remoteBlindColor === mpConfig.myColor);
     setBlindRageOffered(
-      (g as { blindRageOffered?: Augment[] }).blindRageOffered ?? [],
+      myBlindPick
+        ? ((g as { blindRageOffered?: Augment[] }).blindRageOffered ?? [])
+        : [],
     );
     setWhiteDoubleGoldFullRoundsLeft(
       (g as { whiteDoubleGoldFullRoundsLeft?: number })
@@ -2378,11 +2510,25 @@ export default function ChessGame({
       if (tutorialMode) return;
       setCurrentTrigger(trigger);
       const playerAugs = trigger.color === "white" ? wAugs : bAugs;
-      setMidGameOffered(
-        rollBonusAugments(pickAugmentCount(playerAugs), playerAugs),
-      );
+      const count = pickAugmentCount(playerAugs);
+      if (trigger.eventRollFilter) {
+        setMidGameOffered(
+          rollBonusAugmentsFiltered(count, playerAugs, trigger.eventRollFilter),
+        );
+      } else {
+        setMidGameOffered(rollBonusAugments(count, playerAugs));
+      }
     },
     [tutorialMode],
+  );
+
+  const isLocalAugmentPicker = useCallback(
+    (color: Color, slot?: PlayerSlot | null) => {
+      if (!mpConfig) return true;
+      if (gameIs2v2) return slot === mpConfig.mySlot;
+      return color === mpConfig.myColor;
+    },
+    [mpConfig, gameIs2v2],
   );
 
   const handleMidGamePick = useCallback(
@@ -2402,7 +2548,13 @@ export default function ChessGame({
       if (augmentQueue.length > 0) {
         const [next, ...rest] = augmentQueue;
         setAugmentQueue(rest);
-        setAugmentPickSlot(augmentPickSlot);
+        setAugmentPickSlot(
+          gameIs2v2
+            ? next.color === "white"
+              ? "white1"
+              : "black1"
+            : null,
+        );
         showTrigger(next, newWAugs, newBAugs);
       } else {
         setCurrentTrigger(null);
@@ -2420,8 +2572,87 @@ export default function ChessGame({
       grantPickedEffects,
       showTrigger,
       requestSnapshot,
+      gameIs2v2,
     ],
   );
+
+  const resolveAuction = useCallback(() => {
+    if (!activeAuction || activeAuction.status !== "active") return;
+    if (Date.now() < activeAuction.timerEndsAt) return;
+    if (currentTrigger || blindRagePickColor) return;
+    const winner = activeAuction.highBidder;
+    if (winner && activeAuction.highBid > 0) {
+      setGame((g) => ({
+        ...g,
+        goldWhite:
+          winner === "white"
+            ? g.goldWhite - activeAuction.highBid
+            : g.goldWhite,
+        goldBlack:
+          winner === "black"
+            ? g.goldBlack - activeAuction.highBid
+            : g.goldBlack,
+      }));
+      setAuctionPlaceFor({
+        color: winner,
+        pieceType: activeAuction.pieceType,
+      });
+    }
+    setActiveAuction(null);
+    requestSnapshot();
+  }, [activeAuction, requestSnapshot]);
+
+  const handleAuctionBid = useCallback(
+    (amount: number) => {
+      if (!activeAuction || activeAuction.status !== "active") return;
+      const bidderColor = mpConfig?.myColor ?? game.turn;
+      const myGold =
+        bidderColor === "white" ? game.goldWhite : game.goldBlack;
+      const minNext = Math.max(
+        activeAuction.minBid,
+        activeAuction.highBid > 0
+          ? activeAuction.highBid + 1
+          : activeAuction.minBid,
+      );
+      if (amount < minNext || amount > myGold) return;
+      setActiveAuction({
+        ...activeAuction,
+        highBid: amount,
+        highBidder: bidderColor,
+        timerEndsAt: Date.now() + 20000,
+      });
+      requestSnapshot();
+    },
+    [activeAuction, game, mpConfig, requestSnapshot],
+  );
+
+  useEffect(() => {
+    if (!activeAuction || activeAuction.status !== "active") return;
+    const id = setInterval(() => {
+      if (Date.now() >= activeAuction.timerEndsAt) resolveAuction();
+    }, 250);
+    return () => clearInterval(id);
+  }, [activeAuction, resolveAuction]);
+
+  useEffect(() => {
+    if (
+      !mpConfig ||
+      !currentTrigger ||
+      midGameOffered.length > 0 ||
+      !isLocalAugmentPicker(currentTrigger.color, augmentPickSlot)
+    )
+      return;
+    showTrigger(currentTrigger, whiteAugments, blackAugments);
+  }, [
+    mpConfig,
+    currentTrigger,
+    midGameOffered.length,
+    isLocalAugmentPicker,
+    augmentPickSlot,
+    whiteAugments,
+    blackAugments,
+    showTrigger,
+  ]);
 
   const handleBlindRagePick = useCallback(
     (aug: Augment) => {
@@ -2579,6 +2810,7 @@ export default function ChessGame({
       const roundsSoFar = Math.min(whiteTurnCount, blackTurnCount);
       const victimSquarePiece = getDerivedBoard(game)[to[0]][to[1]];
       const victimWasMercenary = isMercenaryPiece(victimSquarePiece);
+      let eventAugmentTriggers: AugmentTrigger[] = [];
       setGameHistory((h) => [...h, game]);
       setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
       setShopOpen(false);
@@ -2635,8 +2867,12 @@ export default function ChessGame({
         );
       }
 
-      // Jew
-      if (capturedType === "P" && !victimWasMercenary) {
+      // Jew (blocked by peace treaty)
+      if (
+        capturedType === "P" &&
+        !victimWasMercenary &&
+        peaceTreatyRoundsLeft <= 0
+      ) {
         const victimColor = opp(movingColor);
         const victimAugs =
           victimColor === "white" ? whiteAugments : blackAugments;
@@ -2725,7 +2961,7 @@ export default function ChessGame({
       // Internal Combustion runs after mercenary ticks (see end of executeMove).
 
       // Gold from capture (blocked by peace treaty; Efficient)
-      if (capturedType && peaceTreatyMovesLeft <= 0 && !victimWasMercenary) {
+      if (capturedType && peaceTreatyRoundsLeft <= 0 && !victimWasMercenary) {
         const efficientStacks = playerAugs.filter(
           (a) => a.id === "efficient",
         ).length;
@@ -2756,8 +2992,7 @@ export default function ChessGame({
         };
       }
 
-      // Peace treaty countdown
-      if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft((n) => n - 1);
+      // Peace treaty countdown moved to fullRoundDone block
 
       // Contract Killer — 4× payout when you capture the marked piece; consume augment when resolved
       {
@@ -2784,20 +3019,22 @@ export default function ChessGame({
             const hitSq =
               wCT && wCT[0] === to[0] && wCT[1] === to[1];
             if (hitId || hitSq) {
-              const bonus =
-                (PIECE_VALUE[capturedType] ?? 1) *
-                getContractKillerMultiplier(
-                  getImproveLevel(whiteAugmentLevels, "contract-killer"),
+              if (peaceTreatyRoundsLeft <= 0) {
+                const bonus =
+                  (PIECE_VALUE[capturedType] ?? 1) *
+                  getContractKillerMultiplier(
+                    getImproveLevel(whiteAugmentLevels, "contract-killer"),
+                  );
+                newGame = creditGoldWithAugments(
+                  newGame,
+                  "white",
+                  bonus,
+                  whiteAugments,
+                  blackAugments,
+                  whiteDoubleGoldFullRoundsLeft,
+                  blackDoubleGoldFullRoundsLeft,
                 );
-              newGame = creditGoldWithAugments(
-                newGame,
-                "white",
-                bonus,
-                whiteAugments,
-                blackAugments,
-                whiteDoubleGoldFullRoundsLeft,
-                blackDoubleGoldFullRoundsLeft,
-              );
+              }
               settleWhiteContract();
               cleared = true;
             }
@@ -2831,20 +3068,22 @@ export default function ChessGame({
             const hitSq =
               bCT && bCT[0] === to[0] && bCT[1] === to[1];
             if (hitId || hitSq) {
-              const bonus =
-                (PIECE_VALUE[capturedType] ?? 1) *
-                getContractKillerMultiplier(
-                  getImproveLevel(blackAugmentLevels, "contract-killer"),
+              if (peaceTreatyRoundsLeft <= 0) {
+                const bonus =
+                  (PIECE_VALUE[capturedType] ?? 1) *
+                  getContractKillerMultiplier(
+                    getImproveLevel(blackAugmentLevels, "contract-killer"),
+                  );
+                newGame = creditGoldWithAugments(
+                  newGame,
+                  "black",
+                  bonus,
+                  whiteAugments,
+                  blackAugments,
+                  whiteDoubleGoldFullRoundsLeft,
+                  blackDoubleGoldFullRoundsLeft,
                 );
-              newGame = creditGoldWithAugments(
-                newGame,
-                "black",
-                bonus,
-                whiteAugments,
-                blackAugments,
-                whiteDoubleGoldFullRoundsLeft,
-                blackDoubleGoldFullRoundsLeft,
-              );
+              }
               settleBlackContract();
               cleared = true;
             }
@@ -2873,9 +3112,15 @@ export default function ChessGame({
         ? isTeamRoundComplete(moverSlot, newGame)
         : movingColor === "black";
       if (fullRoundDone) {
+        if (peaceTreatyRoundsLeft > 0) setPeaceTreatyRoundsLeft((n) => n - 1);
+        newGame = recomputeStatus(newGame);
         const fullRoundsCompleted = newTurnCount;
         if (fullRoundsCompleted >= nextEventTurn) {
-          const event = rollEvent();
+          const event = rollEvent(exhaustedEventIds);
+          setExhaustedEventIds((prev) => {
+            const next = [...prev, event.id];
+            return next.length >= EVENT_POOL.length ? [] : next;
+          });
           const permaSq = newGame.permaFrozenSquares ?? [];
           const evRows = getBoardRows(newGame);
           const evCols = getBoardCols(newGame);
@@ -2910,7 +3155,7 @@ export default function ChessGame({
               goldBlack: Math.max(0, nb),
             };
           } else if (event.id === "peace-treaty") {
-            setPeaceTreatyMovesLeft(10);
+            setPeaceTreatyRoundsLeft(3);
           } else if (event.id === "tactical-nuke") {
             const topRow = Math.floor(Math.random() * Math.max(1, evRows - 2));
             const leftCol = Math.floor(Math.random() * Math.max(1, evCols - 2));
@@ -3050,12 +3295,141 @@ export default function ChessGame({
               ...shuf(blPcs).slice(0, 2),
             ]);
             setColdWindsMovesLeft(2);
+          } else if (event.id === "more-more-moreeee") {
+            eventAugmentTriggers.push(
+              {
+                color: "white",
+                reason: "event",
+                eventRollFilter: { minRarity: "rare" },
+              },
+              {
+                color: "black",
+                reason: "event",
+                eventRollFilter: { minRarity: "rare" },
+              },
+            );
+          } else if (event.id === "tea-party") {
+            const grantKotH = (color: Color) => {
+              const augs = color === "white" ? whiteAugments : blackAugments;
+              const levels =
+                color === "white" ? whiteAugmentLevels : blackAugmentLevels;
+              const kotH = AUGMENT_POOL.find((a) => a.id === "king-of-the-hill");
+              if (!kotH) return;
+              if (!augs.some((a) => a.id === "king-of-the-hill")) {
+                if (color === "white")
+                  setWhiteAugments((prev) => [...prev, kotH]);
+                else setBlackAugments((prev) => [...prev, kotH]);
+                grantPickedEffects(
+                  kotH,
+                  color,
+                  color === "white" ? [...augs, kotH] : whiteAugments,
+                  color === "black" ? [...augs, kotH] : blackAugments,
+                );
+              } else if (
+                canImproveAugment(levels, "king-of-the-hill", augs)
+              ) {
+                const cur = getImproveLevel(levels, "king-of-the-hill");
+                const setter =
+                  color === "white"
+                    ? setWhiteAugmentLevels
+                    : setBlackAugmentLevels;
+                setter((prev) => ({
+                  ...prev,
+                  "king-of-the-hill": cur + 1,
+                }));
+                applyImproveSideEffects("king-of-the-hill", color, cur + 1);
+              }
+            };
+            grantKotH("white");
+            grantKotH("black");
+            newGame = spawnTeaPartyPawns(newGame, "white");
+            newGame = spawnTeaPartyPawns(newGame, "black");
+            newGame = recomputeStatus(newGame);
+          } else if (event.id === "capitulations") {
+            setWhiteTierBought({
+              common: 0,
+              uncommon: 0,
+              rare: 0,
+              epic: 0,
+              legendary: 0,
+            });
+            setBlackTierBought({
+              common: 0,
+              uncommon: 0,
+              rare: 0,
+              epic: 0,
+              legendary: 0,
+            });
+          } else if (event.id === "common-knowledge") {
+            eventAugmentTriggers.push(
+              {
+                color: "white",
+                reason: "event",
+                eventRollFilter: { maxRarity: "rare" },
+              },
+              {
+                color: "black",
+                reason: "event",
+                eventRollFilter: { maxRarity: "rare" },
+              },
+            );
+          } else if (event.id === "apocalypse") {
+            setActiveApocalypse({ fullRoundsLeft: 10 });
           }
           setPendingEvent(event);
           const chaosAfter =
             event.id === "just-chaos" ? true : chaosEventTiming;
           const delayRounds = rollFullRoundsUntilNextEvent(chaosAfter);
           setNextEventTurn(fullRoundsCompleted + delayRounds);
+        }
+
+        if (activeApocalypse) {
+          if (activeApocalypse.fullRoundsLeft <= 1) {
+            const nbAp = cloneBoard(getDerivedBoard(newGame));
+            const apRows = nbAp.length;
+            const apCols = nbAp[0]?.length ?? apRows;
+            for (let rr = 0; rr < apRows; rr++)
+              for (let cc = 0; cc < apCols; cc++)
+                if (
+                  isApocalypseSquare(rr, cc, apRows, apCols) &&
+                  nbAp[rr][cc]?.type !== "K"
+                )
+                  nbAp[rr][cc] = null;
+            newGame = recomputeStatus(syncStateFromBoard({ ...newGame }, nbAp));
+            setActiveApocalypse(null);
+          } else {
+            setActiveApocalypse({
+              fullRoundsLeft: activeApocalypse.fullRoundsLeft - 1,
+            });
+          }
+        }
+
+        if (fullRoundsCompleted >= nextAuctionTurn) {
+          const pieceType =
+            AUCTION_PIECE_TYPES[
+              Math.floor(Math.random() * AUCTION_PIECE_TYPES.length)
+            ]!;
+          const minBid = AUCTION_MIN_BID[pieceType];
+          if (
+            newGame.goldWhite >= minBid ||
+            newGame.goldBlack >= minBid
+          ) {
+            setActiveAuction({
+              pieceType,
+              minBid,
+              highBid: 0,
+              highBidder: null,
+              timerEndsAt: Date.now() + 20000,
+              status: "active",
+            });
+          } else {
+            setAuctionAnnouncement(
+              "Auction skipped — neither player can afford the minimum bid.",
+            );
+          }
+          setNextAuctionTurn(
+            fullRoundsCompleted + rollFullRoundsUntilNextAuction(),
+          );
         }
       }
 
@@ -3229,7 +3603,7 @@ export default function ChessGame({
 
       const moverGoldStart =
         movingColor === "white" ? startGoldWhite : startGoldBlack;
-      if (capturedType && !victimWasMercenary && !prizeFirstCaptureOfGameDone) {
+      if (capturedType && !victimWasMercenary && !prizeFirstCaptureOfGameDone && peaceTreatyRoundsLeft <= 0) {
         if (playerAugs.some((a) => a.id === "prize-money")) {
           const moverNow =
             movingColor === "white"
@@ -3309,7 +3683,7 @@ export default function ChessGame({
       if (
         capturedType === "Q" &&
         !victimWasMercenary &&
-        peaceTreatyMovesLeft <= 0
+        peaceTreatyRoundsLeft <= 0
       ) {
         milestoneTriggers.push({
           color: movingColor,
@@ -3331,7 +3705,10 @@ export default function ChessGame({
       if (blindEligible && !brDone && !tutorialMode) {
         if (movingColor === "white") setWhiteBlindRageDone(true);
         else setBlackBlindRageDone(true);
-        triggersAfterBlindRageRef.current = [...milestoneTriggers];
+        triggersAfterBlindRageRef.current = [
+          ...eventAugmentTriggers,
+          ...milestoneTriggers,
+        ];
         const wAugs0 =
           movingColor === "white" ? [...whiteAugments] : whiteAugments;
         const bAugs0 =
@@ -3342,18 +3719,23 @@ export default function ChessGame({
         setBlindRageOffered(
           rollBonusAugments(pickAugmentCount(pAugsForRoll), pAugsForRoll),
         );
-      } else if (milestoneTriggers.length > 0 && !tutorialMode) {
-        const [first, ...rest] = milestoneTriggers;
-        const wAugs =
-          movingColor === "white" ? [...whiteAugments] : whiteAugments;
-        const bAugs =
-          movingColor === "black" ? [...blackAugments] : blackAugments;
-        setCurrentTrigger(first);
-        setAugmentPickSlot(moverSlot);
-        const pickAugs = movingColor === "white" ? wAugs : bAugs;
-        setMidGameOffered(
-          rollBonusAugments(pickAugmentCount(pickAugs), pickAugs),
+      } else if (
+        (eventAugmentTriggers.length > 0 || milestoneTriggers.length > 0) &&
+        !tutorialMode
+      ) {
+        const allBonusTriggers = [
+          ...eventAugmentTriggers,
+          ...milestoneTriggers,
+        ];
+        const [first, ...rest] = allBonusTriggers;
+        setAugmentPickSlot(
+          gameIs2v2
+            ? first.color === "white"
+              ? "white1"
+              : "black1"
+            : null,
         );
+        showTrigger(first, whiteAugments, blackAugments);
         if (rest.length > 0) setAugmentQueue((prev) => [...prev, ...rest]);
       }
       requestSnapshot();
@@ -3375,7 +3757,7 @@ export default function ChessGame({
       whiteBloodlustNext,
       blackBloodlustNext,
       deathNoteTargets,
-      peaceTreatyMovesLeft,
+      peaceTreatyRoundsLeft,
       nextEventTurn,
       activeNuke,
       coldWindsMovesLeft,
@@ -3408,6 +3790,15 @@ export default function ChessGame({
       tutorialMode,
       tutorialEmit,
       tutorialRestrictions,
+      activeApocalypse,
+      exhaustedEventIds,
+      nextAuctionTurn,
+      whiteAugmentLevels,
+      blackAugmentLevels,
+      grantPickedEffects,
+      applyImproveSideEffects,
+      showTrigger,
+      gameIs2v2,
     ],
   );
 
@@ -3493,7 +3884,7 @@ export default function ChessGame({
       setWallSquares(augRestored.wallSquares);
       setWallMovesLeft(augRestored.wallMovesLeft);
       setActiveNuke(augRestored.activeNuke);
-      setPeaceTreatyMovesLeft(augRestored.peaceTreatyMovesLeft);
+      setPeaceTreatyRoundsLeft(augRestored.peaceTreatyRoundsLeft);
       setWhiteLostPawnCols(augRestored.whiteLostPawnCols);
       setBlackLostPawnCols(augRestored.blackLostPawnCols);
       setWhiteCaptureCount(augRestored.whiteCaptureCount);
@@ -3635,6 +4026,7 @@ export default function ChessGame({
     setBloodbendingPlusMode(false);
     setNecroPPMode(false);
     setLittleBigManMode(false);
+    setSacrificeMode(false);
   };
 
   const handleToggleFreeze = useCallback(() => {
@@ -3661,12 +4053,7 @@ export default function ChessGame({
       const pawns: [number, number][] = [];
       getDerivedBoard(game).forEach((row, r) =>
         row.forEach((p, c) => {
-          if (
-            p?.type === "P" &&
-            p.color === game.turn &&
-            p.id &&
-            isRookFileCol(c, bs)
-          )
+          if (p?.type === "P" && p.color === game.turn && p.id)
             pawns.push([r, c]);
         }),
       );
@@ -3674,6 +4061,21 @@ export default function ChessGame({
       if (pawns.length === 0) setLittleBigManMode(false);
     }
   }, [littleBigManMode, game]);
+  const handleToggleSacrifice = useCallback(() => {
+    const entering = !sacrificeMode;
+    clearModes();
+    setSacrificeMode(entering);
+    if (entering) {
+      const rooks: [number, number][] = [];
+      getDerivedBoard(game).forEach((row, r) =>
+        row.forEach((p, c) => {
+          if (p?.type === "R" && p.color === game.turn) rooks.push([r, c]);
+        }),
+      );
+      setValidMoves(rooks);
+      if (rooks.length === 0) setSacrificeMode(false);
+    }
+  }, [sacrificeMode, game]);
   const handleToggleNecro = useCallback(() => {
     const entering = !necroMode;
     clearModes();
@@ -3919,12 +4321,45 @@ export default function ChessGame({
     (r: number, c: number) => {
       if (phase !== "playing" || currentTrigger !== null || blindRagePickColor)
         return;
+      if (activeAuction?.status === "active" && !auctionPlaceFor) return;
       if (tutorialMode && tutorialBlocksBoard(tutorialRestrictions)) return;
       if (!isMyTurn) return;
       if (game.teamStatus && game.teamStatus !== "playing") return;
       if (game.status === "checkmate" || game.status === "stalemate") return;
       if (promotionPending) return;
       const piece = getDerivedBoard(game)[r][c];
+
+      if (auctionPlaceFor) {
+        const ap = auctionPlaceFor;
+        const isLocalPlacer = !mpConfig || mpConfig.myColor === ap.color;
+        if (!isLocalPlacer) return;
+        const rows = getBoardRows(game);
+        const cols = getBoardCols(game);
+        const canPlacePawn =
+          ap.pieceType === "P" &&
+          !piece &&
+          isOriginalPawnSpawnSquare(r, c, ap.color, rows) &&
+          !isPermaFrostSquare(game, r, c);
+        const canPlaceOther =
+          ap.pieceType !== "P" &&
+          !piece &&
+          !isPermaFrostSquare(game, r, c);
+        if (canPlacePawn || canPlaceOther) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          if (gameIs2v2) {
+            const slot = ap.color === "white" ? "white1" : "black1";
+            nb[r][c] = summonedPiece(ap.pieceType, slot);
+          } else {
+            nb[r][c] = { type: ap.pieceType, color: ap.color };
+          }
+          setGame(recomputeStatus(syncStateFromBoard({ ...game }, nb)));
+          setAuctionPlaceFor(null);
+          setSelected(null);
+          setValidMoves([]);
+          requestSnapshot();
+        }
+        return;
+      }
 
       if (pawnPlaceSlot || (pawnPlaceFor && game.turn === pawnPlaceFor)) {
         const rows = getBoardRows(game);
@@ -4010,7 +4445,6 @@ export default function ChessGame({
               blackTurnCount,
             ),
           );
-          if (peaceTreatyMovesLeft > 0) setPeaceTreatyMovesLeft((n) => n - 1);
           setGame(newGState);
         }
         setMonolithMode(null);
@@ -4035,14 +4469,47 @@ export default function ChessGame({
         return;
       }
 
+      if (sacrificeMode) {
+        if (piece && piece.type === "R" && piece.color === game.turn) {
+          const nb = cloneBoard(getDerivedBoard(game));
+          nb[r][c] = null;
+          const color = game.turn;
+          setGame(recomputeStatus(syncStateFromBoard({ ...game }, nb)));
+          if (color === "white")
+            setWhiteAugments((prev) => prev.filter((a) => a.id !== "sacrifice"));
+          else
+            setBlackAugments((prev) => prev.filter((a) => a.id !== "sacrifice"));
+          setSacrificeMode(false);
+          const newWAugs =
+            color === "white"
+              ? whiteAugments.filter((a) => a.id !== "sacrifice")
+              : whiteAugments;
+          const newBAugs =
+            color === "black"
+              ? blackAugments.filter((a) => a.id !== "sacrifice")
+              : blackAugments;
+          const trigger: AugmentTrigger = {
+            color,
+            reason: "event",
+            eventRollFilter: { minRarity: "rare" },
+          };
+          setAugmentPickSlot(
+            gameIs2v2 ? (color === "white" ? "white1" : "black1") : null,
+          );
+          showTrigger(trigger, newWAugs, newBAugs);
+          setSelected(null);
+          setValidMoves([]);
+          requestSnapshot();
+        }
+        return;
+      }
+
       if (littleBigManMode) {
-        const bsLbm = getDerivedBoard(game).length;
         if (
           piece &&
           piece.type === "P" &&
           piece.color === game.turn &&
-          piece.id &&
-          isRookFileCol(c, bsLbm)
+          piece.id
         ) {
           const fullR = Math.min(whiteTurnCount, blackTurnCount) + 4;
           const pid = piece.id;
@@ -4923,7 +5390,7 @@ export default function ChessGame({
       puppetMode,
       whiteTurnCount,
       blackTurnCount,
-      peaceTreatyMovesLeft,
+      peaceTreatyRoundsLeft,
       coldWindsMovesLeft,
       coldWindsSquares,
       blessedSquares,
@@ -5048,8 +5515,14 @@ export default function ChessGame({
     setBoardSize(8);
     setNextEventTurn(rollFullRoundsUntilNextEvent(false));
     setPendingEvent(null);
-    setPeaceTreatyMovesLeft(0);
+    setPeaceTreatyRoundsLeft(0);
     setActiveNuke(null);
+    setActiveApocalypse(null);
+    setExhaustedEventIds([]);
+    setNextAuctionTurn(rollFullRoundsUntilNextAuction());
+    setActiveAuction(null);
+    setAuctionPlaceFor(null);
+    setSacrificeMode(false);
     setBlessedSquares([]);
     setColdWindsSquares([]);
     setColdWindsMovesLeft(0);
@@ -5296,6 +5769,10 @@ export default function ChessGame({
       color === "white" ? whiteLittleBigManCharges : blackLittleBigManCharges,
     littleBigManActive: littleBigManMode && canUseSpells,
     onLittleBigMan: spellGuard(handleToggleLittleBigMan),
+    sacrificeAvailable:
+      playerAugments.some((a) => a.id === "sacrifice") && canUseSpells,
+    sacrificeActive: sacrificeMode && canUseSpells,
+    onSacrifice: spellGuard(handleToggleSacrifice),
     ilkkanAvailable:
       color === "white"
         ? whiteAugments.some((a) => a.id === "ilkkan") && !whiteIlkkanChosen
@@ -5420,9 +5897,19 @@ export default function ChessGame({
   };
 
   const modeBanner = (() => {
+    if (sacrificeMode)
+      return {
+        text: "♜ Sacrifice — click one of your rooks to gain a high-tier augment",
+        color: "#f97316",
+      };
+    if (auctionPlaceFor)
+      return {
+        text: `🏷️ Place your auction ${auctionPlaceFor.pieceType} on the board`,
+        color: "#fbbf24",
+      };
     if (littleBigManMode)
       return {
-        text: "👶👑 Little Big Man — click one of your pawns on the a- or h-file",
+        text: "👶👑 Little Big Man — click one of your pawns",
         color: "#eab308",
       };
     if (bloodbendingPlusMode)
@@ -5565,6 +6052,19 @@ export default function ChessGame({
 
   const fullRoundsPlayed = blackTurnCount;
   const fullRoundsUntilBoardEvent = Math.max(0, nextEventTurn - fullRoundsPlayed);
+  const fullRoundsUntilAuction = Math.max(0, nextAuctionTurn - fullRoundsPlayed);
+
+  const opponentAugmentPickActive =
+    !!mpConfig &&
+    !!currentTrigger &&
+    !isLocalAugmentPicker(currentTrigger.color, augmentPickSlot);
+
+  const myAuctionColor = mpConfig?.myColor ?? game.turn;
+  const myAuctionGold =
+    myAuctionColor === "white" ? game.goldWhite : game.goldBlack;
+  const auctionPlacementPending =
+    !!auctionPlaceFor &&
+    (!mpConfig || mpConfig.myColor === auctionPlaceFor.color);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -5596,6 +6096,22 @@ export default function ChessGame({
         {fullRoundsUntilBoardEvent} full round
         {fullRoundsUntilBoardEvent === 1 ? "" : "s"} away
       </span>
+      {" · "}
+      <span className="text-slate-300">Auction</span>
+      {" — "}
+      <span className="text-slate-200">
+        {fullRoundsUntilAuction} full round
+        {fullRoundsUntilAuction === 1 ? "" : "s"} away
+      </span>
+      {activeApocalypse && (
+        <>
+          {" · "}
+          <span className="text-red-400">
+            Apocalypse in {activeApocalypse.fullRoundsLeft} round
+            {activeApocalypse.fullRoundsLeft === 1 ? "" : "s"}
+          </span>
+        </>
+      )}
       {chaosEventTiming && (
         <span className="ml-2 text-pink-400">(Chaos)</span>
       )}
@@ -5610,7 +6126,7 @@ export default function ChessGame({
       {pendingEvent && (
         <EventAnnouncement
           event={pendingEvent}
-          peaceTreatyLeft={peaceTreatyMovesLeft}
+          peaceTreatyLeft={peaceTreatyRoundsLeft}
           onClose={() => setPendingEvent(null)}
         />
       )}
@@ -5644,7 +6160,12 @@ export default function ChessGame({
           {modeBanner.text}
         </div>
       )}
-      {mpConfig && !isMyTurn && !isOver && (
+      {mpConfig && opponentAugmentPickActive && !isOver && (
+        <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-[85] -translate-x-1/2 whitespace-nowrap rounded-full bg-black/80 px-4 py-1.5 text-[11px] font-bold tracking-wide text-indigo-300">
+          Opponent is choosing an augment…
+        </div>
+      )}
+      {mpConfig && !isMyTurn && !isOver && !opponentAugmentPickActive && (
         <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/75 px-4 py-1 text-[11px] font-bold tracking-wide text-slate-400">
           {gameIs2v2 ? "Waiting for other players…" : "Opponent\u2019s turn…"}
         </div>
@@ -5741,6 +6262,10 @@ export default function ChessGame({
               const dn = piece?.id
                 ? deathNoteTargets.find((d) => d.pieceId === piece.id)
                 : undefined;
+              const isApocalypseZone = !!(
+                activeApocalypse &&
+                isApocalypseSquare(r, c, boardRows, boardCols)
+              );
               const isNukeSquare = !!(
                 activeNuke &&
                 r >= activeNuke.topRow &&
@@ -5807,6 +6332,7 @@ export default function ChessGame({
                   showTeamSetMarker={showTeamSetMarker}
                   deathNoteCount={dn?.turnsLeft}
                   isNuke={isNukeSquare}
+                  isApocalypse={isApocalypseZone}
                   nukeMovesLeft={
                     showNukeCount ? activeNuke!.movesLeft : undefined
                   }
@@ -5842,6 +6368,16 @@ export default function ChessGame({
         statusColor={statusText.color}
         statusBadge={game.status === "check"}
       />
+
+      {activeAuction?.status === "active" && phase === "playing" && !isOver && (
+        <AuctionPanel
+          auction={activeAuction}
+          myColor={myAuctionColor}
+          myGold={myAuctionGold}
+          onBid={handleAuctionBid}
+          placementPending={auctionPlacementPending}
+        />
+      )}
 
       <ShopPanel
         open={shopOpen && phase === "playing" && !isOver}
@@ -5893,10 +6429,7 @@ export default function ChessGame({
       )}
       {phase === "playing" &&
         currentTrigger !== null &&
-        (!mpConfig ||
-          !gameIs2v2 ||
-          !augmentPickSlot ||
-          augmentPickSlot === mpConfig.mySlot) && (
+        isLocalAugmentPicker(currentTrigger.color, augmentPickSlot) && (
         <AugmentSelector
           playerColor={currentTrigger.color}
           offered={midGameOffered}
@@ -5906,10 +6439,7 @@ export default function ChessGame({
       )}
       {phase === "playing" &&
         blindRagePickColor &&
-        (!mpConfig ||
-          !gameIs2v2 ||
-          !blindRagePickSlot ||
-          blindRagePickSlot === mpConfig.mySlot) && (
+        isLocalAugmentPicker(blindRagePickColor, blindRagePickSlot) && (
         <AugmentSelector
           pickMode="blind-rage"
           playerColor={blindRagePickColor}

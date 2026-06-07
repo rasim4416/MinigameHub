@@ -74,6 +74,9 @@ export function PlayerBar({
       {canAct && spells.littleBigManCharges > 0 && (
         <SpellButton icon="👶👑" label="LBM" active={spells.littleBigManActive} count={spells.littleBigManCharges} onClick={spells.onLittleBigMan} title="Choose any of your pawns — queen movement for 4 full rounds" />
       )}
+      {canAct && spells.sacrificeAvailable && (
+        <SpellButton icon="♜" label="SACR" active={spells.sacrificeActive} onClick={spells.onSacrifice} title="Sacrifice a rook — gain a rare+ augment pick" />
+      )}
       {canAct && spells.ilkkanAvailable && (
         <SpellButton icon="🧑" label="ILKKAN" active={spells.ilkkanActive} onClick={spells.onIlkkan} title="Make a pawn İlkkan" />
       )}
