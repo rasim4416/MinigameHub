@@ -58,7 +58,7 @@ export const EVENTS_TR: Record<string, EventLocaleEntry> = {
   },
   "just-chaos": {
     "name": "Sadece Kaos",
-    "description": "Tahta olayları artık her 5 tam turda bir tetiklenir",
+    "description": "Olay havuzunu sıfırlar. Sıradan ve az yaygın olaylar kalıcı olarak kaldırılır. Olaylar artık her 2 tam turda bir gelir.",
     "flavor": "\"Chaos is a ladder.\""
   },
   "crusaders": {
@@ -100,5 +100,30 @@ export const EVENTS_TR: Record<string, EventLocaleEntry> = {
     "name": "Kıyamet",
     "description": "Kenar sütun ve sıralar işaretlendi. 10 tam tur sonra o bölgelerdeki taşlar yok edilir.",
     "flavor": "Zaman daralıyor."
+  },
+  "all-in": {
+    "name": "All-in (Hodri Meydan)",
+    "description": "Şahlar hariç tüm taşlar kaldırılır. Her iki oyuncu 200 altın ve tam geliştirilmiş Piyon Dükkanı kazanır.",
+    "flavor": "Herkes all-in girdi."
+  },
+  "capitalism": {
+    "name": "Kapitalizm",
+    "description": "Daha fazla altını olan oyuncu 20 altın kazanır.",
+    "flavor": "Trump onayladı."
+  },
+  "pride-month": {
+    "name": "Onur Ayı (Homofobi)",
+    "description": "Krallar açığa çıktı. Vezirler tahtadan ayrılıyor.",
+    "flavor": "We support the US, US, US thats the way we like it, like it, LOVE IT!!!!!"
+  },
+  "so-what": {
+    "name": "Ee?",
+    "description": "Filin ateist olduğunu öğrendin. Bu kadar.",
+    "flavor": "Yani?"
+  },
+  "imposters": {
+    "name": "Sahtekarlar (Amonkus)",
+    "description": "Her oyuncudan iki piyon takım değiştirir.",
+    "flavor": "Şüpheli."
   }
 } as Record<string, EventLocaleEntry>;

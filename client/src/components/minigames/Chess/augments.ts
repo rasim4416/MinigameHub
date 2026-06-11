@@ -119,7 +119,7 @@ export const AUGMENT_IMPROVEMENTS: Partial<Record<string, ImproveTier[]>> = {
     {
       cost: 5,
       description:
-        "Mark one enemy piece (not king or pawn). Capture it for 5× its base gold value instead of 1.",
+        "Mark one enemy piece (not king or pawn). Capture it for 5× its base gold value instead of 3.",
     },
   ],
   "tax-man": [
@@ -151,7 +151,7 @@ export const AUGMENT_IMPROVEMENTS: Partial<Record<string, ImproveTier[]>> = {
     {
       cost: 10,
       description:
-        "Buy pawns from the shop; price starts at 5g and rises by 5g each purchase.",
+        "Buy pawns from the shop; price starts at 5g and rises by 7g each purchase.",
     },
     {
       cost: 20,
@@ -262,7 +262,7 @@ export function getJewPawnCaptureGold(level: number, lossIndex: number): number 
 }
 
 export function getContractKillerMultiplier(level: number): number {
-  return level >= 1 ? 5 : 4;
+  return level >= 1 ? 5 : 3;
 }
 
 export function getTaxManParams(level: number): { divisor: number; goldPer: number } {
@@ -284,8 +284,7 @@ export function getPawnShopPrice(
   buys: number,
 ): number {
   if (level >= 2) return 10;
-  if (level >= 1) return 5 * (buys + 1);
-  return 10 * (buys + 1);
+  return 5 + 7 * buys;
 }
 
 export function getIAmDangerGoldPerStack(level: number): number {
@@ -350,6 +349,16 @@ export const AUGMENT_PREREQUISITE: Partial<Record<string, string>> = {
   "bloodbending-plus": "bloodbending",
 };
 
+/** Subset used for guaranteed upgrade slots in bonus augment rolls. */
+export const GUARANTEED_UPGRADE_PREREQUISITE: Partial<Record<string, string>> =
+  Object.fromEntries(
+    Object.entries(AUGMENT_PREREQUISITE).filter(
+      ([childId]) =>
+        childId !== "bloodbending-plus" &&
+        childId !== "necromancer-plus-plus",
+    ),
+  ) as Partial<Record<string, string>>;
+
 /** True if `augId` cannot be rolled or bought until `requiredId` is owned. */
 export function augmentExcludedByPrereq(
   augId: string,
@@ -382,7 +391,9 @@ export function applyGuaranteedUpgradeSlot(
   const ownedIds = owned.map((a) => a.id);
   const has = (id: string) => ownedIds.includes(id);
   const candidates: { id: string; priority: number }[] = [];
-  for (const [childId, parentId] of Object.entries(AUGMENT_PREREQUISITE)) {
+  for (const [childId, parentId] of Object.entries(
+    GUARANTEED_UPGRADE_PREREQUISITE,
+  )) {
     if (has(childId) || exclude.includes(childId)) continue;
     if (!has(parentId)) continue;
     const priority = childId.endsWith("-plus-plus") ? 2 : 1;
@@ -512,6 +523,9 @@ export const MAX_STACK: Record<string, number> = {
   "alternative-plus":  1,
   "double-gold":       1,
   "horde":             1,
+  "tall-politician":   1,
+  "emperor-of-the-hill": 1,
+  "plot-armour":       1,
   "bloodbending":      1,
   "bloodbending-plus": 1,
   "little-big-man":    1,
@@ -528,6 +542,7 @@ export const NON_PURCHASABLE = new Set<string>([
   "prize-money",
   "double-gold",
   "domain-expansion",
+  "contract-killer",
 ]);
 
 // ─── Augment pool ─────────────────────────────────────────────────────────────
@@ -549,36 +564,39 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"jew",          name:"Jew",          rarity:"uncommon", icon:"💎",   description:"When the enemy captures your pawns, you gain 2 gold per captured pawn." },
   { id:"alternative-plus", name:"Alternative+", rarity:"uncommon", icon:"🛤️✨", description:"All of your pawns may advance up to 3 squares on their first move (requires Alternative)." },
   { id:"mastermind-plus", name:"Mastermind+", rarity:"uncommon", icon:"🧠✨", description:"Further boosts roll chances (Rare↑↑ Epic↑↑ Legendary↑). Cannot be purchased in shop." },
-  { id:"contract-killer",  name:"Contract Killer",  rarity:"uncommon", icon:"🎯", description:"Mark one enemy piece (not king or pawn). If you capture it, earn 4× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure)." },
+  { id:"contract-killer",  name:"Contract Killer",  rarity:"uncommon", icon:"🎯", description:"Mark one enemy piece (not king or pawn). If you capture it, earn 3× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure). Cannot be purchased in shop." },
   { id:"evade", name:"Evade", rarity:"uncommon", icon:"💨", description:"Spend a charge: during your opponent's next turn, they cannot use augment spells (shop still allowed)." },
   { id:"sacrifice", name:"Sacrifice", rarity:"uncommon", icon:"♜", description:"Spell: sacrifice one of your rooks. Gain a minimum rare-tier augment pick." },
   { id:"tax-man", name:"Tax Man", rarity:"uncommon", icon:"🧾", description:"When you finish a half-move, you earn 1 gold per full 10 gold your opponent gained from any source that half-move (per stack)." },
   { id:"free-passage", name:"Free Passage", rarity:"uncommon", icon:"🚪", description:"Your king may castle even while in check (normal castling path rules otherwise apply)." },
   { id:"augmented", name:"Augmented", rarity:"uncommon", icon:"✨", description:"You are offered 4 augment choices instead of 3 when rolling bonus picks." },
+  { id:"necromancer",  name:"Necromancer",  rarity:"uncommon", icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   // ── Rare ──────────────────────────────────────────────────────────────────
   { id:"frost",        name:"Frost",        rarity:"rare",     icon:"❄️",   description:"Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 2 half-turns." },
   { id:"what",         name:"What?",        rarity:"uncommon", icon:"↔️",   description:"Once, one of your pawns may move one square sideways to an empty square." },
   { id:"oops",         name:"Oops",         rarity:"rare",     icon:"↩️",   description:"Gain 1 undo. Roll back the last 2 half-moves once per game." },
   { id:"impassable",   name:"Impassable",   rarity:"rare",     icon:"🗿",   description:"Place an immovable, indestructible monolith on any empty square (spends a turn). Once removed, it is gone forever." },
-  { id:"necromancer",  name:"Necromancer",  rarity:"rare",     icon:"💀",   description:"Bring one lost pawn back to its home square on the starting rank." },
   { id:"blessed-water-spell", name:"Blessed Water", rarity:"rare", icon:"💧", description:"Bless any square (instant, free). The piece on that square cannot be captured for 2 rounds." },
   { id:"ilkkan", name:"İlkkan", rarity:"rare", icon:"🧑", description:"You have no personality ilkkan. One of your pawns becomes İlkkan. If İlkkan captures a rook, bishop, or knight — it transforms into that piece." },
-  { id:"swap", name:"Swap", rarity:"rare", icon:"🔀", description:"Once per game, exchange the positions of any two of your own pieces (free action). Frozen pieces cannot be moved." },
-  { id:"pawn-shop", name:"Pawn Shop", rarity:"rare", icon:"♙", description:"Buy pawns from the shop; place on empty squares of your original pawn rank (second rank), even on a 10×10 board. Placement does not spend a turn. Price starts at 10g and rises by 10g each purchase with no cap." },
+  { id:"swap", name:"Swap", rarity:"rare", icon:"🔀", description:"Once per game, exchange the positions of any two of your own pieces (spends your turn). Frozen pieces cannot be moved." },
+  { id:"horde", name:"Horde", rarity:"rare", icon:"🐺", description:"When acquired, each of your pawns tries to step one square forward into an empty square (no captures)." },
+  { id:"tall-politician", name:"Tall Politician", rarity:"rare", icon:"🎩", description:"Pay your income as tax. I will help you in need. (Collect your stored tax when you need it.)" },
+  { id:"pawn-shop", name:"Pawn Shop", rarity:"rare", icon:"♙", description:"Buy pawns from the shop; place on empty squares of your original pawn rank (second rank), even on a 10×10 board. Placement does not spend a turn. Price starts at 5g and rises by 7g each purchase." },
   { id:"mastermind-plus-plus", name:"Mastermind++", rarity:"rare", icon:"🧠💫", description:"Further improves your augment roll rarity. Cannot be purchased in shop." },
   { id:"i-am-danger", name:"I am the danger", rarity:"rare", icon:"☠️👑", description:"Each time you give check to the enemy king, gain 4 gold (per stack)." },
   { id:"double-gold", name:"Double Gold", rarity:"rare", icon:"💰💰", description:"For the next 5 full rounds, all gold you gain is doubled (captures, events, augments, shop sells, etc.). Cannot be purchased in shop." },
   // ── Epic ──────────────────────────────────────────────────────────────────
   { id:"necromancer-plus", name:"Necromancer+", rarity:"epic", icon:"💀✨", description:"Revive your most recently lost knight or bishop to any empty square on your home rank." },
-  { id:"horde", name:"Horde", rarity:"epic", icon:"🐺", description:"When acquired, each of your pawns tries to step one square forward into an empty square (no captures)." },
-  { id:"bloodbending", name:"Bloodbending", rarity:"epic", icon:"🩸🧙", description:"Spell: flip one enemy pawn to your color (respects blessed/frozen rules)." },
+  { id:"bloodbending", name:"Bloodbending", rarity:"epic", icon:"🩸🧙", description:"Spell: flip one enemy pawn to your color (spends your turn; cannot target pawns on their original rank)." },
   { id:"bloodlust",    name:"Bloodlust",    rarity:"epic",     icon:"🩸",   description:"Every 4 enemy pieces you capture, gain 1 bonus augment pick." },
   { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
-  { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight." },
+  { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight — even while in check." },
   { id:"death-note", name:"Death Note", rarity:"epic", icon:"☠️", description:"Choose an enemy piece (not king or queen). It dies after 16 turns (each half-move ticks the timer); the curse follows that piece by identity. Pieces killed this way grant no gold, no augment, and don't count as captures." },
   { id:"puppet",     name:"Puppet",    rarity:"epic", icon:"🪆",  description:"Once per game: mark any enemy piece (not king). On their next turn, the opponent MUST move that piece." },
   // ── Legendary ─────────────────────────────────────────────────────────────
-  { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square." },
+  { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square (spends your turn)." },
+  { id:"emperor-of-the-hill", name:"Emperor of the Hill", rarity:"legendary", icon:"👑⛰️", description:"Gain King of the Hill. If a pawn stays on a hill square for 2 full rounds, it promotes to a queen." },
+  { id:"plot-armour", name:"Plot Armour", rarity:"legendary", icon:"🛡️", description:"Your king is immune to check and checkmate for 5 full rounds." },
   { id:"royal-household", name:"Royal Household", rarity:"legendary", icon:"🏰", description:"Trained by the finest knights — once, when your king is in check, it rampages UP TO 4 squares in a straight line, destroying every piece in its path (friend or foe)." },
   { id:"domain-expansion", name:"DOMAIN EXPANSION", rarity:"legendary", icon:"♾️", description:"Each team with this augment may expand once (up to two per game). 1v1: 8×8→10×10 (files x/i, ranks 0/9) then 12×12 (y/j, -1/10). 2v2: 8×16→10×18 (files x/r, ranks 0/9) then 12×20 (y/s, -1/10) — two rooks per expansion (one for each teammate on that team). Pieces keep the same squares relative to the center." },
   { id:"little-big-man", name:"Little Big Man", rarity:"legendary", icon:"👶👑", description:"Spell: choose any of your pawns. For 4 full rounds it moves and captures like a queen, then reverts." },

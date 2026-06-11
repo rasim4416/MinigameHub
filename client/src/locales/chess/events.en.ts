@@ -58,7 +58,7 @@ export const EVENTS_EN: Record<string, EventLocaleEntry> = {
   },
   "just-chaos": {
     "name": "Just Chaos",
-    "description": "Board events now fire every 5 full rounds (instead of 5–13 at random) for the rest of the game.",
+    "description": "Resets the event pool. Common and uncommon events are removed forever. Board events now fire every 2 full rounds.",
     "flavor": "\"Let the world burn.\""
   },
   "crusaders": {
@@ -100,5 +100,30 @@ export const EVENTS_EN: Record<string, EventLocaleEntry> = {
     "name": "Apocalypse",
     "description": "Edge files and ranks are marked. After 10 full rounds, all pieces in those zones are destroyed.",
     "flavor": "Time is ticking."
+  },
+  "all-in": {
+    "name": "All-in (Hodri Meydan)",
+    "description": "All pieces except kings are removed. Both players gain 200 gold and a fully upgraded Pawn Shop augment.",
+    "flavor": "Everyone goes all in."
+  },
+  "capitalism": {
+    "name": "Capitalism",
+    "description": "The player with more gold gains 20 gold.",
+    "flavor": "Trump approves it."
+  },
+  "pride-month": {
+    "name": "Pride Month (Homofobi)",
+    "description": "Kings came out. Queens leave the board.",
+    "flavor": "We support the US, US, US thats the way we like it, like it, LOVE IT!!!!!"
+  },
+  "so-what": {
+    "name": "So?",
+    "description": "You learned the bishop is atheist. That's it.",
+    "flavor": "Yani?"
+  },
+  "imposters": {
+    "name": "Imposters (Amonkus)",
+    "description": "Two pawns from each player switch teams.",
+    "flavor": "Sus."
   }
 } as Record<string, EventLocaleEntry>;

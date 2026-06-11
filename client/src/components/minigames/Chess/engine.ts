@@ -125,6 +125,9 @@ export interface ChessState {
   freePassageBlack?: boolean;
   /** Permanent winter ice (empty squares); cannot move onto or through. */
   permaFrozenSquares?: { row: number; col: number }[];
+  /** Plot Armour — king immune to check while > 0 full rounds remain. */
+  plotArmourWhiteRoundsLeft?: number;
+  plotArmourBlackRoundsLeft?: number;
   /** Little Big Man — pawn id moves like a queen until UI clears this field. */
   littleBigManWhiteId?: PieceId | null;
   littleBigManBlackId?: PieceId | null;
@@ -670,6 +673,16 @@ function boardToMinimalState(board: Board): ChessState {
 
 function isInCheckState(state: ChessState, color: Color): boolean {
   if (color === "orange") return false;
+  if (
+    color === "white" &&
+    (state.plotArmourWhiteRoundsLeft ?? 0) > 0
+  )
+    return false;
+  if (
+    color === "black" &&
+    (state.plotArmourBlackRoundsLeft ?? 0) > 0
+  )
+    return false;
   const [kr, kc] = findKingInState(state, color);
   return (
     kr !== -1 &&

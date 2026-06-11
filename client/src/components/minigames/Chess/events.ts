@@ -141,7 +141,7 @@ export const EVENT_POOL: GameEvent[] = [
     rarity: "legendary",
     icon: "🌀",
     description:
-      "Board events now fire every 5 full rounds (instead of 5–13 at random) for the rest of the game.",
+      "Resets the event pool. Common and uncommon events are removed forever. Board events now fire every 2 full rounds.",
     flavor: "\"Let the world burn.\"",
   },
   {
@@ -156,7 +156,7 @@ export const EVENT_POOL: GameEvent[] = [
   {
     id: "winter-has-come",
     name: "Winter Has Come",
-    rarity: "legendary",
+    rarity: "epic",
     icon: "❄️",
     description:
       "A random empty square is frozen forever. No piece may move onto or through it; pawn shop and similar placements are blocked.",
@@ -216,7 +216,53 @@ export const EVENT_POOL: GameEvent[] = [
       "Columns A, B, G, H and rows 1, 2, 7, 8 are marked. After 10 full rounds, all pieces in those zones are destroyed.",
     flavor: "Time is ticking.",
   },
+  {
+    id: "all-in",
+    name: "All-in (Hodri Meydan)",
+    rarity: "legendary",
+    icon: "🎰",
+    description:
+      "All pieces except kings are removed. Both players gain 200 gold and a fully upgraded Pawn Shop augment.",
+    flavor: "Everyone goes all in.",
+  },
+  {
+    id: "capitalism",
+    name: "Capitalism",
+    rarity: "rare",
+    icon: "💵",
+    description: "The player with more gold gains 20 gold.",
+    flavor: "Trump approves it.",
+  },
+  {
+    id: "pride-month",
+    name: "Pride Month (Homofobi)",
+    rarity: "epic",
+    icon: "🏳️‍🌈",
+    description: "Kings came out. Queens leave the board.",
+    flavor:
+      "We support the US, US, US thats the way we like it, like it, LOVE IT!!!!!",
+  },
+  {
+    id: "so-what",
+    name: "So?",
+    rarity: "common",
+    icon: "🤷",
+    description: "You learned the bishop is atheist. That's it.",
+    flavor: "Yani?",
+  },
+  {
+    id: "imposters",
+    name: "Imposters (Amonkus)",
+    rarity: "legendary",
+    icon: "🎭",
+    description: "Two pawns from each player switch teams.",
+    flavor: "Sus.",
+  },
 ];
+
+export type RollEventOptions = {
+  excludeRarities?: EventRarity[];
+};
 
 // ─── Weighted roll ────────────────────────────────────────────────────────────
 
@@ -228,17 +274,31 @@ const RARITY_WEIGHTS: Record<EventRarity, number> = {
   legendary:  2,
 };
 
-export function rollEvent(exhaustedIds: string[] = []): GameEvent {
-  const availablePool = EVENT_POOL.filter((e) => !exhaustedIds.includes(e.id));
-  const poolToUse = availablePool.length > 0 ? availablePool : EVENT_POOL;
-  const total = (Object.values(RARITY_WEIGHTS) as number[]).reduce((a, b) => a + b, 0);
+export function rollEvent(
+  exhaustedIds: string[] = [],
+  opts?: RollEventOptions,
+): GameEvent {
+  const excludeRarities = new Set(opts?.excludeRarities ?? []);
+  const availablePool = EVENT_POOL.filter(
+    (e) =>
+      !exhaustedIds.includes(e.id) && !excludeRarities.has(e.rarity),
+  );
+  const poolToUse =
+    availablePool.length > 0
+      ? availablePool
+      : EVENT_POOL.filter((e) => !excludeRarities.has(e.rarity));
+  const weights = { ...RARITY_WEIGHTS };
+  for (const r of excludeRarities) weights[r] = 0;
+  const total = (Object.values(weights) as number[]).reduce((a, b) => a + b, 0);
+  if (total <= 0) return poolToUse[0] ?? EVENT_POOL[0];
   let roll = Math.random() * total;
   let chosenRarity: EventRarity = "common";
-  for (const entry of Object.entries(RARITY_WEIGHTS) as [EventRarity, number][]) {
+  for (const entry of Object.entries(weights) as [EventRarity, number][]) {
+    if (entry[1] <= 0) continue;
     roll -= entry[1];
     if (roll <= 0) { chosenRarity = entry[0]; break; }
   }
-  const pool = poolToUse.filter(e => e.rarity === chosenRarity);
+  const pool = poolToUse.filter((e) => e.rarity === chosenRarity);
   if (!pool.length) return poolToUse[0] ?? EVENT_POOL[0];
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -249,10 +309,10 @@ function randIntInclusive(min: number, max: number): number {
 
 /**
  * How many full rounds (white then black) until the next board event.
- * After Just Chaos, this is always 5 for the rest of the game.
+ * After Just Chaos, this is always 2 for the rest of the game.
  */
 export function rollFullRoundsUntilNextEvent(justChaosActive: boolean): number {
-  return justChaosActive ? 5 : randIntInclusive(5, 13);
+  return justChaosActive ? 2 : randIntInclusive(5, 13);
 }
 
 /** Full rounds until the next mercenary auction (independent of board events). */
