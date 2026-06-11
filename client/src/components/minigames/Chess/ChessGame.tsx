@@ -237,6 +237,10 @@ type AugmentSnapshot = {
   blackLostMinors: PieceType[];
   nextEventTurn: number;
   chaosEventTiming: boolean;
+  chaosPoolRestricted: boolean;
+  whiteTaxVault: number;
+  blackTaxVault: number;
+  hillPawnTimers: { pieceId: string; fullRoundsLeft: number }[];
   prizeFirstCaptureOfGameDone: boolean;
   whiteBlindRageDone: boolean;
   blackBlindRageDone: boolean;
@@ -291,6 +295,98 @@ function isApocalypseSquare(
   const edgeCol = c <= 1 || c >= cols - 2;
   const edgeRow = r <= 1 || r >= rows - 2;
   return edgeCol || edgeRow;
+}
+
+function clearAllNonKings(g: ChessState): ChessState {
+  const nb = cloneBoard(getDerivedBoard(g));
+  const rows = nb.length;
+  const cols = nb[0]?.length ?? rows;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const p = nb[r][c];
+      if (p && p.type !== "K") nb[r][c] = null;
+    }
+  return recomputeStatus(syncStateFromBoard({ ...g }, nb));
+}
+
+function removeAllQueens(g: ChessState): ChessState {
+  const nb = cloneBoard(getDerivedBoard(g));
+  const rows = nb.length;
+  const cols = nb[0]?.length ?? rows;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      if (nb[r][c]?.type === "Q") nb[r][c] = null;
+    }
+  return recomputeStatus(syncStateFromBoard({ ...g }, nb));
+}
+
+function tickEmperorHillTimers(
+  g: ChessState,
+  prevTimers: { pieceId: string; fullRoundsLeft: number }[],
+  whiteAugments: Augment[],
+  blackAugments: Augment[],
+): { state: ChessState; timers: { pieceId: string; fullRoundsLeft: number }[] } {
+  const wEmperor = whiteAugments.some((a) => a.id === "emperor-of-the-hill");
+  const bEmperor = blackAugments.some((a) => a.id === "emperor-of-the-hill");
+  if (!wEmperor && !bEmperor) return { state: g, timers: [] };
+
+  const nb = cloneBoard(getDerivedBoard(g));
+  const bs = nb.length;
+  const center = getCenterSquares(bs);
+  const timerMap = new Map(prevTimers.map((t) => [t.pieceId, t.fullRoundsLeft]));
+  const nextTimers: { pieceId: string; fullRoundsLeft: number }[] = [];
+
+  for (let r = 0; r < bs; r++) {
+    for (let c = 0; c < bs; c++) {
+      const p = nb[r][c];
+      if (!p || p.type !== "P" || !p.id) continue;
+      const ownerEmperor =
+        (p.color === "white" && wEmperor) || (p.color === "black" && bEmperor);
+      if (!ownerEmperor) continue;
+      if (!center.has(`${r},${c}`)) continue;
+
+      let left = timerMap.get(p.id);
+      if (left === undefined) left = 2;
+      left -= 1;
+      if (left <= 0) {
+        nb[r][c] = { ...p, type: "Q" };
+      } else {
+        nextTimers.push({ pieceId: p.id, fullRoundsLeft: left });
+      }
+    }
+  }
+  return {
+    state: recomputeStatus(syncStateFromBoard({ ...g }, nb)),
+    timers: nextTimers,
+  };
+}
+
+function flipRandomPawns(
+  g: ChessState,
+  countPerSide: number,
+): ChessState {
+  const nb = cloneBoard(getDerivedBoard(g));
+  const rows = nb.length;
+  const cols = nb[0]?.length ?? rows;
+  const pick = (color: "white" | "black") => {
+    const pawns: [number, number][] = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++) {
+        const p = nb[r][c];
+        if (p?.type === "P" && p.color === color) pawns.push([r, c]);
+      }
+    for (let i = pawns.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pawns[i], pawns[j]] = [pawns[j], pawns[i]];
+    }
+    for (const [r, c] of pawns.slice(0, countPerSide)) {
+      const p = nb[r][c]!;
+      nb[r][c] = { ...p, color: color === "white" ? "black" : "white" };
+    }
+  };
+  pick("white");
+  pick("black");
+  return recomputeStatus(syncStateFromBoard({ ...g }, nb));
 }
 
 function spawnTeaPartyPawns(
@@ -426,6 +522,7 @@ function applyEndOfTurnEffects(
   whiteDGRounds: number,
   blackDGRounds: number,
   levels: AugmentUpgradeLevels,
+  taxVault?: TaxVaultCredit,
 ): ChessState {
   let delta = 0;
   const minerInterval = getMinerInterval(getImproveLevel(levels, "miner"));
@@ -460,6 +557,7 @@ function applyEndOfTurnEffects(
     blackAugments,
     whiteDGRounds,
     blackDGRounds,
+    taxVault,
   );
 }
 
@@ -471,6 +569,8 @@ function applyInvestmentEndOfFullRound(
   blackLevels: AugmentUpgradeLevels,
   whiteDGRounds: number,
   blackDGRounds: number,
+  whiteTaxVault?: TaxVaultCredit,
+  blackTaxVault?: TaxVaultCredit,
 ): ChessState {
   let out = g;
   const applyFor = (color: Color) => {
@@ -490,11 +590,59 @@ function applyInvestmentEndOfFullRound(
       blackAugments,
       whiteDGRounds,
       blackDGRounds,
+      color === "white" ? whiteTaxVault : blackTaxVault,
     );
   };
   applyFor("white");
   applyFor("black");
   return out;
+}
+
+function commitSpellHalfMove(
+  g: ChessState,
+  board: Board,
+  movingColor: Color,
+  lastMove: NonNullable<ChessState["lastMove"]>,
+  newTurnCount: number,
+  curWhiteTurns: number,
+  curBlackTurns: number,
+  whiteAugments: Augment[],
+  blackAugments: Augment[],
+  whiteDGRounds: number,
+  blackDGRounds: number,
+  levels: AugmentUpgradeLevels,
+  taxVault?: TaxVaultCredit,
+): ChessState {
+  let newG = syncStateFromBoard(
+    {
+      ...g,
+      turn: opp(movingColor),
+      enPassantTarget: null,
+      lastMove,
+    },
+    board,
+  );
+  newG = applyEndOfTurnEffects(
+    newG,
+    movingColor,
+    movingColor === "white" ? whiteAugments : blackAugments,
+    newTurnCount,
+    whiteAugments,
+    blackAugments,
+    whiteDGRounds,
+    blackDGRounds,
+    levels,
+    taxVault,
+  );
+  return recomputeStatus(
+    expireLittleBigManAfterHalfMove(
+      newG,
+      movingColor,
+      newTurnCount,
+      curWhiteTurns,
+      curBlackTurns,
+    ),
+  );
 }
 
 function getAlternativeMoves(
@@ -564,6 +712,11 @@ function applyHordeEffect(g: ChessState, owner: "white" | "black"): ChessState {
   return recomputeStatus(syncStateFromBoard({ ...g }, nb));
 }
 
+type TaxVaultCredit = {
+  hasTallPolitician: boolean;
+  onVaultDeposit?: (color: "white" | "black", amount: number) => void;
+};
+
 /** Add gold to one side; positive amounts respect Double Gold rounds + stacks. */
 function creditGoldWithAugments(
   g: ChessState,
@@ -573,14 +726,21 @@ function creditGoldWithAugments(
   blackAugments: Augment[],
   whiteDGRounds: number,
   blackDGRounds: number,
+  taxVault?: TaxVaultCredit,
 ): ChessState {
   if (delta === 0) return g;
   const augs = beneficiary === "white" ? whiteAugments : blackAugments;
   const rounds = beneficiary === "white" ? whiteDGRounds : blackDGRounds;
-  const adj =
+  let adj =
     delta > 0
       ? applyDoubleGoldToPositiveDelta(beneficiary, delta, augs, rounds)
       : delta;
+  if (adj > 0 && taxVault?.hasTallPolitician && taxVault.onVaultDeposit) {
+    const vaultAmt = Math.floor(adj * 0.8);
+    const walletAmt = adj - vaultAmt;
+    taxVault.onVaultDeposit(beneficiary, vaultAmt);
+    adj = walletAmt;
+  }
   return {
     ...g,
     goldWhite: beneficiary === "white" ? g.goldWhite + adj : g.goldWhite,
@@ -650,7 +810,8 @@ function getRoyalEdMoves(
     const k = db[kr][kc];
     test[kr][kc] = null;
     test[nr][nc] = k ? { ...k } : { type: "K", color };
-    if (!isInCheck(test, color)) dests.push([nr, nc]);
+    const testState = syncStateFromBoard({ ...game }, test);
+    if (!isInCheck(testState, color)) dests.push([nr, nc]);
   }
   return { kingPos: [kr, kc], dests };
 }
@@ -1530,6 +1691,7 @@ export default function ChessGame({
   mpConfig,
   tutorialMode = false,
 }: { mpConfig?: MpConfig; tutorialMode?: boolean } = {}) {
+  const lang = useChessLanguage();
   const is2v2 =
     mpConfig?.gameMode === "2v2" ||
     false;
@@ -1708,8 +1870,35 @@ export default function ChessGame({
   } | null>(null);
   const [exhaustedEventIds, setExhaustedEventIds] = useState<string[]>([]);
 
-  /** After "Just Chaos", board events are scheduled every 5 full rounds. */
+  /** After "Just Chaos", board events fire every 2 full rounds. */
   const [chaosEventTiming, setChaosEventTiming] = useState(false);
+  /** After "Just Chaos", common/uncommon events are excluded from the pool. */
+  const [chaosPoolRestricted, setChaosPoolRestricted] = useState(false);
+
+  const [whiteTaxVault, setWhiteTaxVault] = useState(0);
+  const [blackTaxVault, setBlackTaxVault] = useState(0);
+  const [taxStealBanner, setTaxStealBanner] = useState<string | null>(null);
+  const [hillPawnTimers, setHillPawnTimers] = useState<
+    { pieceId: string; fullRoundsLeft: number }[]
+  >([]);
+
+  const taxVaultCredit = useCallback(
+    (color: "white" | "black", amount: number) => {
+      if (color === "white") setWhiteTaxVault((v) => v + amount);
+      else setBlackTaxVault((v) => v + amount);
+    },
+    [],
+  );
+
+  const taxVaultCtx = useCallback(
+    (color: "white" | "black"): TaxVaultCredit => ({
+      hasTallPolitician: (color === "white" ? whiteAugments : blackAugments).some(
+        (a) => a.id === "tall-politician",
+      ),
+      onVaultDeposit: taxVaultCredit,
+    }),
+    [whiteAugments, blackAugments, taxVaultCredit],
+  );
 
   // Mercenary auction (every 10–15 full rounds)
   const [nextAuctionTurn, setNextAuctionTurn] = useState(() =>
@@ -1924,6 +2113,7 @@ export default function ChessGame({
             bA,
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
+            taxVaultCtx(color),
           ),
         );
       }
@@ -1950,14 +2140,52 @@ export default function ChessGame({
         if (color === "white") setWhiteLittleBigManCharges((n) => n + 1);
         else setBlackLittleBigManCharges((n) => n + 1);
       }
+      if (aug.id === "emperor-of-the-hill") {
+        const kotH = AUGMENT_POOL.find((a) => a.id === "king-of-the-hill");
+        if (!kotH) return;
+        const augs = color === "white" ? wA : bA;
+        const levels =
+          color === "white" ? whiteAugmentLevels : blackAugmentLevels;
+        if (!augs.some((a) => a.id === "king-of-the-hill")) {
+          if (color === "white")
+            setWhiteAugments((prev) => [...prev, kotH]);
+          else setBlackAugments((prev) => [...prev, kotH]);
+        } else if (canImproveAugment(levels, "king-of-the-hill", augs)) {
+          const cur = getImproveLevel(levels, "king-of-the-hill");
+          const setter =
+            color === "white"
+              ? setWhiteAugmentLevels
+              : setBlackAugmentLevels;
+          setter((prev) => ({
+            ...prev,
+            "king-of-the-hill": cur + 1,
+          }));
+        }
+      }
+      if (aug.id === "plot-armour") {
+        setGame((g) => ({
+          ...g,
+          plotArmourWhiteRoundsLeft:
+            color === "white"
+              ? 5
+              : (g.plotArmourWhiteRoundsLeft ?? 0),
+          plotArmourBlackRoundsLeft:
+            color === "black"
+              ? 5
+              : (g.plotArmourBlackRoundsLeft ?? 0),
+        }));
+      }
     },
     [
       whiteAugments,
       blackAugments,
+      whiteAugmentLevels,
+      blackAugmentLevels,
       whiteTurnCount,
       blackTurnCount,
       whiteDoubleGoldFullRoundsLeft,
       blackDoubleGoldFullRoundsLeft,
+      taxVaultCtx,
     ],
   );
 
@@ -2006,6 +2234,10 @@ export default function ChessGame({
     blackLostMinors,
     nextEventTurn,
     chaosEventTiming,
+    chaosPoolRestricted,
+    whiteTaxVault,
+    blackTaxVault,
+    hillPawnTimers,
     prizeFirstCaptureOfGameDone,
     whiteBlindRageDone,
     blackBlindRageDone,
@@ -2037,6 +2269,7 @@ export default function ChessGame({
     activeNuke, peaceTreatyRoundsLeft, whiteLostPawnCols, blackLostPawnCols,
     whiteCaptureCount, blackCaptureCount, whiteBloodlustNext, blackBloodlustNext,
     whiteLostMinors, blackLostMinors, nextEventTurn, chaosEventTiming,
+    chaosPoolRestricted, whiteTaxVault, blackTaxVault, hillPawnTimers,
     prizeFirstCaptureOfGameDone, whiteBlindRageDone, blackBlindRageDone,
     whiteEvadeCharges, blackEvadeCharges, augmentSpellBlockedFor,
     whitePawnShopBuys, blackPawnShopBuys, blindRagePickColor, blindRageOffered,
@@ -2106,6 +2339,10 @@ export default function ChessGame({
     peaceTreatyRoundsLeft,
     activeNuke,
     chaosEventTiming,
+    chaosPoolRestricted,
+    whiteTaxVault,
+    blackTaxVault,
+    hillPawnTimers,
     wallSquares,
     wallMovesLeft,
     whitePuppetUsed,
@@ -2254,6 +2491,15 @@ export default function ChessGame({
       typeof g.chaosEventTiming === "boolean"
         ? g.chaosEventTiming
         : (g as { eventInterval?: number }).eventInterval === 10,
+    );
+    setChaosPoolRestricted(
+      (g as { chaosPoolRestricted?: boolean }).chaosPoolRestricted ?? false,
+    );
+    setWhiteTaxVault((g as { whiteTaxVault?: number }).whiteTaxVault ?? 0);
+    setBlackTaxVault((g as { blackTaxVault?: number }).blackTaxVault ?? 0);
+    setHillPawnTimers(
+      (g as { hillPawnTimers?: { pieceId: string; fullRoundsLeft: number }[] })
+        .hillPawnTimers ?? [],
     );
     setWallSquares(g.wallSquares as { row: number; col: number }[]);
     setWallMovesLeft(g.wallMovesLeft as number);
@@ -2850,6 +3096,7 @@ export default function ChessGame({
         whiteDoubleGoldFullRoundsLeft,
         blackDoubleGoldFullRoundsLeft,
         moverLevels,
+        taxVaultCtx(movingColor),
       );
 
       const investmentRoundDone = is2v2Mode(newGame)
@@ -2864,6 +3111,8 @@ export default function ChessGame({
           blackAugmentLevels,
           whiteDoubleGoldFullRoundsLeft,
           blackDoubleGoldFullRoundsLeft,
+          taxVaultCtx("white"),
+          taxVaultCtx("black"),
         );
       }
 
@@ -2899,6 +3148,7 @@ export default function ChessGame({
             blackAugments,
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
+            taxVaultCtx(victimColor),
           );
         }
       }
@@ -3033,6 +3283,7 @@ export default function ChessGame({
                   blackAugments,
                   whiteDoubleGoldFullRoundsLeft,
                   blackDoubleGoldFullRoundsLeft,
+                  taxVaultCtx("white"),
                 );
               }
               settleWhiteContract();
@@ -3082,6 +3333,7 @@ export default function ChessGame({
                   blackAugments,
                   whiteDoubleGoldFullRoundsLeft,
                   blackDoubleGoldFullRoundsLeft,
+                  taxVaultCtx("black"),
                 );
               }
               settleBlackContract();
@@ -3116,7 +3368,11 @@ export default function ChessGame({
         newGame = recomputeStatus(newGame);
         const fullRoundsCompleted = newTurnCount;
         if (fullRoundsCompleted >= nextEventTurn) {
-          const event = rollEvent(exhaustedEventIds);
+          const event = rollEvent(exhaustedEventIds, {
+            excludeRarities: chaosPoolRestricted
+              ? (["common", "uncommon"] as const)
+              : undefined,
+          });
           setExhaustedEventIds((prev) => {
             const next = [...prev, event.id];
             return next.length >= EVENT_POOL.length ? [] : next;
@@ -3184,6 +3440,75 @@ export default function ChessGame({
             newGame = recomputeStatus(syncStateFromBoard({ ...newGame }, nb));
           } else if (event.id === "just-chaos") {
             setChaosEventTiming(true);
+            setChaosPoolRestricted(true);
+            setExhaustedEventIds([]);
+          } else if (event.id === "all-in") {
+            newGame = clearAllNonKings(newGame);
+            newGame = creditGoldWithAugments(
+              newGame,
+              "white",
+              200,
+              whiteAugments,
+              blackAugments,
+              whiteDoubleGoldFullRoundsLeft,
+              blackDoubleGoldFullRoundsLeft,
+              taxVaultCtx("white"),
+            );
+            newGame = creditGoldWithAugments(
+              newGame,
+              "black",
+              200,
+              whiteAugments,
+              blackAugments,
+              whiteDoubleGoldFullRoundsLeft,
+              blackDoubleGoldFullRoundsLeft,
+              taxVaultCtx("black"),
+            );
+            const grantPawnShop = (color: Color) => {
+              const pawnShop = AUGMENT_POOL.find((a) => a.id === "pawn-shop");
+              if (!pawnShop) return;
+              const augs = color === "white" ? whiteAugments : blackAugments;
+              if (!augs.some((a) => a.id === "pawn-shop")) {
+                if (color === "white")
+                  setWhiteAugments((prev) => [...prev, pawnShop]);
+                else setBlackAugments((prev) => [...prev, pawnShop]);
+              }
+              const setter =
+                color === "white"
+                  ? setWhiteAugmentLevels
+                  : setBlackAugmentLevels;
+              setter((prev) => ({ ...prev, "pawn-shop": 2 }));
+            };
+            grantPawnShop("white");
+            grantPawnShop("black");
+          } else if (event.id === "capitalism") {
+            if (newGame.goldWhite > newGame.goldBlack) {
+              newGame = creditGoldWithAugments(
+                newGame,
+                "white",
+                20,
+                whiteAugments,
+                blackAugments,
+                whiteDoubleGoldFullRoundsLeft,
+                blackDoubleGoldFullRoundsLeft,
+                taxVaultCtx("white"),
+              );
+            } else if (newGame.goldBlack > newGame.goldWhite) {
+              newGame = creditGoldWithAugments(
+                newGame,
+                "black",
+                20,
+                whiteAugments,
+                blackAugments,
+                whiteDoubleGoldFullRoundsLeft,
+                blackDoubleGoldFullRoundsLeft,
+                taxVaultCtx("black"),
+              );
+            }
+          } else if (event.id === "pride-month") {
+            newGame = removeAllQueens(newGame);
+          } else if (event.id === "imposters") {
+            newGame = flipRandomPawns(newGame, 2);
           } else if (event.id === "great-wall-of-hatay") {
             const wallOptions: { row: number; col: number }[][] = [];
             for (let row = 0; row < evRows; row++)
@@ -3508,6 +3833,31 @@ export default function ChessGame({
       if (fullRoundDone) {
         setWhiteDoubleGoldFullRoundsLeft((n) => Math.max(0, n - 1));
         setBlackDoubleGoldFullRoundsLeft((n) => Math.max(0, n - 1));
+        boardAfterMerc = {
+          ...boardAfterMerc,
+          plotArmourWhiteRoundsLeft: Math.max(
+            0,
+            (boardAfterMerc.plotArmourWhiteRoundsLeft ?? 0) - 1,
+          ),
+          plotArmourBlackRoundsLeft: Math.max(
+            0,
+            (boardAfterMerc.plotArmourBlackRoundsLeft ?? 0) - 1,
+          ),
+        };
+        if (whiteAugments.some((a) => a.id === "tall-politician")) {
+          setWhiteTaxVault((v) => Math.round(v * 1.25));
+        }
+        if (blackAugments.some((a) => a.id === "tall-politician")) {
+          setBlackTaxVault((v) => Math.round(v * 1.25));
+        }
+        const hillTick = tickEmperorHillTimers(
+          boardAfterMerc,
+          hillPawnTimers,
+          whiteAugments,
+          blackAugments,
+        );
+        boardAfterMerc = hillTick.state;
+        setHillPawnTimers(hillTick.timers);
         const mercCtx = {
           wallSquares,
           frozenSquare,
@@ -3557,6 +3907,7 @@ export default function ChessGame({
             blackAugments,
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
+            taxVaultCtx(movingColor),
           );
         }
       }
@@ -3571,6 +3922,7 @@ export default function ChessGame({
           blackAugments,
           whiteDoubleGoldFullRoundsLeft,
           blackDoubleGoldFullRoundsLeft,
+          taxVaultCtx(movingColor),
         );
       }
 
@@ -3596,6 +3948,7 @@ export default function ChessGame({
               blackAugments,
               whiteDoubleGoldFullRoundsLeft,
               blackDoubleGoldFullRoundsLeft,
+              taxVaultCtx(movingColor),
             );
           }
         }
@@ -3619,6 +3972,7 @@ export default function ChessGame({
               blackAugments,
               whiteDoubleGoldFullRoundsLeft,
               blackDoubleGoldFullRoundsLeft,
+              taxVaultCtx(movingColor),
             );
           }
         }
@@ -3772,6 +4126,9 @@ export default function ChessGame({
       activePuppetColor,
       activePuppetSquare,
       chaosEventTiming,
+      chaosPoolRestricted,
+      hillPawnTimers,
+      taxVaultCtx,
       requestSnapshot,
       whiteIlkkanId,
       blackIlkkanId,
@@ -3899,6 +4256,20 @@ export default function ChessGame({
           "boolean"
           ? (augRestored as { chaosEventTiming: boolean }).chaosEventTiming
           : (augRestored as { eventInterval?: number }).eventInterval === 10,
+      );
+      setChaosPoolRestricted(
+        (augRestored as { chaosPoolRestricted?: boolean }).chaosPoolRestricted ??
+          false,
+      );
+      setWhiteTaxVault(
+        (augRestored as { whiteTaxVault?: number }).whiteTaxVault ?? 0,
+      );
+      setBlackTaxVault(
+        (augRestored as { blackTaxVault?: number }).blackTaxVault ?? 0,
+      );
+      setHillPawnTimers(
+        (augRestored as { hillPawnTimers?: { pieceId: string; fullRoundsLeft: number }[] })
+          .hillPawnTimers ?? [],
       );
       setPrizeFirstCaptureOfGameDone(
         (augRestored as { prizeFirstCaptureOfGameDone?: boolean })
@@ -4435,6 +4806,7 @@ export default function ChessGame({
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
             movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+            taxVaultCtx(movingColor),
           );
           newGState = recomputeStatus(
             expireLittleBigManAfterHalfMove(
@@ -4769,24 +5141,51 @@ export default function ChessGame({
       }
 
       if (bloodbendingMode) {
+        const bs = getDerivedBoard(game).length;
+        const enemyColor = opp(game.turn);
         if (
           piece &&
           piece.color !== game.turn &&
           piece.color !== "orange" &&
           piece.type === "P" &&
+          !isOriginalPawnSpawnSquare(r, c, enemyColor, bs) &&
           !blessedSquares.some((b) => b.row === r && b.col === c)
         ) {
+          const movingColor = game.turn;
           const nb = cloneBoard(getDerivedBoard(game));
           const flipped =
             gameIs2v2 && game.turnSlot
               ? summonedPiece(piece!.type, game.turnSlot, piece!.id)
-              : { ...piece!, color: game.turn };
+              : { ...piece!, color: movingColor };
           nb[r][c] = flipped;
-          const newG = recomputeStatus(syncStateFromBoard({ ...game }, nb));
+          const newTurnCount =
+            (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
+          if (movingColor === "white") setWhiteTurnCount(newTurnCount);
+          else setBlackTurnCount(newTurnCount);
           setGameHistory((h) => [...h, game]);
           setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
+          const newG = commitSpellHalfMove(
+            game,
+            nb,
+            movingColor,
+            {
+              from: [r, c],
+              to: [r, c],
+              piece: flipped,
+              captured: null,
+            },
+            newTurnCount,
+            whiteTurnCount,
+            blackTurnCount,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+            taxVaultCtx(movingColor),
+          );
           setGame(newG);
-          if (game.turn === "white") setWhiteBloodbendingCharges((n) => n - 1);
+          if (movingColor === "white") setWhiteBloodbendingCharges((n) => n - 1);
           else setBlackBloodbendingCharges((n) => n - 1);
           requestSnapshot();
         }
@@ -4943,8 +5342,35 @@ export default function ChessGame({
             ),
           );
           if (!isInCheck(merged, game.turn)) {
-            setGame(merged);
-            if (game.turn === "white") setWhiteSwapUsed(true);
+            const movingColor = game.turn;
+            const newTurnCount =
+              (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
+            if (movingColor === "white") setWhiteTurnCount(newTurnCount);
+            else setBlackTurnCount(newTurnCount);
+            setGameHistory((h) => [...h, game]);
+            setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
+            const newG = commitSpellHalfMove(
+              game,
+              getDerivedBoard(merged),
+              movingColor,
+              {
+                from: [fr, fc],
+                to: [r, c],
+                piece: pa,
+                captured: null,
+              },
+              newTurnCount,
+              whiteTurnCount,
+              blackTurnCount,
+              whiteAugments,
+              blackAugments,
+              whiteDoubleGoldFullRoundsLeft,
+              blackDoubleGoldFullRoundsLeft,
+              movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+              taxVaultCtx(movingColor),
+            );
+            setGame(newG);
+            if (movingColor === "white") setWhiteSwapUsed(true);
             else setBlackSwapUsed(true);
             requestSnapshot();
             setSwapMode(false);
@@ -5008,21 +5434,39 @@ export default function ChessGame({
         }
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
+          const movingColor = game.turn;
           const movingPiece = getDerivedBoard(game)[sakoSelected[0]][sakoSelected[1]]!;
           const nb = cloneBoard(getDerivedBoard(game));
           nb[sakoSelected[0]][sakoSelected[1]] = null;
           nb[r][c] = movingPiece;
-          const newGame = recomputeStatus(
-            syncStateFromBoard(
-              {
-                ...game,
-                enPassantTarget: null,
-              },
-              nb,
-            ),
+          const newTurnCount =
+            (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
+          if (movingColor === "white") setWhiteTurnCount(newTurnCount);
+          else setBlackTurnCount(newTurnCount);
+          setGameHistory((h) => [...h, game]);
+          setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
+          const newGame = commitSpellHalfMove(
+            game,
+            nb,
+            movingColor,
+            {
+              from: sakoSelected,
+              to: [r, c],
+              piece: movingPiece,
+              captured: null,
+            },
+            newTurnCount,
+            whiteTurnCount,
+            blackTurnCount,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+            taxVaultCtx(movingColor),
           );
           setGame(newGame);
-          if (game.turn === "white") setWhiteSakoUsed(true);
+          if (movingColor === "white") setWhiteSakoUsed(true);
           else setBlackSakoUsed(true);
           requestSnapshot();
         } else if (
@@ -5126,6 +5570,7 @@ export default function ChessGame({
             whiteDoubleGoldFullRoundsLeft,
             blackDoubleGoldFullRoundsLeft,
             movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+            taxVaultCtx(movingColor),
           );
           newGame = recomputeStatus(
             expireLittleBigManAfterHalfMove(
@@ -5530,6 +5975,11 @@ export default function ChessGame({
     setWallSquares([]);
     setWallMovesLeft(0);
     setChaosEventTiming(false);
+    setChaosPoolRestricted(false);
+    setWhiteTaxVault(0);
+    setBlackTaxVault(0);
+    setTaxStealBanner(null);
+    setHillPawnTimers([]);
     setWhiteContractTarget(null);
     setBlackContractTarget(null);
     setWhiteContractPieceId(null);
@@ -5730,6 +6180,21 @@ export default function ChessGame({
     fn();
   };
 
+  const handleCollectTax = useCallback(
+    (color: Color) => {
+      if (color === "white") setWhiteTaxVault(0);
+      else setBlackTaxVault(0);
+      setTaxStealBanner(
+        lang === "türkçe"
+          ? "Uzun adam paranı çaldı"
+          : "Ah shit he stole your money",
+      );
+      setTimeout(() => setTaxStealBanner(null), 3000);
+      requestSnapshot();
+    },
+    [requestSnapshot, lang],
+  );
+
   const makeSpells = (color: Color): SpellState => {
     const teamOnClock = game.turn === color;
     const canUseSpells = gameIs2v2 ? mySlotTurn && teamOnClock : teamOnClock;
@@ -5896,6 +6361,15 @@ export default function ChessGame({
         : blackAugments.some((a) => a.id === "bloodlust"),
     shopOpen: shopOpen && canUseSpells,
     onToggleShop: turnGuard(handleToggleShop),
+    hasTallPolitician: (color === "white" ? whiteAugments : blackAugments).some(
+      (a) => a.id === "tall-politician",
+    ),
+    tallPoliticianVault: color === "white" ? whiteTaxVault : blackTaxVault,
+    onCollectTax: () => handleCollectTax(color),
+    plotArmourRounds:
+      color === "white"
+        ? game.plotArmourWhiteRoundsLeft ?? 0
+        : game.plotArmourBlackRoundsLeft ?? 0,
   };
   };
 
@@ -6211,6 +6685,7 @@ export default function ChessGame({
         capturedPieces={game.capturedByBlack}
         advantage={adv.black > 0 ? adv.black : 0}
         spells={makeSpells("black")}
+        taxStealBanner={taxStealBanner}
       />
 
       <div
@@ -6373,6 +6848,7 @@ export default function ChessGame({
         capturedPieces={game.capturedByWhite}
         advantage={adv.white > 0 ? adv.white : 0}
         spells={makeSpells("white")}
+        taxStealBanner={taxStealBanner}
         statusLabel={
           phase === "playing" && !isOver ? statusText.label : undefined
         }

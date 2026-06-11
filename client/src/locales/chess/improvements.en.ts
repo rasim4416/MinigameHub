@@ -25,7 +25,7 @@ export const IMPROVEMENTS_EN: Record<string, string[]> = {
     "When the enemy captures your pawns: 3g for the first, 6g for the second, 9g for the third, and keeps scaling."
   ],
   "contract-killer": [
-    "Mark one enemy piece (not king or pawn). Capture it for 5× its base gold value instead of 1."
+    "Mark one enemy piece (not king or pawn). Capture it for 5× its base gold value instead of 3."
   ],
   "tax-man": [
     "When you finish a half-move, earn 3 gold per 8 gold your opponent gained that half-move (per stack).",
@@ -38,7 +38,7 @@ export const IMPROVEMENTS_EN: Record<string, string[]> = {
     "Bless any square. The piece on that square cannot be captured for 3 rounds."
   ],
   "pawn-shop": [
-    "Buy pawns from the shop; price starts at 5g and rises by 5g each purchase.",
+    "Buy pawns from the shop; price starts at 5g and rises by 7g each purchase.",
     "Buy pawns from the shop for a flat 10g each (price no longer scales)."
   ],
   "i-am-danger": [

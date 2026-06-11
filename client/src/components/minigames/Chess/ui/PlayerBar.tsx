@@ -20,6 +20,7 @@ export function PlayerBar({
   statusLabel,
   statusColor,
   statusBadge,
+  taxStealBanner,
 }: {
   color: Color;
   isActive: boolean;
@@ -33,6 +34,7 @@ export function PlayerBar({
   statusLabel?: string;
   statusColor?: string;
   statusBadge?: boolean;
+  taxStealBanner?: string | null;
 }) {
   const captureColor = opp(color);
   const sorted = [...capturedPieces].sort(
@@ -63,7 +65,7 @@ export function PlayerBar({
         <SpellButton icon="💀✨" label="REVIVE+" active={spells.necroPlusActive} onClick={spells.onNecroPlus} title="Revive a captured knight or bishop to your home rank" />
       )}
       {canAct && spells.bloodbendingCharges > 0 && (
-        <SpellButton icon="🩸" label="BLOOD" active={spells.bloodbendingActive} count={spells.bloodbendingCharges} onClick={spells.onBloodbending} title="Flip an enemy pawn to your color" />
+        <SpellButton icon="🩸" label="BLOOD" active={spells.bloodbendingActive} count={spells.bloodbendingCharges} onClick={spells.onBloodbending} title="Flip an enemy pawn to your color (spends your turn)" />
       )}
       {canAct && spells.bloodbendingPlusCharges > 0 && (
         <SpellButton icon="🩸✨" label="BLOOD+" active={spells.bloodbendingPlusActive} count={spells.bloodbendingPlusCharges} onClick={spells.onBloodbendingPlus} title="Flip an enemy knight, bishop, or rook to your color" />
@@ -81,16 +83,16 @@ export function PlayerBar({
         <SpellButton icon="🧑" label="ILKKAN" active={spells.ilkkanActive} onClick={spells.onIlkkan} title="Make a pawn İlkkan" />
       )}
       {canAct && spells.royalEdAvailable && (
-        <SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight (one time)" />
+        <SpellButton icon="♞" label="ROYAL" active={spells.royalEdActive} onClick={spells.onRoyalEd} title="Move your king like a knight — even while in check" />
       )}
       {canAct && spells.whatAvailable && (
         <SpellButton icon="↔️" label="WHAT?" active={spells.whatActive} onClick={spells.onWhat} tutorialId="spell-what" title="Move one pawn sideways one square (one time)" />
       )}
       {canAct && spells.sakoAvailable && (
-        <SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport a piece on your half (free action)" />
+        <SpellButton icon="⚓" label="SAKO" active={spells.sakoActive} onClick={spells.onSako} title="Teleport any of your pieces (spends your turn)" />
       )}
       {canAct && spells.swapAvailable && (
-        <SpellButton icon="🔀" label="SWAP" active={spells.swapActive} onClick={spells.onSwap} title="Exchange two of your pieces (once per game)" />
+        <SpellButton icon="🔀" label="SWAP" active={spells.swapActive} onClick={spells.onSwap} title="Exchange two of your pieces (spends your turn)" />
       )}
       {canAct && spells.royalHouseholdAvailable && (
         <SpellButton icon="🏰" label="RAMPAGE" active={spells.royalHouseholdActive} onClick={spells.onRoyalHousehold} title="King rampages up to 4 squares" />
@@ -108,7 +110,25 @@ export function PlayerBar({
         <SpellButton icon="🗑️" label="REMOVE" active={spells.monolithPlaceActive} onClick={spells.onMonolithRemove} title="Remove your monolith (free)" />
       )}
       {canAct && spells.contractAvailable && (
-        <SpellButton icon="🎯" label="CONTRACT" active={spells.contractActive} onClick={spells.onContract} title="Mark an enemy piece for 4× gold on capture" />
+        <SpellButton icon="🎯" label="CONTRACT" active={spells.contractActive} onClick={spells.onContract} title="Mark an enemy piece for 3× gold on capture" />
+      )}
+      {spells.hasTallPolitician && (
+        <div className="flex shrink-0 items-center gap-1 rounded border border-amber-600/40 bg-amber-950/40 px-1.5 py-0.5">
+          <span className="text-[9px] font-semibold text-amber-200/90">TAX</span>
+          <span className="text-[11px] font-bold text-amber-300">{spells.tallPoliticianVault}g</span>
+          <button
+            type="button"
+            onClick={spells.onCollectTax}
+            className="rounded bg-amber-700/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-100 hover:bg-amber-600/70"
+          >
+            COLLECT
+          </button>
+        </div>
+      )}
+      {spells.plotArmourRounds > 0 && (
+        <span className="shrink-0 rounded border border-yellow-500/40 bg-yellow-950/40 px-1.5 py-0.5 text-[9px] font-bold text-yellow-200">
+          🛡️ {spells.plotArmourRounds}r
+        </span>
       )}
       {canAct && spells.blessedWaterCharges > 0 && (
         <SpellButton icon="💧" label="BLESS" count={spells.blessedWaterCharges} active={spells.blessedWaterActive} onClick={spells.onBlessedWater} title="Bless a square for 2 rounds" />
@@ -185,6 +205,11 @@ export function PlayerBar({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {taxStealBanner && (
+            <div className="rounded border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+              {taxStealBanner}
+            </div>
+          )}
           {statusLabel && (
             <div
               className={`text-[11px] font-bold tracking-wide ${

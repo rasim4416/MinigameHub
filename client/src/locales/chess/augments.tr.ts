@@ -59,7 +59,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "contract-killer": {
     "name": "Kontrat Katili",
-    "description": "Bir rakip taşı işaretle (şah/piyon hariç). Alırsan taban değerinin 4 katı altın kazan."
+    "description": "Bir rakip taşı işaretle (şah/piyon hariç). Alırsan taban değerinin 3 katı altın kazan. Dükkandan alınamaz."
   },
   "evade": {
     "name": "Kaçınma",
@@ -111,11 +111,11 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "swap": {
     "name": "Takas",
-    "description": "Oyunda bir kez iki kendi taşının yerini değiştir."
+    "description": "Oyunda bir kez iki kendi taşının yerini değiştir (tur harcar)."
   },
   "pawn-shop": {
     "name": "Piyon Dükkanı",
-    "description": "Dükkandan piyon al. Yerleştirme tur harcamaz. Fiyat 10g'den başlar, her alımda +10g, üst sınır yok."
+    "description": "Dükkandan piyon al. Yerleştirme tur harcamaz. Fiyat 5g'den başlar, her alımda +7g."
   },
   "mastermind-plus-plus": {
     "name": "Dahi++",
@@ -137,9 +137,13 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
     "name": "Sürü",
     "description": "Alındığında her piyonun boş ön kareye bir adım atmayı dener."
   },
+  "tall-politician": {
+    "name": "Uzun Adam",
+    "description": "Gelirin %80'i gizli vergi kasasına gider. İhtiyacın olunca topla — cesaretin varsa."
+  },
   "bloodbending": {
     "name": "Kanbükme",
-    "description": "Büyü: bir rakip piyonunu kendi rengine çevir."
+    "description": "Büyü: bir rakip piyonunu kendi rengine çevir (tur harcar; orijinal piyon sırasındaki piyonlar hedeflenemez)."
   },
   "bloodlust": {
     "name": "Kana susamış",
@@ -151,7 +155,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "royal-education": {
     "name": "Kraliyet Eğitimi",
-    "description": "Bir kez şahın at gibi hareket edebilir."
+    "description": "Bir kez şahın at gibi hareket edebilir — şah çekiliyken bile."
   },
   "death-note": {
     "name": "Ölüm Defteri",
@@ -163,7 +167,15 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "sako-bosphorus": {
     "name": "Şako Bosphorus",
-    "description": "Semih Bey bize bir deneyim satın aldı — bir kez herhangi bir taşını boş bir kareye ışınla."
+    "description": "Semih Bey bize bir deneyim satın aldı — bir kez herhangi bir taşını boş bir kareye ışınla (tur harcar)."
+  },
+  "emperor-of-the-hill": {
+    "name": "Tepenin İmparatoru",
+    "description": "Tepenin Kralı kazan. Bir piyon tepe karesinde 2 tam tur kalırsa vezire terfi eder."
+  },
+  "plot-armour": {
+    "name": "Senaryo Zırhı",
+    "description": "Şahın 5 tam tur boyunca şah ve mat'tan bağışıktır."
   },
   "royal-household": {
     "name": "Kraliyet Hanesi",
