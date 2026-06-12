@@ -59,7 +59,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "contract-killer": {
     "name": "Contract Killer",
-    "description": "Mark one enemy piece (not king or pawn). If you capture it, earn 3× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure). Cannot be purchased in shop."
+    "description": "Mark one enemy piece (not king or pawn). Capture it for 3× gold."
   },
   "evade": {
     "name": "Evade",
@@ -111,11 +111,11 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "swap": {
     "name": "Swap",
-    "description": "Once per game, exchange the positions of any two of your own pieces (spends your turn). Frozen pieces cannot be moved."
+    "description": "Once per game, swap two of your pieces. Spends your turn."
   },
   "pawn-shop": {
     "name": "Pawn Shop",
-    "description": "Buy pawns from the shop; place on empty squares of your original pawn rank (second rank), even on a 10×10 board. Placement does not spend a turn. Price starts at 5g and rises by 7g each purchase."
+    "description": "Buy pawns from the shop. Placement does not spend a turn. Price starts at 5g, +7g each buy."
   },
   "mastermind-plus-plus": {
     "name": "Mastermind++",
@@ -139,11 +139,11 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "tall-politician": {
     "name": "Tall Politician",
-    "description": "80% of your income goes to a hidden tax vault. Collect when you need it — if you dare."
+    "description": "Pay your income as tax. I will help you in need."
   },
   "bloodbending": {
     "name": "Bloodbending",
-    "description": "Spell: flip one enemy pawn to your color (spends your turn; cannot target pawns on their original rank)."
+    "description": "Flip an enemy pawn to your color. Spends your turn."
   },
   "bloodlust": {
     "name": "Bloodlust",
@@ -155,7 +155,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "royal-education": {
     "name": "Royal Education",
-    "description": "Once, your king may move like a knight — even while in check."
+    "description": "Your king moves like a knight once. Works in check."
   },
   "death-note": {
     "name": "Death Note",
@@ -167,15 +167,15 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "sako-bosphorus": {
     "name": "Şako Bosphorus",
-    "description": "Buy the Experience — once, teleport any of your pieces to an unoccupied square (spends your turn)."
+    "description": "Buy the Experience — teleport any piece to an empty square once. Spends your turn."
   },
   "emperor-of-the-hill": {
     "name": "Emperor of the Hill",
-    "description": "Gain King of the Hill. If a pawn stays on a hill square for 2 full rounds, it promotes to a queen."
+    "description": "Gain King of the Hill. Hill pawns become queens after 2 rounds."
   },
   "plot-armour": {
     "name": "Plot Armour",
-    "description": "Your king is immune to check and checkmate for 5 full rounds."
+    "description": "Your king cannot be checked for 5 rounds."
   },
   "royal-household": {
     "name": "Royal Household",

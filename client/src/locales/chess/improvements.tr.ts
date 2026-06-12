@@ -25,7 +25,7 @@ export const IMPROVEMENTS_TR: Record<string, string[]> = {
     "Rakip piyonlarını aldığında kazandığın para katlanarak artar."
   ],
   "contract-killer": [
-    "Bir rakip taş işaretle. Alırsan taban değerinin 5 katı altın (3 yerine)."
+    "Alırsan 5 katı altın."
   ],
   "tax-man": [
     "Tur bitince rakibin o turda kazandığı her 10>8 altın için 1>3 altın.",
@@ -38,8 +38,8 @@ export const IMPROVEMENTS_TR: Record<string, string[]> = {
     "Herhangi bir kareyi kutsa. Üzerindeki taş 2>3 tur alınamaz."
   ],
   "pawn-shop": [
-    "Dükkandan piyon al; fiyat 5g'den başlar, her alımda +7g.",
-    "Dükkandan piyon al; sabit 10g (fiyat artmaz)."
+    "Fiyat 5g, her alımda +7g.",
+    "Sabit 10g."
   ],
   "i-am-danger": [
     "Rakip şaha her şah çektiğinde 4>5 altın (stack başına)."
