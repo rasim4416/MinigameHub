@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { chessShell } from "../chessTheme";
 
-export function StartScreen({ onStart }: { onStart: () => void }) {
+export function StartScreen({
+  onStart,
+  subtitle,
+}: {
+  onStart: () => void;
+  subtitle?: string;
+}) {
   const [hov, setHov] = useState(false);
 
   return (
@@ -26,9 +32,13 @@ export function StartScreen({ onStart }: { onStart: () => void }) {
           Chess Augmented
         </h2>
         <p className="m-0 text-xs leading-relaxed text-slate-500">
-          Classic chess · Each player picks an augment
-          <br />
-          before the game begins
+          {subtitle ?? (
+            <>
+              Classic chess · Each player picks an augment
+              <br />
+              before the game begins
+            </>
+          )}
         </p>
       </div>
       <button

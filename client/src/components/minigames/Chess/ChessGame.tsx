@@ -45,6 +45,7 @@ import { PlayerBar } from "./ui/PlayerBar";
 import { ShopPanel } from "./ui/ShopPanel";
 import { AugmentSelector } from "./ui/AugmentSelector";
 import { StartScreen } from "./ui/StartScreen";
+import { buildBotMoveContext, pickBotMove } from "./chessBot";
 import {
   useTutorial,
   useTutorialRestrictions,
@@ -1690,7 +1691,8 @@ export interface MpConfig {
 export default function ChessGame({
   mpConfig,
   tutorialMode = false,
-}: { mpConfig?: MpConfig; tutorialMode?: boolean } = {}) {
+  botMode = false,
+}: { mpConfig?: MpConfig; tutorialMode?: boolean; botMode?: boolean } = {}) {
   const lang = useChessLanguage();
   const is2v2 =
     mpConfig?.gameMode === "2v2" ||
@@ -1731,6 +1733,12 @@ export default function ChessGame({
       capturedType?: PieceType | null,
     ) => void
   >(() => {});
+  const [botThinking, setBotThinking] = useState(false);
+  const botBusyRef = useRef(false);
+  const gameRef = useRef(game);
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
   const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
   const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
   const [whiteAugments, setWhiteAugments] = useState<Augment[]>(
@@ -5883,6 +5891,170 @@ export default function ChessGame({
     [promotionPending, game, executeMove],
   );
 
+  const botHandlersRef = useRef({
+    handleBlackPick: (_aug: Augment) => {},
+    handleMidGamePick: (_aug: Augment) => {},
+    handleBlindRagePick: (_aug: Augment) => {},
+    handlePromotion: (_type: PieceType) => {},
+  });
+  botHandlersRef.current = {
+    handleBlackPick,
+    handleMidGamePick,
+    handleBlindRagePick,
+    handlePromotion,
+  };
+
+  useEffect(() => {
+    if (!botMode || mpConfig) return;
+
+    const gameOver =
+      game.status === "checkmate" ||
+      game.status === "stalemate" ||
+      (!!game.teamStatus && game.teamStatus !== "playing");
+
+    const blockedForMove =
+      currentTrigger !== null ||
+      blindRagePickColor !== null ||
+      promotionPending !== null ||
+      (activeAuction?.status === "active" && !auctionPlaceFor) ||
+      shopOpen ||
+      auctionPlaceFor !== null;
+
+    const shouldPickAugment =
+      phase === "black-augment" && offeredToBlack.length > 0;
+    const shouldPickMidGame =
+      phase === "playing" &&
+      currentTrigger?.color === "black" &&
+      isLocalAugmentPicker(currentTrigger.color, augmentPickSlot) &&
+      midGameOffered.length > 0;
+    const shouldPickBlindRage =
+      phase === "playing" &&
+      blindRagePickColor === "black" &&
+      isLocalAugmentPicker(blindRagePickColor, blindRagePickSlot) &&
+      blindRageOffered.length > 0;
+    const shouldPromote =
+      promotionPending !== null && game.turn === "black";
+    const shouldMove =
+      phase === "playing" &&
+      game.turn === "black" &&
+      !gameOver &&
+      !blockedForMove;
+
+    const shouldAct =
+      shouldPickAugment ||
+      shouldPickMidGame ||
+      shouldPickBlindRage ||
+      shouldPromote ||
+      shouldMove;
+
+    if (!shouldAct) {
+      setBotThinking(false);
+      return;
+    }
+
+    if (botBusyRef.current) return;
+    botBusyRef.current = true;
+    setBotThinking(true);
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        if (cancelled) return;
+
+        if (shouldPickAugment) {
+          const aug =
+            offeredToBlack[Math.floor(Math.random() * offeredToBlack.length)]!;
+          botHandlersRef.current.handleBlackPick(aug);
+          return;
+        }
+        if (shouldPickMidGame) {
+          const aug =
+            midGameOffered[Math.floor(Math.random() * midGameOffered.length)]!;
+          botHandlersRef.current.handleMidGamePick(aug);
+          return;
+        }
+        if (shouldPickBlindRage) {
+          const aug =
+            blindRageOffered[
+              Math.floor(Math.random() * blindRageOffered.length)
+            ]!;
+          botHandlersRef.current.handleBlindRagePick(aug);
+          return;
+        }
+        if (shouldPromote) {
+          botHandlersRef.current.handlePromotion("Q");
+          return;
+        }
+        if (shouldMove) {
+          const g = gameRef.current;
+          if (g.turn !== "black") return;
+
+          const ctx = buildBotMoveContext({
+            wallSquares,
+            blessedSquares,
+            coldWindsSquares,
+            coldWindsMovesLeft,
+            frozenSquare,
+            activePuppetSquare,
+            activePuppetColor,
+            blackAugments,
+            blackAugmentLevels,
+          });
+          const move = await pickBotMove(g, ctx);
+          if (cancelled || !move) return;
+          if (gameRef.current.turn !== "black") return;
+
+          const cap =
+            getDerivedBoard(gameRef.current)[move.to[0]]?.[move.to[1]];
+          executeMoveRef.current(
+            move.from,
+            move.to,
+            move.promotion,
+            cap?.type ?? null,
+          );
+        }
+      } finally {
+        botBusyRef.current = false;
+        if (!cancelled) setBotThinking(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      botBusyRef.current = false;
+      setBotThinking(false);
+    };
+  }, [
+    botMode,
+    mpConfig,
+    phase,
+    game.turn,
+    game.status,
+    game.teamStatus,
+    offeredToBlack,
+    currentTrigger,
+    augmentPickSlot,
+    midGameOffered,
+    blindRagePickColor,
+    blindRagePickSlot,
+    blindRageOffered,
+    promotionPending,
+    activeAuction,
+    auctionPlaceFor,
+    shopOpen,
+    isLocalAugmentPicker,
+    wallSquares,
+    blessedSquares,
+    coldWindsSquares,
+    coldWindsMovesLeft,
+    frozenSquare,
+    activePuppetSquare,
+    activePuppetColor,
+    blackAugments,
+    blackAugmentLevels,
+  ]);
+
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   const resetGame = () => {
@@ -5891,6 +6063,8 @@ export default function ChessGame({
     setValidMoves([]);
     setPromotionPending(null);
     setPhase("start");
+    setBotThinking(false);
+    botBusyRef.current = false;
     setWhiteAugments([]);
     setBlackAugments([]);
     setOfferedToWhite([]);
@@ -6686,6 +6860,9 @@ export default function ChessGame({
         advantage={adv.black > 0 ? adv.black : 0}
         spells={makeSpells("black")}
         taxStealBanner={taxStealBanner}
+        statusLabel={botThinking ? "Thinking…" : undefined}
+        statusColor={botThinking ? "#f97316" : undefined}
+        statusBadge={botThinking}
       />
 
       <div
@@ -6896,7 +7073,12 @@ export default function ChessGame({
         <div className="pointer-events-none absolute inset-0 z-[100]">
           {phase === "start" && (
             <div className="pointer-events-auto h-full w-full">
-              <StartScreen onStart={handleStart} />
+              <StartScreen
+                onStart={handleStart}
+                subtitle={
+                  botMode ? "Face Stockfish as White" : undefined
+                }
+              />
             </div>
           )}
           {phase === "white-augment" && (

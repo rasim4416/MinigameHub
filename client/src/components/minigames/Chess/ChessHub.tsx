@@ -8,7 +8,7 @@ import TeamMultiplayerChess from "./TeamMultiplayerChess";
 import { ChessLanguageProvider } from "./ChessLanguageContext";
 import { ChessErrorBoundary } from "./ui/ChessErrorBoundary";
 
-type Mode = "local" | "online" | "team2v2" | "tutorial";
+type Mode = "local" | "bot" | "online" | "team2v2" | "tutorial";
 
 function LanguageToggle({
   language,
@@ -78,6 +78,13 @@ export default function ChessHub() {
         <ChessErrorBoundary>
           <div className="flex min-h-[min(720px,calc(100dvh-8rem))] w-full flex-col">
             <ChessGame />
+          </div>
+        </ChessErrorBoundary>
+      )}
+      {mode === "bot" && (
+        <ChessErrorBoundary>
+          <div className="flex min-h-[min(720px,calc(100dvh-8rem))] w-full flex-col">
+            <ChessGame botMode />
           </div>
         </ChessErrorBoundary>
       )}
@@ -181,6 +188,38 @@ export default function ChessHub() {
                 style={{ color: "#6b7280", fontSize: 12, fontWeight: 400 }}
               >
                 Same device, 2 players
+              </span>
+            </button>
+            <button
+              onClick={() => setMode("bot")}
+              style={{
+                background: "linear-gradient(160deg,#1a1208,#1e2130)",
+                border: "2px solid #ea580c",
+                borderRadius: 12,
+                padding: "20px 32px",
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: 600,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                transition: "border-color 0.2s",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.borderColor = "#fb923c")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.borderColor = "#ea580c")
+              }
+            >
+              <span style={{ fontSize: 32 }}>🤖</span>
+              Vs Bot
+              <span
+                style={{ color: "#6b7280", fontSize: 12, fontWeight: 400 }}
+              >
+                You play white · Stockfish plays black
               </span>
             </button>
             <button
