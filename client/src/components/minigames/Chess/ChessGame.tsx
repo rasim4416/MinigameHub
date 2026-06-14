@@ -1745,6 +1745,8 @@ export default function ChessGame({
   >(() => {});
   const [botThinking, setBotThinking] = useState(false);
   const botBusyRef = useRef(false);
+  /** Bot applies spell targets without toggling UI mode (avoids stale React state). */
+  const botSpellForceRef = useRef<string | null>(null);
   const gameRef = useRef(game);
   useEffect(() => {
     gameRef.current = game;
@@ -4714,8 +4716,13 @@ export default function ChessGame({
       if (!isMyTurn) return;
       if (game.teamStatus && game.teamStatus !== "playing") return;
       if (game.status === "checkmate" || game.status === "stalemate") return;
-      if (promotionPending) return;
+      if (promotionPending) {
+        if (botSpellForceRef.current) botSpellForceRef.current = null;
+        return;
+      }
       const piece = getDerivedBoard(game)[r][c];
+      const botForcedSpell = botSpellForceRef.current;
+      if (botForcedSpell) botSpellForceRef.current = null;
 
       if (auctionPlaceFor) {
         const ap = auctionPlaceFor;
@@ -4783,7 +4790,7 @@ export default function ChessGame({
         return;
       }
 
-      if (monolithMode === "place") {
+      if (monolithMode === "place" || botForcedSpell === "impassable") {
         if (!piece && !isPermaFrostSquare(game, r, c)) {
           const movingColor = game.turn;
           const nb = cloneBoard(getDerivedBoard(game));
@@ -5033,7 +5040,7 @@ export default function ChessGame({
         return;
       }
 
-      if (contractMode) {
+      if (contractMode || botForcedSpell === "contract-killer") {
         if (
           piece &&
           piece.color !== game.turn &&
@@ -5059,7 +5066,7 @@ export default function ChessGame({
         return;
       }
 
-      if (blessedWaterMode) {
+      if (blessedWaterMode || botForcedSpell === "blessed-water-spell") {
         setBlessedSquares((prev) => [
           ...prev,
           { row: r, col: c, movesLeft: getBlessedWaterMovesLeft(getImproveLevel(game.turn === "white" ? whiteAugmentLevels : blackAugmentLevels, "blessed-water-spell")) },
@@ -5073,7 +5080,7 @@ export default function ChessGame({
         return;
       }
 
-      if (puppetMode) {
+      if (puppetMode || botForcedSpell === "puppet") {
         if (
           piece &&
           piece.color !== game.turn &&
@@ -5093,7 +5100,7 @@ export default function ChessGame({
         return;
       }
 
-      if (deathNoteMode) {
+      if (deathNoteMode || botForcedSpell === "death-note") {
         if (
           piece &&
           piece.color !== game.turn &&
@@ -5212,7 +5219,7 @@ export default function ChessGame({
         return;
       }
 
-      if (freezeMode) {
+      if (freezeMode || botForcedSpell === "frost") {
         if (piece && piece.color !== game.turn && piece.type !== "K") {
           setFrozenSquare([r, c]);
           const frostLevel = getImproveLevel(
@@ -5943,26 +5950,8 @@ export default function ChessGame({
 
   const runBotSpell = (spellId: string, target: [number, number]) => {
     const [r, c] = target;
-    const spells = botSpellHandlersRef.current;
-    if (spellId === "frost") {
-      spells.toggleFreeze();
-      botSquareClickRef.current(r, c);
-    } else if (spellId === "blessed-water-spell") {
-      spells.toggleBlessedWater();
-      botSquareClickRef.current(r, c);
-    } else if (spellId === "impassable") {
-      spells.toggleMonolithPlace();
-      botSquareClickRef.current(r, c);
-    } else if (spellId === "contract-killer") {
-      spells.toggleContract();
-      botSquareClickRef.current(r, c);
-    } else if (spellId === "puppet") {
-      spells.togglePuppet();
-      botSquareClickRef.current(r, c);
-    } else if (spellId === "death-note") {
-      spells.toggleDeathNote();
-      botSquareClickRef.current(r, c);
-    }
+    botSpellForceRef.current = spellId;
+    botSquareClickRef.current(r, c);
   };
 
   useEffect(() => {
@@ -5973,13 +5962,22 @@ export default function ChessGame({
       game.status === "stalemate" ||
       (!!game.teamStatus && game.teamStatus !== "playing");
 
+    const spellTargetingActive =
+      freezeMode ||
+      blessedWaterMode ||
+      contractMode ||
+      puppetMode ||
+      deathNoteMode ||
+      monolithMode === "place";
+
     const blockedForMove =
       currentTrigger !== null ||
       blindRagePickColor !== null ||
       promotionPending !== null ||
       (activeAuction?.status === "active" && !auctionPlaceFor) ||
       shopOpen ||
-      auctionPlaceFor !== null;
+      auctionPlaceFor !== null ||
+      spellTargetingActive;
 
     const shouldAuctionBid =
       phase === "playing" &&
@@ -6282,6 +6280,12 @@ export default function ChessGame({
     blackPuppetUsed,
     blackDNUsed,
     blackTierBought,
+    freezeMode,
+    blessedWaterMode,
+    contractMode,
+    puppetMode,
+    deathNoteMode,
+    monolithMode,
   ]);
 
   // ── Reset ─────────────────────────────────────────────────────────────────
@@ -6294,6 +6298,7 @@ export default function ChessGame({
     setPhase("start");
     setBotThinking(false);
     botBusyRef.current = false;
+    botSpellForceRef.current = null;
     setWhiteAugments([]);
     setBlackAugments([]);
     setOfferedToWhite([]);
