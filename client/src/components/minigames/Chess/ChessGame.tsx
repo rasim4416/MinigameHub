@@ -54,6 +54,7 @@ import {
   pickAugmentForBot,
   pickShopBuy,
   assessPosition,
+  type BotAction,
 } from "./chessBot";
 import {
   useTutorial,
@@ -6076,7 +6077,7 @@ export default function ChessGame({
         if (shouldAuctionPlace && auctionPlaceFor) {
           const sq = pickAuctionPlacement(
             gameRef.current,
-            auctionPlaceFor.pieceType,
+            auctionPlaceFor.pieceType as AuctionPieceType,
             "black",
           );
           if (sq) botSquareClickRef.current(sq[0], sq[1]);
@@ -6165,40 +6166,59 @@ export default function ChessGame({
             blackDNUsed,
             game: g,
           });
-          const action = await decideBotAction(g, spellCtx);
-          if (cancelled || !action) return;
-          if (gameRef.current.turn !== "black") return;
+          let action: BotAction | null = await decideBotAction(g, spellCtx);
+          let spellCtxAfterFree = spellCtx;
 
-          if (action.type === "castSpell") {
-            runBotSpell(action.spellId, action.target);
-            return;
-          }
-          if (action.type === "castSpellThenMove") {
-            runBotSpell(action.spellId, action.target);
-            if (gameRef.current.turn !== "black") return;
-            const cap =
-              getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
-                action.move.to[1]
-              ];
-            executeMoveRef.current(
-              action.move.from,
-              action.move.to,
-              action.move.promotion,
-              cap?.type ?? null,
-            );
-            return;
-          }
-          if (action.type === "move") {
-            const cap =
-              getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
-                action.move.to[1]
-              ];
-            executeMoveRef.current(
-              action.move.from,
-              action.move.to,
-              action.move.promotion,
-              cap?.type ?? null,
-            );
+          while (action && !cancelled && gameRef.current.turn === "black") {
+            if (action.type === "castSpell") {
+              runBotSpell(action.spellId, action.target);
+              const freeSameTurnMark =
+                action.spellId === "puppet" ||
+                action.spellId === "death-note";
+              if (!freeSameTurnMark) break;
+              spellCtxAfterFree = {
+                ...spellCtxAfterFree,
+                puppetAvailable:
+                  action.spellId === "puppet"
+                    ? false
+                    : spellCtxAfterFree.puppetAvailable,
+                deathNoteAvailable:
+                  action.spellId === "death-note"
+                    ? false
+                    : spellCtxAfterFree.deathNoteAvailable,
+              };
+              action = await decideBotAction(g, spellCtxAfterFree);
+              continue;
+            }
+            if (action.type === "castSpellThenMove") {
+              runBotSpell(action.spellId, action.target);
+              if (gameRef.current.turn !== "black") return;
+              const cap =
+                getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
+                  action.move.to[1]
+                ];
+              executeMoveRef.current(
+                action.move.from,
+                action.move.to,
+                action.move.promotion,
+                cap?.type ?? null,
+              );
+              return;
+            }
+            if (action.type === "move") {
+              const cap =
+                getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
+                  action.move.to[1]
+                ];
+              executeMoveRef.current(
+                action.move.from,
+                action.move.to,
+                action.move.promotion,
+                cap?.type ?? null,
+              );
+              return;
+            }
+            break;
           }
         }
       } finally {

@@ -5,6 +5,7 @@ import {
   MAX_STACK,
   NON_PURCHASABLE,
   type Augment,
+  type AugmentUpgradeLevels,
 } from "../augments";
 import type { TierBought } from "../chessTypes";
 import { BOT_AUGMENT_DENYLIST } from "./augmentPriority";
@@ -39,7 +40,7 @@ export function pickShopBuy(input: {
   goldBlack: number;
   blackTierBought: TierBought;
   blackAugments: Augment[];
-  blackAugmentLevels: Record<string, number>;
+  blackAugmentLevels: AugmentUpgradeLevels;
   position: PositionAssessment;
 }): { aug: Augment; cost: number } | null {
   const { goldBlack, blackTierBought, blackAugments, position } = input;
