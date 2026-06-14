@@ -2843,7 +2843,6 @@ export default function ChessGame({
   const resolveAuction = useCallback(() => {
     if (!activeAuction || activeAuction.status !== "active") return;
     if (Date.now() < activeAuction.timerEndsAt) return;
-    if (currentTrigger || blindRagePickColor) return;
     const winner = activeAuction.highBidder;
     if (winner && activeAuction.highBid > 0) {
       setGame((g) => ({
@@ -2864,7 +2863,7 @@ export default function ChessGame({
     }
     setActiveAuction(null);
     requestSnapshot();
-  }, [activeAuction, requestSnapshot, currentTrigger, blindRagePickColor]);
+  }, [activeAuction, requestSnapshot]);
 
   const handleAuctionBid = useCallback(
     (amount: number, asColor?: Color) => {
@@ -5052,8 +5051,8 @@ export default function ChessGame({
             setBlackContractTarget([r, c]);
             setBlackContractPieceId(cid);
           }
-          setContractMode(false);
         }
+        setContractMode(false);
         setSelected(null);
         setValidMoves([]);
         requestSnapshot();
@@ -6109,8 +6108,8 @@ export default function ChessGame({
             botEconomyRef.current.toggleShop();
             botEconomyRef.current.handleBuy(buy.aug);
             botEconomyRef.current.toggleShop();
+            return;
           }
-          return;
         }
 
         if (shouldPickAugment) {
@@ -6174,7 +6173,9 @@ export default function ChessGame({
               runBotSpell(action.spellId, action.target);
               const freeSameTurnMark =
                 action.spellId === "puppet" ||
-                action.spellId === "death-note";
+                action.spellId === "death-note" ||
+                action.spellId === "frost" ||
+                action.spellId === "blessed-water-spell";
               if (!freeSameTurnMark) break;
               spellCtxAfterFree = {
                 ...spellCtxAfterFree,
@@ -6186,6 +6187,17 @@ export default function ChessGame({
                   action.spellId === "death-note"
                     ? false
                     : spellCtxAfterFree.deathNoteAvailable,
+                blackFreezeCharges:
+                  action.spellId === "frost"
+                    ? Math.max(0, spellCtxAfterFree.blackFreezeCharges - 1)
+                    : spellCtxAfterFree.blackFreezeCharges,
+                blackBlessedWaterCharges:
+                  action.spellId === "blessed-water-spell"
+                    ? Math.max(
+                        0,
+                        spellCtxAfterFree.blackBlessedWaterCharges - 1,
+                      )
+                    : spellCtxAfterFree.blackBlessedWaterCharges,
               };
               action = await decideBotAction(g, spellCtxAfterFree);
               continue;
