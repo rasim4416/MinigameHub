@@ -45,7 +45,12 @@ import { PlayerBar } from "./ui/PlayerBar";
 import { ShopPanel } from "./ui/ShopPanel";
 import { AugmentSelector } from "./ui/AugmentSelector";
 import { StartScreen } from "./ui/StartScreen";
-import { buildBotMoveContext, pickBotMove } from "./chessBot";
+import {
+  buildBotMoveContext,
+  buildBotSpellContext,
+  decideBotAction,
+  pickAugmentForBot,
+} from "./chessBot";
 import {
   useTutorial,
   useTutorialRestrictions,
@@ -5897,11 +5902,38 @@ export default function ChessGame({
     handleBlindRagePick: (_aug: Augment) => {},
     handlePromotion: (_type: PieceType) => {},
   });
+  const botSquareClickRef = useRef<(r: number, c: number) => void>(() => {});
+  const botSpellHandlersRef = useRef({
+    toggleFreeze: () => {},
+    toggleBlessedWater: () => {},
+    toggleMonolithPlace: () => {},
+  });
   botHandlersRef.current = {
     handleBlackPick,
     handleMidGamePick,
     handleBlindRagePick,
     handlePromotion,
+  };
+  botSquareClickRef.current = handleSquareClick;
+  botSpellHandlersRef.current = {
+    toggleFreeze: handleToggleFreeze,
+    toggleBlessedWater: handleToggleBlessedWater,
+    toggleMonolithPlace: handleToggleMonolithPlace,
+  };
+
+  const runBotSpell = (spellId: string, target: [number, number]) => {
+    const [r, c] = target;
+    const spells = botSpellHandlersRef.current;
+    if (spellId === "frost") {
+      spells.toggleFreeze();
+      botSquareClickRef.current(r, c);
+    } else if (spellId === "blessed-water-spell") {
+      spells.toggleBlessedWater();
+      botSquareClickRef.current(r, c);
+    } else if (spellId === "impassable") {
+      spells.toggleMonolithPlace();
+      botSquareClickRef.current(r, c);
+    }
   };
 
   useEffect(() => {
@@ -5963,21 +5995,22 @@ export default function ChessGame({
 
         if (shouldPickAugment) {
           const aug =
-            offeredToBlack[Math.floor(Math.random() * offeredToBlack.length)]!;
+            pickAugmentForBot(offeredToBlack, blackAugments) ??
+            offeredToBlack[0]!;
           botHandlersRef.current.handleBlackPick(aug);
           return;
         }
         if (shouldPickMidGame) {
           const aug =
-            midGameOffered[Math.floor(Math.random() * midGameOffered.length)]!;
+            pickAugmentForBot(midGameOffered, blackAugments) ??
+            midGameOffered[0]!;
           botHandlersRef.current.handleMidGamePick(aug);
           return;
         }
         if (shouldPickBlindRage) {
           const aug =
-            blindRageOffered[
-              Math.floor(Math.random() * blindRageOffered.length)
-            ]!;
+            pickAugmentForBot(blindRageOffered, blackAugments) ??
+            blindRageOffered[0]!;
           botHandlersRef.current.handleBlindRagePick(aug);
           return;
         }
@@ -5989,7 +6022,7 @@ export default function ChessGame({
           const g = gameRef.current;
           if (g.turn !== "black") return;
 
-          const ctx = buildBotMoveContext({
+          const moveCtx = buildBotMoveContext({
             wallSquares,
             blessedSquares,
             coldWindsSquares,
@@ -6000,18 +6033,36 @@ export default function ChessGame({
             blackAugments,
             blackAugmentLevels,
           });
-          const move = await pickBotMove(g, ctx);
-          if (cancelled || !move) return;
+          const spellCtx = buildBotSpellContext({
+            move: moveCtx,
+            blackFreezeCharges,
+            blackBlessedWaterCharges,
+            blackAugments,
+            blackAugmentLevels,
+            augmentSpellBlockedFor,
+            blackMonolithPermRemoved,
+            game: g,
+          });
+          const action = await decideBotAction(g, spellCtx);
+          if (cancelled || !action) return;
           if (gameRef.current.turn !== "black") return;
 
-          const cap =
-            getDerivedBoard(gameRef.current)[move.to[0]]?.[move.to[1]];
-          executeMoveRef.current(
-            move.from,
-            move.to,
-            move.promotion,
-            cap?.type ?? null,
-          );
+          if (action.type === "castSpell") {
+            runBotSpell(action.spellId, action.target);
+            return;
+          }
+          if (action.type === "move") {
+            const cap =
+              getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
+                action.move.to[1]
+              ];
+            executeMoveRef.current(
+              action.move.from,
+              action.move.to,
+              action.move.promotion,
+              cap?.type ?? null,
+            );
+          }
         }
       } finally {
         botBusyRef.current = false;
@@ -6053,6 +6104,10 @@ export default function ChessGame({
     activePuppetColor,
     blackAugments,
     blackAugmentLevels,
+    blackFreezeCharges,
+    blackBlessedWaterCharges,
+    augmentSpellBlockedFor,
+    blackMonolithPermRemoved,
   ]);
 
   // ── Reset ─────────────────────────────────────────────────────────────────

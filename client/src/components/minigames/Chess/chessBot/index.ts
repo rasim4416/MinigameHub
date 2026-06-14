@@ -1,5 +1,8 @@
 export { pickBotMove } from "./pickBotMove";
+export { pickAugmentForBot } from "./pickAugment";
 export { buildBotMoveContext, enumerateLegalMoves } from "./legalMoves";
-export type { BotMoveContext } from "./legalMoves";
+export { buildBotSpellContext } from "./buildBotSpellContext";
+export { decideBotAction } from "./decideBotAction";
 export { isStockfishEligible, toStockfishFen } from "./fen";
-export type { BotMove } from "./types";
+export type { BotMoveContext } from "./legalMoves";
+export type { BotMove, BotAction, BotSpellContext } from "./types";

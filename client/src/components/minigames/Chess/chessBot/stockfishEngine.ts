@@ -1,8 +1,13 @@
-import type { RankedSearchOptions } from "./types";
+import type { EvalSearchOptions, RankedSearchOptions } from "./types";
+import {
+  SPELL_EVAL_DEPTH,
+  SPELL_EVAL_MOVETIME_MS,
+} from "./constants";
 
 const ENGINE_URL = "/stockfish/stockfish-18-lite-single.js";
 
-type PendingSearch = {
+type PendingMoves = {
+  kind: "moves";
   resolve: (moves: string[]) => void;
   reject: (err: Error) => void;
   pvMap: Map<number, string>;
@@ -10,10 +15,20 @@ type PendingSearch = {
   multiPv: number;
 };
 
+type PendingEval = {
+  kind: "eval";
+  resolve: (cp: number) => void;
+  reject: (err: Error) => void;
+  lastCp: number | null;
+  lastMate: number | null;
+};
+
+type PendingOp = PendingMoves | PendingEval;
+
 let worker: Worker | null = null;
 let ready = false;
 let initPromise: Promise<void> | null = null;
-let pending: PendingSearch | null = null;
+let pending: PendingOp | null = null;
 
 function post(line: string) {
   worker?.postMessage(line);
@@ -26,8 +41,21 @@ function parsePvMove(line: string): { multipv: number; move: string } | null {
   return { multipv: Number(mp[1]), move: pv[1]! };
 }
 
-function finishPending() {
-  if (!pending) return;
+function parseScore(line: string): { cp: number | null; mate: number | null } {
+  const mate = line.match(/\bscore mate (-?\d+)\b/);
+  if (mate) return { cp: null, mate: Number(mate[1]) };
+  const cp = line.match(/\bscore cp (-?\d+)\b/);
+  if (cp) return { cp: Number(cp[1]), mate: null };
+  return { cp: null, mate: null };
+}
+
+function mateToCp(mate: number): number {
+  const sign = mate > 0 ? 1 : -1;
+  return sign * (10000 - Math.abs(mate) * 10);
+}
+
+function finishPendingMoves() {
+  if (!pending || pending.kind !== "moves") return;
   const { pvMap, bestmove, multiPv, resolve } = pending;
   const ordered: string[] = [];
   for (let i = 1; i <= multiPv; i++) {
@@ -42,6 +70,24 @@ function finishPending() {
   resolve(uniq);
 }
 
+function finishPendingEval() {
+  if (!pending || pending.kind !== "eval") return;
+  const { lastCp, lastMate, resolve } = pending;
+  pending = null;
+  if (lastMate !== null) {
+    resolve(mateToCp(lastMate));
+    return;
+  }
+  resolve(lastCp ?? 0);
+}
+
+function cancelPending(err: Error) {
+  if (!pending) return;
+  const op = pending;
+  pending = null;
+  op.reject(err);
+}
+
 function onWorkerMessage(raw: string) {
   const line = raw.trim();
   if (!line) return;
@@ -53,16 +99,29 @@ function onWorkerMessage(raw: string) {
 
   if (!pending) return;
 
+  if (pending.kind === "moves") {
+    if (line.startsWith("info ")) {
+      const parsed = parsePvMove(line);
+      if (parsed) pending.pvMap.set(parsed.multipv, parsed.move);
+      return;
+    }
+    if (line.startsWith("bestmove ")) {
+      const parts = line.split(/\s+/);
+      pending.bestmove = parts[1] ?? null;
+      finishPendingMoves();
+    }
+    return;
+  }
+
   if (line.startsWith("info ")) {
-    const parsed = parsePvMove(line);
-    if (parsed) pending.pvMap.set(parsed.multipv, parsed.move);
+    const { cp, mate } = parseScore(line);
+    if (mate !== null) pending.lastMate = mate;
+    else if (cp !== null) pending.lastCp = cp;
     return;
   }
 
   if (line.startsWith("bestmove ")) {
-    const parts = line.split(/\s+/);
-    pending.bestmove = parts[1] ?? null;
-    finishPending();
+    finishPendingEval();
   }
 }
 
@@ -104,6 +163,12 @@ async function ensureEngine(): Promise<void> {
   return initPromise;
 }
 
+function stopInFlight() {
+  if (!pending) return;
+  post("stop");
+  cancelPending(new Error("Search superseded"));
+}
+
 export async function getRankedMoves(
   fen: string,
   opts: RankedSearchOptions = {},
@@ -115,14 +180,11 @@ export async function getRankedMoves(
   const depth = opts.depth ?? 24;
   const movetimeMs = opts.movetimeMs ?? 4000;
 
-  if (pending) {
-    post("stop");
-    pending.reject(new Error("Search superseded"));
-    pending = null;
-  }
+  stopInFlight();
 
   return new Promise<string[]>((resolve, reject) => {
     pending = {
+      kind: "moves",
       resolve,
       reject,
       pvMap: new Map(),
@@ -135,16 +197,49 @@ export async function getRankedMoves(
     post(`go depth ${depth} movetime ${movetimeMs}`);
 
     setTimeout(() => {
-      if (!pending) return;
+      if (!pending || pending.kind !== "moves") return;
       post("stop");
-      finishPending();
+      finishPendingMoves();
+    }, movetimeMs + 500);
+  });
+}
+
+/** Centipawns from side-to-move perspective in FEN. */
+export async function getEval(
+  fen: string,
+  opts: EvalSearchOptions = {},
+): Promise<number> {
+  await ensureEngine();
+  if (!worker) return 0;
+
+  const depth = opts.depth ?? SPELL_EVAL_DEPTH;
+  const movetimeMs = opts.movetimeMs ?? SPELL_EVAL_MOVETIME_MS;
+
+  stopInFlight();
+
+  return new Promise<number>((resolve, reject) => {
+    pending = {
+      kind: "eval",
+      resolve,
+      reject,
+      lastCp: null,
+      lastMate: null,
+    };
+
+    post("setoption name MultiPV value 1");
+    post(`position fen ${fen}`);
+    post(`go depth ${depth} movetime ${movetimeMs}`);
+
+    setTimeout(() => {
+      if (!pending || pending.kind !== "eval") return;
+      post("stop");
+      finishPendingEval();
     }, movetimeMs + 500);
   });
 }
 
 export function terminateStockfish() {
-  pending?.reject(new Error("Engine terminated"));
-  pending = null;
+  cancelPending(new Error("Engine terminated"));
   worker?.terminate();
   worker = null;
   ready = false;
