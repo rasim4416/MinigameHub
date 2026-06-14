@@ -1,8 +1,12 @@
 export { pickBotMove } from "./pickBotMove";
 export { pickAugmentForBot } from "./pickAugment";
+export { pickShopBuy } from "./pickShopBuy";
+export { computeAuctionBid, pickAuctionPlacement } from "./auctionBot";
+export { assessPosition } from "./assessPosition";
 export { buildBotMoveContext, enumerateLegalMoves } from "./legalMoves";
 export { buildBotSpellContext } from "./buildBotSpellContext";
 export { decideBotAction } from "./decideBotAction";
 export { isStockfishEligible, toStockfishFen } from "./fen";
 export type { BotMoveContext } from "./legalMoves";
 export type { BotMove, BotAction, BotSpellContext } from "./types";
+export type { PositionAssessment } from "./assessPosition";

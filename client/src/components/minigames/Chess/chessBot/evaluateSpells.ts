@@ -21,7 +21,7 @@ import {
   gameForMonolithEval,
   previewSpell,
 } from "./spellPreview";
-import type { BotSpellContext, SpellCandidate } from "./types";
+import type { BotSpellContext, SpellCandidate, BotMove } from "./types";
 
 function heuristicTargetScore(
   game: ChessState,
@@ -163,6 +163,7 @@ export async function evaluateFreeSpells(
 export async function evaluateTurnSpellVsMove(
   game: ChessState,
   ctx: BotSpellContext,
+  precomputedMove?: BotMove | null,
 ): Promise<SpellCandidate | null> {
   if (ctx.augmentSpellBlockedFor === "black") return null;
   if (!ctx.monolithPlaceAvailable) return null;
@@ -173,7 +174,7 @@ export async function evaluateTurnSpellVsMove(
   const monolith = await scoreCandidates(game, ctx, "impassable", baseline);
   if (!monolith || monolith.gainCp < TURN_SPELL_THRESHOLD_CP) return null;
 
-  const move = await pickBotMove(game, ctx);
+  const move = precomputedMove ?? (await pickBotMove(game, ctx));
   if (!move) return monolith;
 
   let afterMoveBlack = baseline;

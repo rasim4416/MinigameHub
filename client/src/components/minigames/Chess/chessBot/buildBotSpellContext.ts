@@ -12,6 +12,9 @@ export function buildBotSpellContext(input: {
   blackAugmentLevels: AugmentUpgradeLevels;
   augmentSpellBlockedFor: Color | null;
   blackMonolithPermRemoved: boolean;
+  blackContractPieceId: string | null;
+  blackPuppetUsed: boolean;
+  blackDNUsed: boolean;
   game: ChessState;
 }): BotSpellContext {
   const { game, move, blackMonolithPermRemoved } = input;
@@ -28,5 +31,15 @@ export function buildBotSpellContext(input: {
     augmentSpellBlockedFor: input.augmentSpellBlockedFor,
     monolithPlaceAvailable:
       hasImpassable && !blackMonolithPermRemoved && !hasMonolithOnBoard,
+    contractAvailable:
+      input.blackAugments.some((a) => a.id === "contract-killer") &&
+      !input.blackContractPieceId,
+    blackContractPieceId: input.blackContractPieceId,
+    puppetAvailable:
+      !input.blackPuppetUsed &&
+      input.blackAugments.some((a) => a.id === "puppet"),
+    deathNoteAvailable:
+      !input.blackDNUsed &&
+      input.blackAugments.some((a) => a.id === "death-note"),
   };
 }
