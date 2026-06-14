@@ -1,0 +1,71 @@
+import {
+  AUGMENT_POOL,
+  augmentUnlockedForShop,
+  getShopCost,
+  MAX_STACK,
+  NON_PURCHASABLE,
+  type Augment,
+} from "../augments";
+import type { TierBought } from "../chessTypes";
+import { BOT_AUGMENT_DENYLIST } from "./augmentPriority";
+import {
+  meetsMinShopRarity,
+  minShopRarity,
+  spendableGold,
+} from "./constants";
+import { pickAugmentForBot } from "./pickAugment";
+import type { PositionAssessment } from "./assessPosition";
+
+function catalogBuyOnly(
+  ownedAugments: Augment[],
+  augmentLevels: Record<string, number>,
+): Augment[] {
+  const counts: Record<string, number> = {};
+  for (const a of ownedAugments) counts[a.id] = (counts[a.id] || 0) + 1;
+  const ownedIds = Object.keys(counts);
+  const atMax = (id: string) => (counts[id] ?? 0) >= (MAX_STACK[id] ?? 1);
+
+  return AUGMENT_POOL.filter((a) => {
+    if (NON_PURCHASABLE.has(a.id)) return false;
+    if (BOT_AUGMENT_DENYLIST.has(a.id)) return false;
+    if (!augmentUnlockedForShop(a.id, ownedIds)) return false;
+    if (atMax(a.id)) return false;
+    void augmentLevels;
+    return true;
+  });
+}
+
+export function pickShopBuy(input: {
+  goldBlack: number;
+  blackTierBought: TierBought;
+  blackAugments: Augment[];
+  blackAugmentLevels: Record<string, number>;
+  position: PositionAssessment;
+}): { aug: Augment; cost: number } | null {
+  const { goldBlack, blackTierBought, blackAugments, position } = input;
+  const budget = spendableGold(goldBlack, position.scoreCp);
+  if (budget <= 0) return null;
+
+  const minRarity = minShopRarity(position.scoreCp);
+  const catalog = catalogBuyOnly(blackAugments, input.blackAugmentLevels).filter(
+    (a) => meetsMinShopRarity(a.rarity, minRarity),
+  );
+  if (catalog.length === 0) return null;
+
+  const affordable: Augment[] = [];
+  const costs = new Map<string, number>();
+  for (const a of catalog) {
+    const cost = getShopCost(a.rarity, blackTierBought[a.rarity]);
+    if (cost <= budget) {
+      affordable.push(a);
+      costs.set(a.id, cost);
+    }
+  }
+  if (affordable.length === 0) return null;
+
+  const pick = pickAugmentForBot(affordable, blackAugments);
+  if (!pick) return null;
+  const cost = costs.get(pick.id);
+  if (cost === undefined) return null;
+  return { aug: pick, cost };
+}

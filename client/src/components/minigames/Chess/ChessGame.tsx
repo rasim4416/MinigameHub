@@ -48,8 +48,12 @@ import { StartScreen } from "./ui/StartScreen";
 import {
   buildBotMoveContext,
   buildBotSpellContext,
+  computeAuctionBid,
   decideBotAction,
+  pickAuctionPlacement,
   pickAugmentForBot,
+  pickShopBuy,
+  assessPosition,
 } from "./chessBot";
 import {
   useTutorial,
@@ -2862,9 +2866,9 @@ export default function ChessGame({
   }, [activeAuction, requestSnapshot, currentTrigger, blindRagePickColor]);
 
   const handleAuctionBid = useCallback(
-    (amount: number) => {
+    (amount: number, asColor?: Color) => {
       if (!activeAuction || activeAuction.status !== "active") return;
-      const bidderColor = mpConfig?.myColor ?? game.turn;
+      const bidderColor = asColor ?? mpConfig?.myColor ?? game.turn;
       const myGold =
         bidderColor === "white" ? game.goldWhite : game.goldBlack;
       const minNext = Math.max(
@@ -5907,6 +5911,14 @@ export default function ChessGame({
     toggleFreeze: () => {},
     toggleBlessedWater: () => {},
     toggleMonolithPlace: () => {},
+    toggleContract: () => {},
+    togglePuppet: () => {},
+    toggleDeathNote: () => {},
+  });
+  const botEconomyRef = useRef({
+    toggleShop: () => {},
+    handleBuy: (_aug: Augment) => {},
+    handleAuctionBid: (_amount: number, _asColor?: Color) => {},
   });
   botHandlersRef.current = {
     handleBlackPick,
@@ -5919,6 +5931,14 @@ export default function ChessGame({
     toggleFreeze: handleToggleFreeze,
     toggleBlessedWater: handleToggleBlessedWater,
     toggleMonolithPlace: handleToggleMonolithPlace,
+    toggleContract: handleToggleContract,
+    togglePuppet: handleTogglePuppet,
+    toggleDeathNote: handleToggleDeathNote,
+  };
+  botEconomyRef.current = {
+    toggleShop: handleToggleShop,
+    handleBuy,
+    handleAuctionBid,
   };
 
   const runBotSpell = (spellId: string, target: [number, number]) => {
@@ -5932,6 +5952,15 @@ export default function ChessGame({
       botSquareClickRef.current(r, c);
     } else if (spellId === "impassable") {
       spells.toggleMonolithPlace();
+      botSquareClickRef.current(r, c);
+    } else if (spellId === "contract-killer") {
+      spells.toggleContract();
+      botSquareClickRef.current(r, c);
+    } else if (spellId === "puppet") {
+      spells.togglePuppet();
+      botSquareClickRef.current(r, c);
+    } else if (spellId === "death-note") {
+      spells.toggleDeathNote();
       botSquareClickRef.current(r, c);
     }
   };
@@ -5951,6 +5980,27 @@ export default function ChessGame({
       (activeAuction?.status === "active" && !auctionPlaceFor) ||
       shopOpen ||
       auctionPlaceFor !== null;
+
+    const shouldAuctionBid =
+      phase === "playing" &&
+      !gameOver &&
+      activeAuction?.status === "active" &&
+      !auctionPlaceFor;
+
+    const shouldAuctionPlace =
+      phase === "playing" &&
+      !gameOver &&
+      auctionPlaceFor?.color === "black";
+
+    const shouldShopBuy =
+      phase === "playing" &&
+      game.turn === "black" &&
+      !gameOver &&
+      !shopOpen &&
+      augmentSpellBlockedFor !== "black" &&
+      !blockedForMove &&
+      !shouldAuctionBid &&
+      !shouldAuctionPlace;
 
     const shouldPickAugment =
       phase === "black-augment" && offeredToBlack.length > 0;
@@ -5973,6 +6023,9 @@ export default function ChessGame({
       !blockedForMove;
 
     const shouldAct =
+      shouldAuctionBid ||
+      shouldAuctionPlace ||
+      shouldShopBuy ||
       shouldPickAugment ||
       shouldPickMidGame ||
       shouldPickBlindRage ||
@@ -5992,6 +6045,72 @@ export default function ChessGame({
     const timer = setTimeout(async () => {
       try {
         if (cancelled) return;
+
+        if (shouldAuctionBid) {
+          const g = gameRef.current;
+          const moveCtx = buildBotMoveContext({
+            wallSquares,
+            blessedSquares,
+            coldWindsSquares,
+            coldWindsMovesLeft,
+            frozenSquare,
+            activePuppetSquare,
+            activePuppetColor,
+            blackAugments,
+            blackAugmentLevels,
+          });
+          const position = await assessPosition(g, moveCtx);
+          if (activeAuction) {
+            const bid = computeAuctionBid({
+              auction: activeAuction,
+              goldBlack: g.goldBlack,
+              position,
+            });
+            if (bid !== null) {
+              botEconomyRef.current.handleAuctionBid(bid, "black");
+            }
+          }
+          return;
+        }
+
+        if (shouldAuctionPlace && auctionPlaceFor) {
+          const sq = pickAuctionPlacement(
+            gameRef.current,
+            auctionPlaceFor.pieceType,
+            "black",
+          );
+          if (sq) botSquareClickRef.current(sq[0], sq[1]);
+          return;
+        }
+
+        if (shouldShopBuy) {
+          const g = gameRef.current;
+          const moveCtx = buildBotMoveContext({
+            wallSquares,
+            blessedSquares,
+            coldWindsSquares,
+            coldWindsMovesLeft,
+            frozenSquare,
+            activePuppetSquare,
+            activePuppetColor,
+            blackAugments,
+            blackAugmentLevels,
+          });
+          const position = await assessPosition(g, moveCtx);
+          const buy = pickShopBuy({
+            goldBlack: g.goldBlack,
+            blackTierBought,
+            blackAugments,
+            blackAugmentLevels,
+            position,
+          });
+          if (buy) {
+            botEconomyRef.current.toggleShop();
+            botEconomyRef.current.handleBuy(buy.aug);
+            botEconomyRef.current.toggleShop();
+          }
+          return;
+        }
 
         if (shouldPickAugment) {
           const aug =
@@ -6041,6 +6160,9 @@ export default function ChessGame({
             blackAugmentLevels,
             augmentSpellBlockedFor,
             blackMonolithPermRemoved,
+            blackContractPieceId,
+            blackPuppetUsed,
+            blackDNUsed,
             game: g,
           });
           const action = await decideBotAction(g, spellCtx);
@@ -6049,6 +6171,21 @@ export default function ChessGame({
 
           if (action.type === "castSpell") {
             runBotSpell(action.spellId, action.target);
+            return;
+          }
+          if (action.type === "castSpellThenMove") {
+            runBotSpell(action.spellId, action.target);
+            if (gameRef.current.turn !== "black") return;
+            const cap =
+              getDerivedBoard(gameRef.current)[action.move.to[0]]?.[
+                action.move.to[1]
+              ];
+            executeMoveRef.current(
+              action.move.from,
+              action.move.to,
+              action.move.promotion,
+              cap?.type ?? null,
+            );
             return;
           }
           if (action.type === "move") {
@@ -6083,6 +6220,7 @@ export default function ChessGame({
     game.turn,
     game.status,
     game.teamStatus,
+    game.goldBlack,
     offeredToBlack,
     currentTrigger,
     augmentPickSlot,
@@ -6108,6 +6246,10 @@ export default function ChessGame({
     blackBlessedWaterCharges,
     augmentSpellBlockedFor,
     blackMonolithPermRemoved,
+    blackContractPieceId,
+    blackPuppetUsed,
+    blackDNUsed,
+    blackTierBought,
   ]);
 
   // ── Reset ─────────────────────────────────────────────────────────────────

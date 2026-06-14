@@ -27,12 +27,18 @@ export type BotSpellContext = BotMoveContext & {
   blackAugmentLevels: AugmentUpgradeLevels;
   augmentSpellBlockedFor: Color | null;
   monolithPlaceAvailable: boolean;
+  contractAvailable: boolean;
+  blackContractPieceId: string | null;
+  puppetAvailable: boolean;
+  deathNoteAvailable: boolean;
 };
 
 export type BotAction =
   | { type: "pickAugment"; aug: import("../augments").Augment }
   | { type: "promote"; piece: PieceType }
   | { type: "castSpell"; spellId: string; target: [number, number] }
+  | { type: "castSpellThenMove"; spellId: string; target: [number, number]; move: BotMove }
+  | { type: "shopBuy"; aug: import("../augments").Augment }
   | { type: "move"; move: BotMove };
 
 export type SpellCandidate = {
