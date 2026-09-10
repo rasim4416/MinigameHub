@@ -59,7 +59,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "contract-killer": {
     "name": "Contract Killer",
-    "description": "Mark one enemy piece (not king or pawn). If you capture it, earn 3× its base gold value instead of 1. One mark per pick; the augment is spent when the contract ends (success or failure). Cannot be purchased in shop."
+    "description": "Mark one enemy piece (not king or pawn). If you capture it, gain bonus gold equal to 3× its base value (5× after improving Contract Killer). One use per pick: the augment is spent when the contract ends, whether successful or not. Cannot be purchased in shop."
   },
   "evade": {
     "name": "Evade",
@@ -83,7 +83,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "frost": {
     "name": "Frost",
-    "description": "Gain 1 freeze spell. Freeze one enemy piece — it cannot move for 2 half-turns."
+    "description": "Gain 1 freeze spell. Freeze one enemy piece (not king) — it cannot move for 2 half-turns (3 half-turns after improving Frost)."
   },
   "what": {
     "name": "What?",
@@ -99,7 +99,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer": {
     "name": "Necromancer",
-    "description": "Bring one lost pawn back to its home square on the starting rank."
+    "description": "Spell: bring one lost pawn back to its home square on the starting rank (spends your turn)."
   },
   "blessed-water-spell": {
     "name": "Blessed Water",
@@ -131,7 +131,7 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer-plus": {
     "name": "Necromancer+",
-    "description": "Revive your most recently lost knight or bishop to any empty square on your home rank."
+    "description": "Spell: choose one of your lost bishops or knights and revive it on any empty square on your home rank (spends your turn)."
   },
   "horde": {
     "name": "Horde",
@@ -195,6 +195,6 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer-plus-plus": {
     "name": "Necromancer++",
-    "description": "Spell: place a revived queen on an empty home-rank square (requires Necromancer+)."
+    "description": "Spell: place a revived queen on an empty home-rank square (requires Necromancer+; spends your turn)."
   }
 } as Record<string, AugmentLocaleEntry>;

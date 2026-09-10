@@ -31,6 +31,15 @@ export type BotSpellContext = BotMoveContext & {
   blackContractPieceId: string | null;
   puppetAvailable: boolean;
   deathNoteAvailable: boolean;
+  /**
+   * Revival state is optional while older snapshot/executor paths are upgraded.
+   * A missing value deliberately means the bot cannot cast that spell.
+   */
+  blackNecroCharges?: number;
+  blackLostPawnCols?: number[];
+  blackNecroPlusCharges?: number;
+  blackLostMinors?: PieceType[];
+  blackNecroPPCharges?: number;
 };
 
 export type BotAction =

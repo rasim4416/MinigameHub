@@ -15,6 +15,11 @@ export function buildBotSpellContext(input: {
   blackContractPieceId: string | null;
   blackPuppetUsed: boolean;
   blackDNUsed: boolean;
+  blackNecroCharges?: number;
+  blackLostPawnCols?: number[];
+  blackNecroPlusCharges?: number;
+  blackLostMinors?: import("../engine").PieceType[];
+  blackNecroPPCharges?: number;
   game: ChessState;
 }): BotSpellContext {
   const { game, move, blackMonolithPermRemoved } = input;
@@ -41,5 +46,10 @@ export function buildBotSpellContext(input: {
     deathNoteAvailable:
       !input.blackDNUsed &&
       input.blackAugments.some((a) => a.id === "death-note"),
+    blackNecroCharges: input.blackNecroCharges,
+    blackLostPawnCols: input.blackLostPawnCols,
+    blackNecroPlusCharges: input.blackNecroPlusCharges,
+    blackLostMinors: input.blackLostMinors,
+    blackNecroPPCharges: input.blackNecroPPCharges,
   };
 }

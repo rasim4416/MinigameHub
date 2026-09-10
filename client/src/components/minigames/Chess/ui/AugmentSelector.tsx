@@ -164,6 +164,7 @@ export function AugmentSelector({
               augment={aug}
               disabled={!enabled}
               highlighted={enabled && !!enabledIds}
+              tutorialId={enabledIds ? `tutorial-augment-${aug.id}` : undefined}
               onSelect={() => onSelect(aug)}
             />
           );

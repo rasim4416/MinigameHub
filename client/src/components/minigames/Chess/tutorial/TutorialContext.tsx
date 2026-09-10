@@ -15,7 +15,13 @@ import type {
   TutorialStep,
 } from "./types";
 import { EMPTY_RESTRICTIONS } from "./types";
-import { BLACK_PASS_FROM, BLACK_PASS_TO } from "./tutorialSteps";
+import {
+  BLACK_PASS_FROM,
+  BLACK_PASS_TO,
+  BLACK_SECOND_PASS_FROM,
+  BLACK_SECOND_PASS_TO,
+} from "./tutorialSteps";
+import { useChessLanguage } from "../ChessLanguageContext";
 
 type TutorialContextValue = {
   active: boolean;
@@ -23,6 +29,7 @@ type TutorialContextValue = {
   step: TutorialStep | null;
   restrictions: TutorialRestrictions;
   dialogueText: string | null;
+  titleText: string | null;
   dialoguePage: number;
   dialoguePageCount: number;
   showNext: boolean;
@@ -44,7 +51,14 @@ export function TutorialProvider({
   steps: TutorialStep[];
   onExit: () => void;
 }) {
+  const language = useChessLanguage();
   const bridgeRef = useRef<TutorialBridge | null>(null);
+  // ChessGame recreates its bridge as live game state changes. A tutorial
+  // chapter must only run its entry script once, otherwise scripted black
+  // replies are applied repeatedly.
+  const enteredStepRef = useRef(-1);
+  const autoPassPendingRef = useRef(false);
+  const scriptedPassIndexRef = useRef(0);
   const [stepIndex, setStepIndex] = useState(0);
   const [dialoguePage, setDialoguePage] = useState(0);
   const [dynamicRestrictions, setDynamicRestrictions] =
@@ -59,10 +73,16 @@ export function TutorialProvider({
 
   const dialogueLines = useMemo(() => {
     if (!step?.dialogue) return [];
-    return Array.isArray(step.dialogue) ? step.dialogue : [step.dialogue];
-  }, [step]);
+    const localized = typeof step.dialogue === "object" && !Array.isArray(step.dialogue)
+      ? step.dialogue[language] ?? step.dialogue.english ?? [] : step.dialogue;
+    return Array.isArray(localized) ? localized : [localized];
+  }, [step, language]);
 
   const dialogueText = dialogueLines[dialoguePage] ?? null;
+  const title = step?.title;
+  const localizedTitle = title && typeof title === "object" && !Array.isArray(title)
+    ? title[language] ?? title.english ?? null : title ?? null;
+  const titleText = Array.isArray(localizedTitle) ? localizedTitle[0] ?? null : localizedTitle;
   const dialoguePageCount = dialogueLines.length;
   const hasMoreDialogue = dialoguePage < dialoguePageCount - 1;
 
@@ -91,6 +111,8 @@ export function TutorialProvider({
     (index: number) => {
       const s = steps[index];
       if (!s) return;
+      if (enteredStepRef.current === index) return;
+      enteredStepRef.current = index;
       setDialoguePage(0);
       applyDynamicForStep(s);
       const bridge = bridgeRef.current;
@@ -101,9 +123,34 @@ export function TutorialProvider({
         if (s.id === "use-what") applyDynamicForStep(s);
       };
 
-      if (s.ensureWhiteTurn && bridge.getTurn() !== "white") {
-        bridge.executeScriptedMove(BLACK_PASS_FROM, BLACK_PASS_TO);
-        window.setTimeout(runOnEnter, 200);
+      if (s.ensureWhiteTurn) {
+        // Completion events are emitted in the same call stack as a move. Let
+        // React commit that move first, then inspect the freshly registered
+        // bridge before making the tutorial's harmless black reply.
+        if (autoPassPendingRef.current) return;
+        autoPassPendingRef.current = true;
+        window.setTimeout(() => {
+          const currentBridge = bridgeRef.current;
+          if (!currentBridge) {
+            autoPassPendingRef.current = false;
+            return;
+          }
+          if (currentBridge.getTurn() !== "white") {
+            const isSecondPass = scriptedPassIndexRef.current > 0;
+            scriptedPassIndexRef.current += 1;
+            currentBridge.executeScriptedMove(
+              isSecondPass ? BLACK_SECOND_PASS_FROM : BLACK_PASS_FROM,
+              isSecondPass ? BLACK_SECOND_PASS_TO : BLACK_PASS_TO,
+            );
+            window.setTimeout(() => {
+              autoPassPendingRef.current = false;
+              if (bridgeRef.current) runOnEnter();
+            }, 200);
+            return;
+          }
+          autoPassPendingRef.current = false;
+          runOnEnter();
+        }, 0);
         return;
       }
       runOnEnter();
@@ -188,6 +235,7 @@ export function TutorialProvider({
     step,
     restrictions,
     dialogueText,
+    titleText,
     dialoguePage,
     dialoguePageCount,
     showNext,
@@ -214,6 +262,7 @@ export function useTutorial(): TutorialContextValue {
       step: null,
       restrictions: EMPTY_RESTRICTIONS,
       dialogueText: null,
+      titleText: null,
       dialoguePage: 0,
       dialoguePageCount: 0,
       showNext: false,

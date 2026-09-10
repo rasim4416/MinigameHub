@@ -20,8 +20,14 @@ export async function evalForBlack(
   if (!isStockfishEligible(game)) return null;
   const fen = toStockfishFen({ ...game, turn: sideToMove }, sideToMove);
   void ctx;
-  const cp = await getEval(fen);
-  return evalToBlackPov(sideToMove, cp);
+  try {
+    const cp = await getEval(fen);
+    return evalToBlackPov(sideToMove, cp);
+  } catch {
+    // Stockfish is an optional optimiser. A worker/WASM failure must never
+    // interrupt the bot turn; callers will use material or legal moves.
+    return null;
+  }
 }
 
 export async function evalBlackPovFromPreview(

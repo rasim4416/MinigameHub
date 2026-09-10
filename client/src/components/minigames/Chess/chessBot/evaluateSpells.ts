@@ -10,7 +10,7 @@ import {
   MAX_SPELL_CANDIDATES,
   TURN_SPELL_THRESHOLD_CP,
 } from "./constants";
-import { evalBlackPovFromPreview, evalForBlack } from "./evalPosition";
+import { evalForBlack } from "./evalPosition";
 import { pickBotMove } from "./pickBotMove";
 import {
   enumerateSpellTargets,
@@ -50,7 +50,28 @@ function heuristicTargetScore(
   }
 
   if (spellId === "impassable") {
-    score += 20;
+    // Central walls are much more likely to cut a useful line than a corner
+    // wall. Do not spend the candidate budget on cosmetic edge placements.
+    const rows = board.length;
+    const cols = board[0]?.length ?? rows;
+    score += 100 - Math.abs(r - (rows - 1) / 2) * 12;
+    score += 100 - Math.abs(c - (cols - 1) / 2) * 12;
+  }
+
+  if (
+    spellId === "necromancer" ||
+    spellId === "necromancer-plus" ||
+    spellId === "necromancer-plus-plus"
+  ) {
+    const rows = board.length;
+    const cols = board[0]?.length ?? rows;
+    // A revived piece should not be placed on an immediately attacked square
+    // if a safer legal square exists. Prefer development toward the centre.
+    score += 100 - Math.abs(c - (cols - 1) / 2) * 15;
+    score += 30 - Math.abs(r - (rows - 1) / 2) * 3;
+    if (isSquareAttackedByEnemyOrMercenary(game, r, c, "black")) {
+      score -= 250;
+    }
   }
 
   void ctx;
@@ -100,25 +121,6 @@ async function scoreCandidates(
   return best;
 }
 
-function frostHighValueOverride(
-  game: ChessState,
-  ctx: BotSpellContext,
-  candidate: SpellCandidate | null,
-): SpellCandidate | null {
-  if (!candidate || candidate.spellId !== "frost") return candidate;
-  const [r, c] = candidate.target;
-  const p = getDerivedBoard(game)[r][c];
-  if (
-    p &&
-    p.color === "white" &&
-    (p.type === "Q" || p.type === "R") &&
-    frostTargetHasLegalMoves(game, candidate.target)
-  ) {
-    return candidate;
-  }
-  return candidate;
-}
-
 export async function evaluateFreeSpells(
   game: ChessState,
   ctx: BotSpellContext,
@@ -128,20 +130,14 @@ export async function evaluateFreeSpells(
   const baseline = await evalForBlack(game, ctx, "black");
   if (baseline === null) return null;
 
-  let best: SpellCandidate | null = null;
+  const candidates: SpellCandidate[] = [];
 
-  if (ctx.blackFreezeCharges > 0) {
+  // Frost replaces the single frozen-square state. Never erase an existing
+  // freeze merely because we still have charges.
+  if (ctx.blackFreezeCharges > 0 && !ctx.frozenSquare) {
     const frost = await scoreCandidates(game, ctx, "frost", baseline);
-    const frostChecked = frostHighValueOverride(game, ctx, frost);
-    if (
-      frostChecked &&
-      (frostChecked.gainCp >= FREE_SPELL_THRESHOLD_CP ||
-        (getDerivedBoard(game)[frostChecked.target[0]]?.[frostChecked.target[1]]
-          ?.type === "Q" ||
-          getDerivedBoard(game)[frostChecked.target[0]]?.[frostChecked.target[1]]
-            ?.type === "R"))
-    ) {
-      if (!best || frostChecked.gainCp > best.gainCp) best = frostChecked;
+    if (frost && frost.gainCp >= FREE_SPELL_THRESHOLD_CP) {
+      candidates.push(frost);
     }
   }
 
@@ -153,11 +149,15 @@ export async function evaluateFreeSpells(
       baseline,
     );
     if (bless && bless.gainCp >= FREE_SPELL_THRESHOLD_CP) {
-      if (!best || bless.gainCp > best.gainCp) best = bless;
+      candidates.push(bless);
     }
   }
 
-  return best;
+  return candidates.reduce<SpellCandidate | null>(
+    (best, candidate) =>
+      !best || candidate.gainCp > best.gainCp ? candidate : best,
+    null,
+  );
 }
 
 export async function evaluateTurnSpellVsMove(
@@ -166,16 +166,39 @@ export async function evaluateTurnSpellVsMove(
   precomputedMove?: BotMove | null,
 ): Promise<SpellCandidate | null> {
   if (ctx.augmentSpellBlockedFor === "black") return null;
-  if (!ctx.monolithPlaceAvailable) return null;
-
   const baseline = await evalForBlack(game, ctx, "black");
   if (baseline === null) return null;
 
-  const monolith = await scoreCandidates(game, ctx, "impassable", baseline);
-  if (!monolith || monolith.gainCp < TURN_SPELL_THRESHOLD_CP) return null;
+  const spellIds = [
+    ...(ctx.monolithPlaceAvailable ? ["impassable"] : []),
+    ...(ctx.blackNecroCharges && (ctx.blackLostPawnCols?.length ?? 0) > 0
+      ? ["necromancer"]
+      : []),
+    ...(ctx.blackNecroPlusCharges &&
+    (ctx.blackLostMinors?.some((type) => type === "N" || type === "B") ?? false)
+      ? ["necromancer-plus"]
+      : []),
+    ...(ctx.blackNecroPPCharges ? ["necromancer-plus-plus"] : []),
+  ];
+  const candidates = (
+    await Promise.all(
+      spellIds.map((spellId) => scoreCandidates(game, ctx, spellId, baseline)),
+    )
+  ).filter((candidate): candidate is SpellCandidate => candidate !== null);
+  const turnSpell = candidates.reduce<SpellCandidate | null>(
+    (best, candidate) =>
+      !best || candidate.gainCp > best.gainCp ? candidate : best,
+    null,
+  );
+  if (!turnSpell) return null;
+  const threshold =
+    turnSpell.spellId === "impassable"
+      ? TURN_SPELL_THRESHOLD_CP
+      : TURN_SPELL_THRESHOLD_CP + 50;
+  if (turnSpell.gainCp < threshold) return null;
 
   const move = precomputedMove ?? (await pickBotMove(game, ctx));
-  if (!move) return monolith;
+  if (!move) return turnSpell;
 
   let afterMoveBlack = baseline;
   try {
@@ -186,8 +209,8 @@ export async function evaluateTurnSpellVsMove(
     /* keep baseline */
   }
 
-  if (monolith.gainCp > afterMoveBlack - baseline) {
-    return monolith;
+  if (turnSpell.gainCp > afterMoveBlack - baseline) {
+    return turnSpell;
   }
   return null;
 }

@@ -395,15 +395,20 @@ export function applyGuaranteedUpgradeSlot(
     GUARANTEED_UPGRADE_PREREQUISITE,
   )) {
     if (has(childId) || exclude.includes(childId)) continue;
-    if (!has(parentId)) continue;
+    if (!parentId || !has(parentId)) continue;
     const priority = childId.endsWith("-plus-plus") ? 2 : 1;
     candidates.push({ id: childId, priority });
   }
   if (candidates.length === 0) return offered;
   candidates.sort((a, b) => b.priority - a.priority);
-  const forced = augmentById(candidates[0]!.id);
+  const candidate = candidates[0];
+  if (!candidate) return offered;
+  const forced = augmentById(candidate.id);
   if (!forced) return offered;
   const out = [...offered];
+  // A normal roll may already have produced the guaranteed upgrade. It already
+  // satisfies the guarantee, so keep the other unique choices intact.
+  if (out.some((augment) => augment.id === forced.id)) return out;
   out[Math.floor(Math.random() * out.length)] = { ...forced };
   return out;
 }
@@ -615,7 +620,7 @@ export function getRollExcludeIds(held: Augment[]): string[] {
   const prereqLocked = AUGMENT_POOL.filter((a) =>
     augmentExcludedByPrereq(a.id, ownedIds),
   ).map((a) => a.id);
-  return [...new Set([...maxed, ...prereqLocked])];
+  return Array.from(new Set([...maxed, ...prereqLocked]));
 }
 
 // ─── Weighted random roll ─────────────────────────────────────────────────────

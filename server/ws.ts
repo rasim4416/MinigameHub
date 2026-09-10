@@ -230,10 +230,16 @@ function addTeamPlayer(room: Room, ws: WebSocket): TeamPlayer {
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({
-    server,
-    path: "/chess-ws",
+    noServer: true,
     perMessageDeflate: false,
     clientTracking: true,
+  });
+  // Share the HTTP server with Vite HMR without rejecting its upgrades.
+  server.on("upgrade", (request, socket, head) => {
+    if (request.url?.split("?")[0] !== "/chess-ws") return;
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
   });
 
   wss.on("connection", (ws) => {

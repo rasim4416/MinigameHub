@@ -45,7 +45,6 @@ export function ShopRow({
 
   return (
     <div
-      data-tutorial-id={tutorialId}
       className={`flex min-h-11 items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
         disabled
           ? "pointer-events-none opacity-40"
@@ -95,6 +94,7 @@ export function ShopRow({
         {showBuy && (
           <button
             type="button"
+            data-tutorial-id={tutorialId}
             disabled={!canClickBuy}
             onClick={onBuy}
             className={`rounded-lg px-3 py-1.5 text-[10px] font-extrabold tracking-wide transition-all ${

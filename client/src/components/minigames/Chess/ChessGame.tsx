@@ -10,12 +10,14 @@ import {
   create2v2InitialState,
   getLegalMoves,
   makeMove,
+  completeBoardSpellTurn,
   materialAdvantage,
   opp,
   cloneBoard,
   findKing,
   findKingForSlot,
   isInCheck,
+  isInCheckForSlot,
   hasAnyLegalMove,
   setBoardSize,
   getDerivedBoard,
@@ -23,6 +25,8 @@ import {
   getBoardCols,
   is2v2Mode,
   isTeamRoundComplete,
+  nextTurnSlot,
+  slotColRange,
   isPawnSpawnSquareForSlot,
   summonedPiece,
   slotToColor,
@@ -138,6 +142,9 @@ import {
   getEventName,
 } from "../../../locales/chess";
 import { useChessLanguage } from "./ChessLanguageContext";
+import { ChessEffects } from "./ui/ChessEffects";
+
+type PlayerColor = "white" | "black";
 
 function getExcludeForPlayer(augments: Augment[]): string[] {
   return getRollExcludeIds(augments);
@@ -523,9 +530,27 @@ function recomputeStatus(g: ChessState): ChessState {
   return { ...g, status };
 }
 
+/** A summoned piece may not be used to leave the acting king in check. */
+function isLegalRevivalPlacement(
+  game: ChessState,
+  board: Board,
+  color: PlayerColor,
+): boolean {
+  const candidate = syncStateFromBoard({ ...game }, board);
+  return is2v2Mode(candidate) && candidate.turnSlot
+    ? !isInCheckForSlot(candidate, candidate.turnSlot)
+    : !isInCheck(candidate, color);
+}
+
+function isActiveSlotFile(game: ChessState, col: number): boolean {
+  if (!is2v2Mode(game) || !game.turnSlot) return true;
+  const { start, end } = slotColRange(game.turnSlot, getBoardCols(game));
+  return col >= start && col < end;
+}
+
 function applyEndOfTurnEffects(
   g: ChessState,
-  color: Color,
+  color: PlayerColor,
   augments: Augment[],
   turn: number,
   whiteAugments: Augment[],
@@ -584,7 +609,7 @@ function applyInvestmentEndOfFullRound(
   blackTaxVault?: TaxVaultCredit,
 ): ChessState {
   let out = g;
-  const applyFor = (color: Color) => {
+  const applyFor = (color: PlayerColor) => {
     const levels = color === "white" ? whiteLevels : blackLevels;
     if (getImproveLevel(levels, "investment") < 1) return;
     const augs = color === "white" ? whiteAugments : blackAugments;
@@ -612,7 +637,7 @@ function applyInvestmentEndOfFullRound(
 function commitSpellHalfMove(
   g: ChessState,
   board: Board,
-  movingColor: Color,
+  movingColor: PlayerColor,
   lastMove: NonNullable<ChessState["lastMove"]>,
   newTurnCount: number,
   curWhiteTurns: number,
@@ -624,10 +649,13 @@ function commitSpellHalfMove(
   levels: AugmentUpgradeLevels,
   taxVault?: TaxVaultCredit,
 ): ChessState {
+  const nextSlot =
+    is2v2Mode(g) && g.turnSlot ? nextTurnSlot(g, g.turnSlot) : undefined;
   let newG = syncStateFromBoard(
     {
       ...g,
-      turn: opp(movingColor),
+      turn: nextSlot ? slotToColor(nextSlot) : opp(movingColor),
+      turnSlot: nextSlot ?? g.turnSlot,
       enPassantTarget: null,
       lastMove,
     },
@@ -1741,12 +1769,17 @@ export default function ChessGame({
       to: [number, number],
       promotion?: PieceType,
       capturedType?: PieceType | null,
+      spellMove?: {
+        board: Board;
+        lastMove: NonNullable<ChessState["lastMove"]>;
+      },
     ) => void
   >(() => {});
   const [botThinking, setBotThinking] = useState(false);
   const botBusyRef = useRef(false);
   /** Bot applies spell targets without toggling UI mode (avoids stale React state). */
   const botSpellForceRef = useRef<string | null>(null);
+  const botNecroPlusChoiceRef = useRef<"N" | "B" | null>(null);
   const gameRef = useRef(game);
   useEffect(() => {
     gameRef.current = game;
@@ -1982,6 +2015,10 @@ export default function ChessGame({
   const [whiteLostMinors, setWhiteLostMinors] = useState<PieceType[]>([]);
   const [blackLostMinors, setBlackLostMinors] = useState<PieceType[]>([]);
   const [necroPlusMode, setNecroPlusMode] = useState(false);
+  /** Necromancer+ lets the player choose among their lost bishop/knight types. */
+  const [necroPlusChoice, setNecroPlusChoice] = useState<"N" | "B" | null>(
+    null,
+  );
   const [necroPPMode, setNecroPPMode] = useState(false);
   const [whiteMonolithPermRemoved, setWhiteMonolithPermRemoved] =
     useState(false);
@@ -2085,7 +2122,7 @@ export default function ChessGame({
   const grantPickedEffects = useCallback(
     (
       aug: Augment,
-      color: Color,
+      color: PlayerColor,
       afterWhite?: Augment[],
       afterBlack?: Augment[],
     ) => {
@@ -2454,6 +2491,9 @@ export default function ChessGame({
     setBlackFreezeCharges(g.blackFreezeCharges as number);
     setFrozenSquare(g.frozenSquare as [number, number] | null);
     setFrozenExpireAfter(g.frozenExpireAfter as Color | null);
+    setFrozenTurnsLeft(
+      (g as { frozenTurnsLeft?: number }).frozenTurnsLeft ?? 0,
+    );
     setWhiteNecroCharges(g.whiteNecroCharges as number);
     setBlackNecroCharges(g.blackNecroCharges as number);
     setWhiteLostPawnCols(g.whiteLostPawnCols as number[]);
@@ -2559,10 +2599,18 @@ export default function ChessGame({
     setMidGameOffered(
       myMidPick ? (g.midGameOffered as Augment[]) : [],
     );
-    setWhiteNecroPlusCharges(g.whiteNecroPlusCharges as number);
-    setBlackNecroPlusCharges(g.blackNecroPlusCharges as number);
-    setWhiteLostMinors(g.whiteLostMinors as PieceType[]);
-    setBlackLostMinors(g.blackLostMinors as PieceType[]);
+    setWhiteNecroPlusCharges(
+      (g as { whiteNecroPlusCharges?: number }).whiteNecroPlusCharges ?? 0,
+    );
+    setBlackNecroPlusCharges(
+      (g as { blackNecroPlusCharges?: number }).blackNecroPlusCharges ?? 0,
+    );
+    setWhiteLostMinors(
+      (g as { whiteLostMinors?: PieceType[] }).whiteLostMinors ?? [],
+    );
+    setBlackLostMinors(
+      (g as { blackLostMinors?: PieceType[] }).blackLostMinors ?? [],
+    );
     setWhiteMonolithPermRemoved(g.whiteMonolithPermRemoved as boolean);
     setBlackMonolithPermRemoved(g.blackMonolithPermRemoved as boolean);
     setWhiteIlkkanId(g.whiteIlkkanId as string | null);
@@ -2664,10 +2712,6 @@ export default function ChessGame({
     setSakoMode(false);
     setSakoSelected(null);
     setDeathNoteMode(false);
-    setWhiteAugmentLevels({});
-    setBlackAugmentLevels({});
-    setWhiteJewPawnLosses(0);
-    setBlackJewPawnLosses(0);
     setRoyalEdMode(false);
     setContractMode(false);
     setBlessedWaterMode(false);
@@ -2677,6 +2721,7 @@ export default function ChessGame({
     setMonolithMode(null);
     setShopOpen(false);
     setNecroPlusMode(false);
+    setNecroPlusChoice(null);
     setBloodbendingMode(false);
     setBloodbendingPlusMode(false);
     setNecroPPMode(false);
@@ -2810,7 +2855,7 @@ export default function ChessGame({
         newBAugs = [...blackAugments, aug];
         setBlackAugments(newBAugs);
       }
-      grantPickedEffects(aug, color, newWAugs, newBAugs);
+      grantPickedEffects(aug, color as PlayerColor, newWAugs, newBAugs);
       if (augmentQueue.length > 0) {
         const [next, ...rest] = augmentQueue;
         setAugmentQueue(rest);
@@ -2932,7 +2977,7 @@ export default function ChessGame({
         newBAugs = [...blackAugments, aug];
         setBlackAugments(newBAugs);
       }
-      grantPickedEffects(aug, color, newWAugs, newBAugs);
+      grantPickedEffects(aug, color as PlayerColor, newWAugs, newBAugs);
       const pickSlotHeld = blindRagePickSlot;
       setBlindRagePickColor(null);
       setBlindRagePickSlot(null);
@@ -2970,7 +3015,8 @@ export default function ChessGame({
       ) {
         return;
       }
-      const color = game.turn;
+      if (NON_PURCHASABLE.has(aug.id)) return;
+      const color = game.turn as PlayerColor;
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const ownedCount = playerAugs.filter((a) => a.id === aug.id).length;
       if (ownedCount >= (MAX_STACK[aug.id] ?? 1)) return;
@@ -3036,7 +3082,7 @@ export default function ChessGame({
 
   const handleImprove = useCallback(
     (augId: string) => {
-      const color = game.turn;
+      const color = game.turn as PlayerColor;
       const playerAugs = color === "white" ? whiteAugments : blackAugments;
       const levels = color === "white" ? whiteAugmentLevels : blackAugmentLevels;
       if (!ownsAugment(playerAugs, augId)) return;
@@ -3067,14 +3113,20 @@ export default function ChessGame({
       to: [number, number],
       promotion?: PieceType,
       capturedType?: PieceType | null,
+      spellMove?: {
+        board: Board;
+        lastMove: NonNullable<ChessState["lastMove"]>;
+      },
     ) => {
       const moverSlot = gameIs2v2 ? game.turnSlot ?? null : null;
-      const movingColor = game.turn;
+      const movingColor = game.turn as PlayerColor;
       const startGoldWhite = game.goldWhite;
       const startGoldBlack = game.goldBlack;
       const roundsSoFar = Math.min(whiteTurnCount, blackTurnCount);
       const victimSquarePiece = getDerivedBoard(game)[to[0]][to[1]];
-      const victimWasMercenary = isMercenaryPiece(victimSquarePiece);
+      // Sideways What? targets an empty square; only inspect a victim when one exists.
+      const victimWasMercenary =
+        !!victimSquarePiece && isMercenaryPiece(victimSquarePiece);
       let eventAugmentTriggers: AugmentTrigger[] = [];
       setGameHistory((h) => [...h, game]);
       setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
@@ -3086,7 +3138,6 @@ export default function ChessGame({
         if (nextFrozen <= 0) {
           setFrozenSquare(null);
           setFrozenExpireAfter(null);
-    setFrozenTurnsLeft(0);
           setFrozenTurnsLeft(0);
         } else setFrozenTurnsLeft(nextFrozen);
       } else if (frozenSquare && frozenExpireAfter === movingColor) {
@@ -3094,7 +3145,12 @@ export default function ChessGame({
         setFrozenExpireAfter(null);
       }
 
-      let newGame = makeMove(game, from, to, promotion);
+      let newGame: ChessState;
+      if (spellMove) {
+        newGame = completeBoardSpellTurn(game, spellMove.board, spellMove.lastMove);
+      } else {
+        newGame = makeMove(game, from, to, promotion);
+      }
 
       const newTurnCount =
         (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
@@ -3141,7 +3197,7 @@ export default function ChessGame({
         !victimWasMercenary &&
         peaceTreatyRoundsLeft <= 0
       ) {
-        const victimColor = opp(movingColor);
+        const victimColor = opp(movingColor) as PlayerColor;
         const victimAugs =
           victimColor === "white" ? whiteAugments : blackAugments;
         const victimLevels =
@@ -3174,14 +3230,14 @@ export default function ChessGame({
 
       // Necromancer: track column at death, revive at home rank
       if (capturedType === "P" && !victimWasMercenary) {
-        const victimColor = opp(movingColor);
+        const victimColor = opp(movingColor) as PlayerColor;
         if (victimColor === "white")
           setWhiteLostPawnCols((prev) => [...prev, to[1]]);
         else setBlackLostPawnCols((prev) => [...prev, to[1]]);
       }
       // Necromancer+: track lost knights/bishops
       if ((capturedType === "N" || capturedType === "B") && !victimWasMercenary) {
-        const victimColor = opp(movingColor);
+        const victimColor = opp(movingColor) as PlayerColor;
         if (victimColor === "white")
           setWhiteLostMinors((prev) => [...prev, capturedType]);
         else setBlackLostMinors((prev) => [...prev, capturedType]);
@@ -3263,7 +3319,8 @@ export default function ChessGame({
 
       // Peace treaty countdown moved to fullRoundDone block
 
-      // Contract Killer — 4× payout when you capture the marked piece; consume augment when resolved
+      // Contract Killer awards its marked-piece bonus, then is consumed on
+      // either outcome.
       {
         const capId = newGame.lastMove?.captured?.id ?? null;
         const settleWhiteContract = () => {
@@ -3653,7 +3710,7 @@ export default function ChessGame({
               },
             );
           } else if (event.id === "tea-party") {
-            const grantKotH = (color: Color) => {
+            const grantKotH = (color: PlayerColor) => {
               const augs = color === "white" ? whiteAugments : blackAugments;
               const levels =
                 color === "white" ? whiteAugmentLevels : blackAugmentLevels;
@@ -4008,6 +4065,37 @@ export default function ChessGame({
         whiteTurnCount,
         blackTurnCount,
       );
+
+      // Events and timed effects resolve after the capture-time contract
+      // check above. Reconcile again so a marked piece removed by Death Note,
+      // a nuke, Apocalypse, or a full-round event cannot leave a stale
+      // contract/augment behind.
+      if (
+        whiteContractPieceId &&
+        !findSquareByPieceId(
+          getDerivedBoard(finalGame),
+          whiteContractPieceId,
+        )
+      ) {
+        setWhiteContractTarget(null);
+        setWhiteContractPieceId(null);
+        setWhiteAugments((prev) =>
+          prev.filter((augment) => augment.id !== "contract-killer"),
+        );
+      }
+      if (
+        blackContractPieceId &&
+        !findSquareByPieceId(
+          getDerivedBoard(finalGame),
+          blackContractPieceId,
+        )
+      ) {
+        setBlackContractTarget(null);
+        setBlackContractPieceId(null);
+        setBlackAugments((prev) =>
+          prev.filter((augment) => augment.id !== "contract-killer"),
+        );
+      }
 
       setGame(finalGame);
 
@@ -4395,6 +4483,7 @@ export default function ChessGame({
     setFreezeMode(false);
     setNecroMode(false);
     setNecroPlusMode(false);
+    setNecroPlusChoice(null);
     setBloodbendingMode(false);
     if (!opts?.preserveIlkkan) setIlkkanMode(false);
     setRoyalEdMode(false);
@@ -4584,26 +4673,49 @@ export default function ChessGame({
     clearModes();
     setNecroPlusMode(entering);
     if (entering) {
+      const lostMinors =
+        game.turn === "white" ? whiteLostMinors : blackLostMinors;
+      const availableTypes = Array.from(
+        new Set(lostMinors.filter((type): type is "N" | "B" => type === "N" || type === "B")),
+      );
+      if (availableTypes.length === 0) {
+        setNecroPlusMode(false);
+        setNecroPlusChoice(null);
+        return;
+      }
+      setNecroPlusChoice(
+        availableTypes.length === 1 ? availableTypes[0]! : null,
+      );
       const _bs = getDerivedBoard(game).length;
+      const _cols = getDerivedBoard(game)[0]?.length ?? _bs;
       const _off = (_bs - 8) / 2;
       const backRow = game.turn === "white" ? 7 + _off : _off;
       const validSquares: [number, number][] = [];
-      for (let c = 0; c < _bs; c++)
-        if (!getDerivedBoard(game)[backRow]?.[c]) validSquares.push([backRow, c]);
+      for (let c = 0; c < _cols; c++)
+        if (
+          isActiveSlotFile(game, c) &&
+          !getDerivedBoard(game)[backRow]?.[c]
+        )
+          validSquares.push([backRow, c]);
       setValidMoves(validSquares);
     }
-  }, [necroPlusMode, game]);
+  }, [necroPlusMode, game, whiteLostMinors, blackLostMinors]);
   const handleToggleNecroPP = useCallback(() => {
     const entering = !necroPPMode;
     clearModes();
     setNecroPPMode(entering);
     if (entering) {
       const _bs = getDerivedBoard(game).length;
+      const _cols = getDerivedBoard(game)[0]?.length ?? _bs;
       const _off = (_bs - 8) / 2;
       const backRow = game.turn === "white" ? 7 + _off : _off;
       const validSquares: [number, number][] = [];
-      for (let c = 0; c < _bs; c++)
-        if (!getDerivedBoard(game)[backRow]?.[c]) validSquares.push([backRow, c]);
+      for (let c = 0; c < _cols; c++)
+        if (
+          isActiveSlotFile(game, c) &&
+          !getDerivedBoard(game)[backRow]?.[c]
+        )
+          validSquares.push([backRow, c]);
       setValidMoves(validSquares);
     }
   }, [necroPPMode, game]);
@@ -4733,7 +4845,7 @@ export default function ChessGame({
         const canPlacePawn =
           ap.pieceType === "P" &&
           !piece &&
-          isOriginalPawnSpawnSquare(r, c, ap.color, rows) &&
+          isOriginalPawnSpawnSquare(r, c, ap.color as PlayerColor, rows) &&
           !isPermaFrostSquare(game, r, c);
         const canPlaceOther =
           ap.pieceType !== "P" &&
@@ -4768,7 +4880,7 @@ export default function ChessGame({
           pawnPlaceFor &&
           game.turn === pawnPlaceFor &&
           !piece &&
-          isOriginalPawnSpawnSquare(r, c, pawnPlaceFor, rows) &&
+          isOriginalPawnSpawnSquare(r, c, pawnPlaceFor as PlayerColor, rows) &&
           !isPermaFrostSquare(game, r, c);
         if (canPlace2v2 || canPlace1v1) {
           const nb = cloneBoard(getDerivedBoard(game));
@@ -4792,7 +4904,7 @@ export default function ChessGame({
 
       if (monolithMode === "place" || botForcedSpell === "impassable") {
         if (!piece && !isPermaFrostSquare(game, r, c)) {
-          const movingColor = game.turn;
+          const movingColor = game.turn as PlayerColor;
           const nb = cloneBoard(getDerivedBoard(game));
           nb[r][c] =
             gameIs2v2 && game.turnSlot
@@ -4954,29 +5066,37 @@ export default function ChessGame({
         return;
       }
 
-      if (necroPPMode) {
-        const playerColor = game.turn;
+      if (necroPPMode || botForcedSpell === "necromancer-plus-plus") {
+        const playerColor = game.turn as PlayerColor;
         const _bs = getDerivedBoard(game).length;
         const _off = (_bs - 8) / 2;
         const backRow = playerColor === "white" ? 7 + _off : _off;
-        if (r === backRow && !getDerivedBoard(game)[r][c]) {
+        if (
+          r === backRow &&
+          isActiveSlotFile(game, c) &&
+          !getDerivedBoard(game)[r][c]
+        ) {
           const nb = cloneBoard(getDerivedBoard(game));
           const slot = gameIs2v2 && game.turnSlot ? game.turnSlot : null;
           nb[r][c] = slot
             ? summonedPiece("Q", slot)
             : { type: "Q", color: playerColor };
-          const newGState = recomputeStatus(
-            syncStateFromBoard(
-              {
-                ...game,
-                turn: opp(playerColor),
+          if (!isLegalRevivalPlacement(game, nb, playerColor)) return;
+          executeMove(
+            [r, c],
+            [r, c],
+            undefined,
+            null,
+            {
+              board: nb,
+              lastMove: {
+                from: [r, c],
+                to: [r, c],
+                piece: nb[r][c]!,
+                captured: null,
               },
-              nb,
-            ),
+            },
           );
-          setGameHistory((h) => [...h, game]);
-          setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
-          setGame(newGState);
           if (playerColor === "white") setWhiteNecroPPCharges((n) => n - 1);
           else setBlackNecroPPCharges((n) => n - 1);
           requestSnapshot();
@@ -4987,32 +5107,49 @@ export default function ChessGame({
         return;
       }
 
-      if (necroPlusMode) {
-        const playerColor = game.turn;
+      if (necroPlusMode || botForcedSpell === "necromancer-plus") {
+        const playerColor = game.turn as PlayerColor;
         const _bs = getDerivedBoard(game).length;
         const _off = (_bs - 8) / 2;
         const backRow = playerColor === "white" ? 7 + _off : _off;
         const lostMinorsArr =
           playerColor === "white" ? whiteLostMinors : blackLostMinors;
-        if (r === backRow && !getDerivedBoard(game)[r][c] && lostMinorsArr.length > 0) {
-          const pieceType = lostMinorsArr[lostMinorsArr.length - 1];
+        const pieceType =
+          necroPlusChoice ??
+          (botForcedSpell === "necromancer-plus"
+            ? botNecroPlusChoiceRef.current
+            : null);
+        if (botForcedSpell === "necromancer-plus")
+          botNecroPlusChoiceRef.current = null;
+        if (!pieceType) return;
+        if (
+          pieceType &&
+          lostMinorsArr.includes(pieceType) &&
+          r === backRow &&
+          isActiveSlotFile(game, c) &&
+          !getDerivedBoard(game)[r][c]
+        ) {
           const nb = cloneBoard(getDerivedBoard(game));
           const slot = gameIs2v2 && game.turnSlot ? game.turnSlot : null;
           nb[r][c] = slot
             ? summonedPiece(pieceType, slot)
             : { type: pieceType, color: playerColor };
-          const newGState = recomputeStatus(
-            syncStateFromBoard(
-              {
-                ...game,
-                turn: opp(playerColor),
+          if (!isLegalRevivalPlacement(game, nb, playerColor)) return;
+          executeMove(
+            [r, c],
+            [r, c],
+            undefined,
+            null,
+            {
+              board: nb,
+              lastMove: {
+                from: [r, c],
+                to: [r, c],
+                piece: nb[r][c]!,
+                captured: null,
               },
-              nb,
-            ),
+            },
           );
-          setGameHistory((h) => [...h, game]);
-          setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
-          setGame(newGState);
           if (playerColor === "white") {
             setWhiteLostMinors((prev) => {
               const idx = prev.lastIndexOf(pieceType);
@@ -5035,6 +5172,7 @@ export default function ChessGame({
           requestSnapshot();
         }
         setNecroPlusMode(false);
+        setNecroPlusChoice(null);
         setSelected(null);
         setValidMoves([]);
         return;
@@ -5166,7 +5304,7 @@ export default function ChessGame({
 
       if (bloodbendingMode) {
         const bs = getDerivedBoard(game).length;
-        const enemyColor = opp(game.turn);
+        const enemyColor = opp(game.turn) as PlayerColor;
         if (
           piece &&
           piece.color !== game.turn &&
@@ -5175,7 +5313,7 @@ export default function ChessGame({
           !isOriginalPawnSpawnSquare(r, c, enemyColor, bs) &&
           !blessedSquares.some((b) => b.row === r && b.col === c)
         ) {
-          const movingColor = game.turn;
+          const movingColor = game.turn as PlayerColor;
           const nb = cloneBoard(getDerivedBoard(game));
           const flipped =
             gameIs2v2 && game.turnSlot
@@ -5236,8 +5374,8 @@ export default function ChessGame({
         return;
       }
 
-      if (necroMode) {
-        const playerColor = game.turn;
+      if (necroMode || botForcedSpell === "necromancer") {
+        const playerColor = game.turn as PlayerColor;
         const _bs = getDerivedBoard(game).length;
         const _off = (_bs - 8) / 2;
         const homeRow = playerColor === "white" ? 6 + _off : 1 + _off;
@@ -5246,6 +5384,7 @@ export default function ChessGame({
         if (
           lostCols.some((col) => col === c) &&
           r === homeRow &&
+          isActiveSlotFile(game, c) &&
           !getDerivedBoard(game)[r][c]
         ) {
           const nb = cloneBoard(getDerivedBoard(game));
@@ -5253,18 +5392,22 @@ export default function ChessGame({
           nb[r][c] = slot
             ? summonedPiece("P", slot)
             : { type: "P", color: playerColor };
-          const newGState = recomputeStatus(
-            syncStateFromBoard(
-              {
-                ...game,
-                turn: opp(playerColor),
+          if (!isLegalRevivalPlacement(game, nb, playerColor)) return;
+          executeMove(
+            [r, c],
+            [r, c],
+            undefined,
+            null,
+            {
+              board: nb,
+              lastMove: {
+                from: [r, c],
+                to: [r, c],
+                piece: nb[r][c]!,
+                captured: null,
               },
-              nb,
-            ),
+            },
           );
-          setGameHistory((h) => [...h, game]);
-          setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
-          setGame(newGState);
           if (playerColor === "white") {
             setWhiteLostPawnCols((prev) => {
               const i = prev.indexOf(c);
@@ -5366,7 +5509,7 @@ export default function ChessGame({
             ),
           );
           if (!isInCheck(merged, game.turn)) {
-            const movingColor = game.turn;
+            const movingColor = game.turn as PlayerColor;
             const newTurnCount =
               (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
             if (movingColor === "white") setWhiteTurnCount(newTurnCount);
@@ -5458,7 +5601,7 @@ export default function ChessGame({
         }
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
-          const movingColor = game.turn;
+          const movingColor = game.turn as PlayerColor;
           const movingPiece = getDerivedBoard(game)[sakoSelected[0]][sakoSelected[1]]!;
           const nb = cloneBoard(getDerivedBoard(game));
           nb[sakoSelected[0]][sakoSelected[1]] = null;
@@ -5516,7 +5659,7 @@ export default function ChessGame({
       if (royalHouseholdMode) {
         const isValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
         if (isValid) {
-          const movingColor = game.turn;
+          const movingColor = game.turn as PlayerColor;
           const enemyColorRH = opp(movingColor);
           const [kr, kc] = findKing(game, movingColor);
           const dr = Math.sign(r - kr),
@@ -5950,6 +6093,12 @@ export default function ChessGame({
 
   const runBotSpell = (spellId: string, target: [number, number]) => {
     const [r, c] = target;
+    if (spellId === "necromancer-plus") {
+      botNecroPlusChoiceRef.current =
+        [...blackLostMinors].reverse().find(
+          (type): type is "N" | "B" => type === "N" || type === "B",
+        ) ?? null;
+    }
     botSpellForceRef.current = spellId;
     botSquareClickRef.current(r, c);
   };
@@ -6161,6 +6310,11 @@ export default function ChessGame({
             blackContractPieceId,
             blackPuppetUsed,
             blackDNUsed,
+            blackNecroCharges,
+            blackLostPawnCols,
+            blackNecroPlusCharges,
+            blackLostMinors,
+            blackNecroPPCharges,
             game: g,
           });
           let action: BotAction | null = await decideBotAction(g, spellCtx);
@@ -6279,6 +6433,11 @@ export default function ChessGame({
     blackContractPieceId,
     blackPuppetUsed,
     blackDNUsed,
+    blackNecroCharges,
+    blackLostPawnCols,
+    blackNecroPlusCharges,
+    blackLostMinors,
+    blackNecroPPCharges,
     blackTierBought,
     freezeMode,
     blessedWaterMode,
@@ -6410,6 +6569,7 @@ export default function ChessGame({
     setWhiteLostMinors([]);
     setBlackLostMinors([]);
     setNecroPlusMode(false);
+    setNecroPlusChoice(null);
     setWhiteMonolithPermRemoved(false);
     setBlackMonolithPermRemoved(false);
     setPrizeFirstCaptureOfGameDone(false);
@@ -6487,10 +6647,16 @@ export default function ChessGame({
   const whiteNecroRow = 6 + necroOff,
     blackNecroRow = 1 + necroOff;
   const whiteHasNecroTargets = whiteLostPawnCols.some(
-    (col) => getDerivedBoard(game)[whiteNecroRow] && !getDerivedBoard(game)[whiteNecroRow][col],
+    (col) =>
+      isActiveSlotFile(game, col) &&
+      getDerivedBoard(game)[whiteNecroRow] &&
+      !getDerivedBoard(game)[whiteNecroRow][col],
   );
   const blackHasNecroTargets = blackLostPawnCols.some(
-    (col) => getDerivedBoard(game)[blackNecroRow] && !getDerivedBoard(game)[blackNecroRow][col],
+    (col) =>
+      isActiveSlotFile(game, col) &&
+      getDerivedBoard(game)[blackNecroRow] &&
+      !getDerivedBoard(game)[blackNecroRow][col],
   );
 
   const dbN = getDerivedBoard(game);
@@ -6500,7 +6666,9 @@ export default function ChessGame({
   const backRb = offN;
   let wEmptyBack = false;
   let bEmptyBack = false;
-  for (let c = 0; c < bsN; c++) {
+  const boardColsN = dbN[0]?.length ?? bsN;
+  for (let c = 0; c < boardColsN; c++) {
+    if (!isActiveSlotFile(game, c)) continue;
     if (!dbN[backRw][c]) wEmptyBack = true;
     if (!dbN[backRb][c]) bEmptyBack = true;
   }
@@ -6620,8 +6788,8 @@ export default function ChessGame({
     necroPlusActive: necroPlusMode && canUseSpells,
     hasNecroPlusTargets:
       color === "white"
-        ? whiteLostMinors.length > 0
-        : blackLostMinors.length > 0,
+        ? whiteLostMinors.length > 0 && wEmptyBack
+        : blackLostMinors.length > 0 && bEmptyBack,
     onNecroPlus: spellGuard(handleToggleNecroPlus),
     bloodbendingCharges:
       color === "white" ? whiteBloodbendingCharges : blackBloodbendingCharges,
@@ -7050,6 +7218,31 @@ export default function ChessGame({
           {modeBanner.text}
         </div>
       )}
+      {necroPlusMode && !necroPlusChoice && (
+        <div className="absolute left-1/2 top-11 z-30 -translate-x-1/2 rounded-lg border border-violet-400/60 bg-slate-950/95 p-2 shadow-xl">
+          <div className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-violet-200">
+            Revive which piece?
+          </div>
+          <div className="flex gap-2">
+            {(["N", "B"] as const)
+              .filter((type) =>
+                (game.turn === "white" ? whiteLostMinors : blackLostMinors).includes(
+                  type,
+                ),
+              )
+              .map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setNecroPlusChoice(type)}
+                  className="rounded border border-violet-400/50 bg-violet-950/70 px-3 py-1 text-sm font-bold text-violet-100 hover:bg-violet-800"
+                >
+                  {type === "N" ? "♞ Knight" : "♝ Bishop"}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
       {mpConfig && opponentAugmentPickActive && !isOver && (
         <div className="pointer-events-none absolute bottom-2.5 left-1/2 z-[85] -translate-x-1/2 whitespace-nowrap rounded-full bg-black/80 px-4 py-1.5 text-[11px] font-bold tracking-wide text-indigo-300">
           Opponent is choosing an augment…
@@ -7114,6 +7307,10 @@ export default function ChessGame({
           overlays={boardOverlays}
         >
           <div
+            className="relative shrink-0"
+            style={{ width: boardPxW, height: boardPxH }}
+          >
+            <div
             className="grid shrink-0 rounded-sm border-[3px] border-[#5c3d1e] shadow-[0_8px_40px_rgba(0,0,0,0.8),0_2px_8px_rgba(0,0,0,0.5)]"
             style={{
               width: boardPxW,
@@ -7245,6 +7442,18 @@ export default function ChessGame({
               );
             }),
           )}
+            </div>
+            <ChessEffects
+              board={getDerivedBoard(game)}
+              turn={game.turn}
+              lastMove={game.lastMove}
+              frozenSquares={frozenSquare ? [frozenSquare] : []}
+              whiteAugments={whiteAugments}
+              blackAugments={blackAugments}
+              flipped={mpViewFlipped}
+              whiteAugmentLevels={whiteAugmentLevels}
+              blackAugmentLevels={blackAugmentLevels}
+            />
           </div>
         </BoardStage>
       </div>
@@ -7303,8 +7512,13 @@ export default function ChessGame({
       />
 
       {/* Phase overlays — above board; board input disabled until playing */}
-      {preGamePhase && !tutorialMode && (
-        <div className="pointer-events-none absolute inset-0 z-[100]">
+      {/* Tutorial begins directly at its scripted white augment pick. Keep its
+          selector available while still suppressing the normal start screen. */}
+      {preGamePhase &&
+        (!tutorialMode ||
+          phase === "white-augment" ||
+          phase === "black-augment") && (
+        <div className="absolute inset-0 z-[100]">
           {phase === "start" && (
             <div className="pointer-events-auto h-full w-full">
               <StartScreen

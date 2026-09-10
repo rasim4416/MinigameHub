@@ -133,11 +133,24 @@ async function ensureEngine(): Promise<void> {
     try {
       worker = new Worker(ENGINE_URL);
       worker.onmessage = (e: MessageEvent<string>) => onWorkerMessage(e.data);
-      worker.onerror = (e) => reject(new Error(e.message || "Stockfish worker error"));
+      worker.onerror = (e) => {
+        // A failed WASM worker must become a normal engine failure so callers
+        // can use their legal-move fallback, rather than leaking an uncaught
+        // worker error into the page.
+        e.preventDefault();
+        reject(new Error(e.message || "Stockfish worker error"));
+      };
 
+      const deviceMemory =
+        typeof navigator === "undefined"
+          ? undefined
+          : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      // The lite WASM engine can trap while allocating a 256MB hash on
+      // memory-constrained browsers. A 32–128MB hash remains strong enough
+      // for the bot's short searches and leaves room for the application.
       const hashMb = Math.min(
-        256,
-        Math.max(64, Math.floor((navigator.deviceMemory ?? 4) * 32)),
+        128,
+        Math.max(32, Math.floor((deviceMemory ?? 4) * 16)),
       );
 
       post("uci");

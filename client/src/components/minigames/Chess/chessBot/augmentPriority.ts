@@ -14,6 +14,17 @@ export const BOT_AUGMENT_DENYLIST = new Set([
   "tall-politician",
   "swap",
   "domain-expansion",
+  // These actives need a multi-click executor or a special move generator.
+  // Do not let the bot buy a dead augment while that support is absent.
+  "bloodbending",
+  "bloodbending-plus",
+  "royal-education",
+  "royal-household",
+  "sacrifice",
+  "sako-bosphorus",
+  "little-big-man",
+  "what",
+  "evade",
 ]);
 
 export const BOT_AUGMENT_PRIORITY: Record<Rarity, readonly string[]> = {
@@ -31,13 +42,11 @@ export const BOT_AUGMENT_PRIORITY: Record<Rarity, readonly string[]> = {
   ],
   uncommon: [
     "necromancer",
+    "alternative-plus",
     "contract-killer",
-    "evade",
     "free-passage",
     "augmented",
     "king-of-the-hill",
-    "what",
-    "sacrifice",
     "tax-man",
     "jew",
   ],
@@ -51,21 +60,16 @@ export const BOT_AUGMENT_PRIORITY: Record<Rarity, readonly string[]> = {
     "mastermind-plus-plus",
   ],
   epic: [
+    "necromancer-plus",
     "puppet",
     "death-note",
-    "royal-education",
     "internal-combustion",
-    "bloodbending",
     "bloodlust",
   ],
   legendary: [
-    "plot-armour",
-    "little-big-man",
-    "royal-household",
-    "sako-bosphorus",
-    "emperor-of-the-hill",
     "necromancer-plus-plus",
-    "bloodbending-plus",
+    "plot-armour",
+    "emperor-of-the-hill",
   ],
 };
 

@@ -12,11 +12,13 @@ export function AugmentCard({
   onSelect,
   disabled = false,
   highlighted = false,
+  tutorialId,
 }: {
   augment: Augment;
   onSelect: () => void;
   disabled?: boolean;
   highlighted?: boolean;
+  tutorialId?: string;
 }) {
   const lang = useChessLanguage();
   const [hov, setHov] = useState(false);
@@ -25,7 +27,16 @@ export function AugmentCard({
   const description = getAugmentDescription(augment.id, lang);
   return (
     <div
+      data-tutorial-id={tutorialId}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
       onClick={disabled ? undefined : onSelect}
+      onKeyDown={(event) => {
+        if (!disabled && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       onMouseEnter={() => !disabled && setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{

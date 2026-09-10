@@ -1,12 +1,15 @@
 import type { Color } from "../engine";
 import type { GamePhase } from "../chessTypes";
 import type { Augment } from "../augments";
+import type { Language } from "../../../../lib/language";
+
+export type TutorialCopy = string | string[] | Partial<Record<Language, string | string[]>>;
 
 export type TutorialUiTarget =
   | "pawn-d2"
   | "spell-what"
   | "shop-button"
-  | "shop-miner";
+  | "shop-buy-miner";
 
 export type TutorialCompletionType =
   | "next"
@@ -54,7 +57,8 @@ export type TutorialBridge = {
 
 export type TutorialStep = {
   id: string;
-  dialogue?: string | string[];
+  title?: TutorialCopy;
+  dialogue?: TutorialCopy;
   dialogueIndex?: number;
   advanceOn?: TutorialAdvanceOn;
   restrictions: TutorialRestrictions;

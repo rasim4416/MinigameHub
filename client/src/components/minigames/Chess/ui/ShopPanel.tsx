@@ -118,7 +118,7 @@ export function ShopPanel({
         isMaxed={isMaxed}
         showBuy={showBuy && shopEnabled}
         disabled={!shopEnabled}
-        tutorialId={aug.id === "miner" ? "shop-miner" : undefined}
+        tutorialId={aug.id === "miner" ? "shop-buy-miner" : undefined}
         onBuy={() => onBuy(aug)}
         showImprove={showImprove}
         improveCost={improveTier?.cost}

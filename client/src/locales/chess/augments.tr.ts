@@ -59,7 +59,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "contract-killer": {
     "name": "Kontrat Katili",
-    "description": "Bir rakip taşı işaretle (şah/piyon hariç). Alırsan taban değerinin 3 katı altın kazan. Dükkandan alınamaz."
+    "description": "Bir rakip taşı işaretle (şah/piyon hariç). Onu alırsan, taşın taban değerinin 3 katı bonus altın kazanırsın (Kontrat Katili geliştirildikten sonra 5 katı). Her seçimde bir kullanım: kontrat başarılı olsun ya da olmasın bittiğinde augment tüketilir. Dükkândan alınamaz."
   },
   "evade": {
     "name": "Kaçınma",
@@ -83,7 +83,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "frost": {
     "name": "Don",
-    "description": "1 dondurma büyüsü kazan. Bir rakip taşı dondur — 2 yarım tur hareket edemez."
+    "description": "1 dondurma büyüsü kazan. Bir rakip taşını (şah hariç) dondur — 2 yarım tur hareket edemez (Don geliştirilirse 3 yarım tur)."
   },
   "what": {
     "name": "Ne?",
@@ -99,7 +99,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer": {
     "name": "Necromancer",
-    "description": "Kaybedilen bir piyonu geri getir."
+    "description": "Büyü: Kaybedilen bir piyonu başlangıç sırasındaki kendi karesine dirilt (tur harcar)."
   },
   "blessed-water-spell": {
     "name": "Kutsal Su",
@@ -131,7 +131,7 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer-plus": {
     "name": "Necromancer+",
-    "description": "En son kaybedilen at veya filini dirilt."
+    "description": "Büyü: Kaybettiğin at veya fillerden birini seç ve kendi başlangıç sırandaki boş bir karede dirilt (tur harcar)."
   },
   "horde": {
     "name": "Sürü",
@@ -195,6 +195,6 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
   },
   "necromancer-plus-plus": {
     "name": "Necromancer++",
-    "description": "Büyü: Bir vezirini dirilt."
+    "description": "Büyü: Boş bir başlangıç sırası karesine diriltilmiş bir vezir yerleştir (Necromancer+ gerekir; tur harcar)."
   }
 } as Record<string, AugmentLocaleEntry>;

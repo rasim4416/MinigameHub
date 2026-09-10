@@ -1437,6 +1437,27 @@ export function create2v2InitialState(): ChessState {
   };
 }
 
+/** Finish a validated turn-spending board spell using normal status/slot resolution. */
+export function completeBoardSpellTurn(
+  state: ChessState,
+  board: Board,
+  record: NonNullable<ChessState["lastMove"]>,
+): ChessState {
+  const next = syncStateFromBoard({
+    ...state,
+    turn: opp(state.turn),
+    enPassantTarget: null,
+    lastMove: record,
+    status: "playing",
+    halfMoveClock: 0,
+    fullMoveNumber: state.fullMoveNumber + (state.turn === "black" ? 1 : 0),
+    moveHistory: [...state.moveHistory, record],
+  }, board);
+  return is2v2Mode(state) && state.turnSlot
+    ? resolve2v2AfterMove(next, state.turnSlot)
+    : recomputeChessStatus(next);
+}
+
 export function createInitialState(): ChessState {
   const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const board: Board = Array(8)

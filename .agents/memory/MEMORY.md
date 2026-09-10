@@ -1,0 +1,2 @@
+- [Chess transition invariants](chess-state-transitions.md) — spell turn costs, team-slot legality, and identity-aware board effects must stay consistent.
+- [Tutorial lifecycle](tutorial-lifecycle.md) — chapter entry is idempotent; scripted replies must observe the committed game state.

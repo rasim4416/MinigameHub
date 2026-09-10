@@ -8,18 +8,21 @@ import {
   type AugmentUpgradeLevels,
 } from "../augments";
 import type { TierBought } from "../chessTypes";
-import { BOT_AUGMENT_DENYLIST } from "./augmentPriority";
+import {
+  BOT_AUGMENT_DENYLIST,
+  priorityIndex,
+  rarityRank,
+} from "./augmentPriority";
 import {
   meetsMinShopRarity,
   minShopRarity,
   spendableGold,
 } from "./constants";
-import { pickAugmentForBot } from "./pickAugment";
 import type { PositionAssessment } from "./assessPosition";
 
 function catalogBuyOnly(
   ownedAugments: Augment[],
-  augmentLevels: Record<string, number>,
+  augmentLevels: AugmentUpgradeLevels,
 ): Augment[] {
   const counts: Record<string, number> = {};
   for (const a of ownedAugments) counts[a.id] = (counts[a.id] || 0) + 1;
@@ -64,7 +67,27 @@ export function pickShopBuy(input: {
   }
   if (affordable.length === 0) return null;
 
-  const pick = pickAugmentForBot(affordable, blackAugments);
+  // A shop offer charges for rarity again for every prior tier purchase.  The
+  // usual pick order is right for free rewards, but can spend nearly all gold
+  // on a marginal legendary here. Rank the legal affordable catalog by useful
+  // priority per actual price instead.
+  const pick = [...affordable].sort((a, b) => {
+    const value = (aug: Augment) => {
+      const tierValue = (rarityRank(aug.rarity) + 1) * 100;
+      const orderValue = Math.max(0, 20 - priorityIndex(aug.rarity, aug.id)) * 4;
+      return tierValue + orderValue;
+    };
+    const aCost = costs.get(a.id)!;
+    const bCost = costs.get(b.id)!;
+    const efficiency = value(b) / bCost - value(a) / aCost;
+    if (efficiency !== 0) return efficiency;
+    // Keep the free-pick strategy as a deterministic tie breaker.
+    return (
+      rarityRank(b.rarity) - rarityRank(a.rarity) ||
+      priorityIndex(a.rarity, a.id) - priorityIndex(b.rarity, b.id) ||
+      a.id.localeCompare(b.id)
+    );
+  })[0];
   if (!pick) return null;
   const cost = costs.get(pick.id);
   if (cost === undefined) return null;

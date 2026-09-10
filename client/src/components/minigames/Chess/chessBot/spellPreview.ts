@@ -72,6 +72,48 @@ export function previewMonolithPlace(
   };
 }
 
+function revivalPieceType(
+  spellId: string,
+  ctx: BotSpellContext,
+): "P" | "N" | "B" | "Q" | null {
+  if (spellId === "necromancer") return "P";
+  if (spellId === "necromancer-plus") {
+    // ChessGame revives the most recently lost eligible minor for bot casts.
+    // Mirror that deterministic selection in the preview rather than scoring
+    // a bishop while the executor restores a knight.
+    for (let i = (ctx.blackLostMinors?.length ?? 0) - 1; i >= 0; i--) {
+      const type = ctx.blackLostMinors?.[i];
+      if (type === "N" || type === "B") return type;
+    }
+    return null;
+  }
+  return spellId === "necromancer-plus-plus" ? "Q" : null;
+}
+
+/** Approximate a revival exactly as a new black piece on its legal target. */
+export function previewRevival(
+  spellId: string,
+  game: ChessState,
+  ctx: BotSpellContext,
+  target: [number, number],
+): SpellPreview | null {
+  const type = revivalPieceType(spellId, ctx);
+  const [r, c] = target;
+  const board = getDerivedBoard(game);
+  if (!type || board[r]?.[c]) return null;
+  const next = syncStateFromBoard(
+    { ...game, turn: opp(game.turn), enPassantTarget: null },
+    board.map((row, rowIndex) =>
+      row.map((piece, colIndex) =>
+        rowIndex === r && colIndex === c
+          ? { type, color: "black" as const }
+          : piece,
+      ),
+    ),
+  );
+  return { game: next, ctx, sideToMove: "white" };
+}
+
 export function previewSpell(
   spellId: string,
   game: ChessState,
@@ -88,6 +130,10 @@ export function previewSpell(
       return previewBlessedWater(game, ctx, target);
     case "impassable":
       return previewMonolithPlace(game, ctx, target);
+    case "necromancer":
+    case "necromancer-plus":
+    case "necromancer-plus-plus":
+      return previewRevival(spellId, game, ctx, target);
     default:
       return null;
   }
