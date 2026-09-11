@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import fs from "fs";
 import path, { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -11,9 +11,24 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
-/** Do not serve SPA HTML for static public assets (mercenary SVGs, audio, etc.). */
+/**
+ * Do not serve SPA HTML for static public assets (mercenary SVGs, audio,
+ * Godot Web export binaries, etc.).
+ */
 const STATIC_PUBLIC_FILE =
-  /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json)(\?.*)?$/i;
+  /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json|wasm|pck|js)(\?.*)?$/i;
+
+/** Godot export paths under /rootbound/* must never fall through to the SPA. */
+function isRootboundAssetPath(pathname: string): boolean {
+  return pathname.startsWith("/rootbound/") && pathname !== "/rootbound/";
+}
+
+/** Express `app.use("*")` sets req.path to "/"; prefer originalUrl for routing checks. */
+function requestPathname(req: Request): string {
+  const raw = req.originalUrl || req.url || "";
+  const q = raw.indexOf("?");
+  return q === -1 ? raw : raw.slice(0, q);
+}
 
 function resolveClientPublicDir(): string {
   return path.resolve(__dirname, "..", "client", "public");
@@ -25,6 +40,13 @@ function resolveProductionDistDir(): string {
   const repoDist = path.resolve(__dirname, "..", "dist", "public");
   if (fs.existsSync(repoDist)) return repoDist;
   return nextToBundle;
+}
+
+/** Ensure Godot .pck packs are served as binary downloads. */
+function setGodotStaticHeaders(res: Response, filePath: string) {
+  if (filePath.endsWith(".pck")) {
+    res.setHeader("Content-Type", "application/octet-stream");
+  }
 }
 
 export function log(message: string, source = "express") {
@@ -59,13 +81,9 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
-  app.use(vite.middlewares);
-
-  const clientPublic = resolveClientPublicDir();
-  app.use(express.static(clientPublic));
-
-  app.use("*", async (req, res, next) => {
-    if (STATIC_PUBLIC_FILE.test(req.path)) {
+  const sendDevSpa = async (req: Request, res: Response, next: NextFunction) => {
+    const pathname = requestPathname(req);
+    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
       return next();
     }
     const url = req.originalUrl;
@@ -90,7 +108,22 @@ export async function setupVite(app: Express, server: Server) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }
-  });
+  };
+
+  // Prefer the React /rootbound shell over Godot's directory index on refresh.
+  // Godot assets remain available at /rootbound/index.html, *.js, *.pck, *.wasm, etc.
+  app.get(["/rootbound", "/rootbound/"], sendDevSpa);
+
+  app.use(vite.middlewares);
+
+  const clientPublic = resolveClientPublicDir();
+  app.use(
+    express.static(clientPublic, {
+      setHeaders: setGodotStaticHeaders,
+    }),
+  );
+
+  app.use("*", sendDevSpa);
 }
 
 export function serveStatic(app: Express) {
@@ -102,17 +135,28 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // React shell must win over express.static directory-index for /rootbound/.
+  app.get(["/rootbound", "/rootbound/"], (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.resolve(distPath, "index.html"));
+  });
+
+  app.use(
+    express.static(distPath, {
+      setHeaders: setGodotStaticHeaders,
+    }),
+  );
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
-    if (STATIC_PUBLIC_FILE.test(req.path)) {
+    const pathname = requestPathname(req);
+    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
       res.status(404).end();
       return;
     }
     // Stale cached index.html can reference missing hashed bundles; returning
     // HTML for /assets/* breaks module loading and yields a blank page.
-    if (req.path.startsWith("/assets/")) {
+    if (pathname.startsWith("/assets/")) {
       res.status(404).end();
       return;
     }

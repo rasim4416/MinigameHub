@@ -58,9 +58,15 @@ const SmallGameCard = ({ game }: { game: { id: string; title: string; icon: stri
   const { playHit } = useAudio();
   const [hovered, setHovered] = useState(false);
 
+  const openGame = () => {
+    playHit();
+    // Rootbound is a standalone Godot Web export at /rootbound (not /minigames/:id).
+    navigate(game.id === "rootbound" ? "/rootbound" : `/minigames/${game.id}`);
+  };
+
   return (
     <div
-      onClick={() => { playHit(); navigate(`/minigames/${game.id}`); }}
+      onClick={openGame}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={`

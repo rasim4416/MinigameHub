@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import MinigameMenu from "@/pages/MinigameMenu";
 import MinigamePage from "@/pages/MinigamePage";
+import RootboundPage from "@/pages/RootboundPage";
 import NotFound from "@/pages/not-found";
 import { Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
@@ -13,6 +14,8 @@ function App() {
           <Route path="/" element={<Navigate to="/minigames" replace />} />
           <Route path="/minigames" element={<MinigameMenu />} />
           <Route path="/minigames/:id" element={<MinigamePage />} />
+          <Route path="/rootbound" element={<RootboundPage />} />
+          <Route path="/rootbound/" element={<RootboundPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
