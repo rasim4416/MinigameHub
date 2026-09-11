@@ -18,6 +18,18 @@ const viteLogger = createLogger();
 const STATIC_PUBLIC_FILE =
   /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json|wasm|pck|js)(\?.*)?$/i;
 
+/** Godot export paths under /rootbound/* must never fall through to the SPA. */
+function isRootboundAssetPath(pathname: string): boolean {
+  return pathname.startsWith("/rootbound/") && pathname !== "/rootbound/";
+}
+
+/** Express `app.use("*")` sets req.path to "/"; prefer originalUrl for routing checks. */
+function requestPathname(req: Request): string {
+  const raw = req.originalUrl || req.url || "";
+  const q = raw.indexOf("?");
+  return q === -1 ? raw : raw.slice(0, q);
+}
+
 function resolveClientPublicDir(): string {
   return path.resolve(__dirname, "..", "client", "public");
 }
@@ -70,7 +82,8 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   const sendDevSpa = async (req: Request, res: Response, next: NextFunction) => {
-    if (STATIC_PUBLIC_FILE.test(req.path)) {
+    const pathname = requestPathname(req);
+    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
       return next();
     }
     const url = req.originalUrl;
@@ -136,13 +149,14 @@ export function serveStatic(app: Express) {
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
-    if (STATIC_PUBLIC_FILE.test(req.path)) {
+    const pathname = requestPathname(req);
+    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
       res.status(404).end();
       return;
     }
     // Stale cached index.html can reference missing hashed bundles; returning
     // HTML for /assets/* breaks module loading and yields a blank page.
-    if (req.path.startsWith("/assets/")) {
+    if (pathname.startsWith("/assets/")) {
       res.status(404).end();
       return;
     }
