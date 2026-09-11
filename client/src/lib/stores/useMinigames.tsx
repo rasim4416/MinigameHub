@@ -44,6 +44,13 @@ export const useMinigames = create<MinigamesState>(() => ({
       isAvailable: true
     },
     {
+      id: "rootbound",
+      title: "Rootbound",
+      icon: "🌳",
+      description: "Godot web adventure — explore and grow in Rootbound",
+      isAvailable: true
+    },
+    {
       id: "word-scramble",
       title: "Word Scramble",
       icon: "📝",
