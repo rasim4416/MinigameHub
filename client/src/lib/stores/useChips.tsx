@@ -1,22 +1,41 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export const HOURLY_BONUS_AMOUNT = 1000;
+export const HOURLY_BONUS_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Epoch ms when the hourly bonus becomes claimable (0 once it is ready). */
+export function hourlyBonusReadyAt(lastClaimedAt: number | null): number {
+  return lastClaimedAt === null ? 0 : lastClaimedAt + HOURLY_BONUS_INTERVAL_MS;
+}
+
 interface ChipsState {
   chips: number;
+  lastHourlyBonusAt: number | null;
   addChips: (amount: number) => void;
   spendChips: (amount: number) => boolean;
+  /** Grants the bonus and returns the amount, or null while still on cooldown. */
+  claimHourlyBonus: () => number | null;
 }
 
 export const useChips = create<ChipsState>()(
   persist(
     (set, get) => ({
       chips: 500,
+      lastHourlyBonusAt: null,
       addChips: (amount) => set((state) => ({ chips: state.chips + amount })),
       spendChips: (amount) => {
         const { chips } = get();
         if (chips < amount) return false;
         set({ chips: chips - amount });
         return true;
+      },
+      claimHourlyBonus: () => {
+        const now = Date.now();
+        const { chips, lastHourlyBonusAt } = get();
+        if (now < hourlyBonusReadyAt(lastHourlyBonusAt)) return null;
+        set({ chips: chips + HOURLY_BONUS_AMOUNT, lastHourlyBonusAt: now });
+        return HOURLY_BONUS_AMOUNT;
       },
     }),
     { name: "chips-storage" }
