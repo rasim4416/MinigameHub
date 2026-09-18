@@ -11,7 +11,6 @@ export const BOT_AUGMENT_DENYLIST = new Set([
   "oops",
   "ilkkan",
   "pawn-shop",
-  "tall-politician",
   "swap",
   "domain-expansion",
   // These actives need a multi-click executor or a special move generator.

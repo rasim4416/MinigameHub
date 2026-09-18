@@ -137,10 +137,6 @@ export const AUGMENTS_EN: Record<string, AugmentLocaleEntry> = {
     "name": "Horde",
     "description": "When acquired, each of your pawns tries to step one square forward into an empty square (no captures)."
   },
-  "tall-politician": {
-    "name": "Tall Politician",
-    "description": "80% of your income goes to a hidden tax vault. Collect when you need it — if you dare."
-  },
   "bloodbending": {
     "name": "Bloodbending",
     "description": "Spell: flip one enemy pawn to your color (spends your turn; cannot target pawns on their original rank)."

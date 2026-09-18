@@ -137,10 +137,6 @@ export const AUGMENTS_TR: Record<string, AugmentLocaleEntry> = {
     "name": "Sürü",
     "description": "Alındığında her piyonun boş ön kareye bir adım atmayı dener."
   },
-  "tall-politician": {
-    "name": "Uzun Adam",
-    "description": "Gelirin %80'i gizli vergi kasasına gider. İhtiyacın olunca topla — cesaretin varsa."
-  },
   "bloodbending": {
     "name": "Kanbükme",
     "description": "Büyü: bir rakip piyonunu kendi rengine çevir (tur harcar; orijinal piyon sırasındaki piyonlar hedeflenemez)."

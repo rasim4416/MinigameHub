@@ -94,9 +94,6 @@ export type SpellState = {
   hasBloodlust: boolean;
   shopOpen: boolean;
   onToggleShop: () => void;
-  hasTallPolitician: boolean;
-  tallPoliticianVault: number;
-  onCollectTax: () => void;
   plotArmourRounds: number;
 };
 

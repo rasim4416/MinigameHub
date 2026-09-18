@@ -20,7 +20,6 @@ export function PlayerBar({
   statusLabel,
   statusColor,
   statusBadge,
-  taxStealBanner,
 }: {
   color: Color;
   isActive: boolean;
@@ -34,7 +33,6 @@ export function PlayerBar({
   statusLabel?: string;
   statusColor?: string;
   statusBadge?: boolean;
-  taxStealBanner?: string | null;
 }) {
   const captureColor = opp(color);
   const sorted = [...capturedPieces].sort(
@@ -111,19 +109,6 @@ export function PlayerBar({
       )}
       {canAct && spells.contractAvailable && (
         <SpellButton icon="🎯" label="CONTRACT" active={spells.contractActive} onClick={spells.onContract} title="Mark an enemy piece for 3× gold on capture" />
-      )}
-      {spells.hasTallPolitician && (
-        <div className="flex shrink-0 items-center gap-1 rounded border border-amber-600/40 bg-amber-950/40 px-1.5 py-0.5">
-          <span className="text-[9px] font-semibold text-amber-200/90">TAX</span>
-          <span className="text-[11px] font-bold text-amber-300">{spells.tallPoliticianVault}g</span>
-          <button
-            type="button"
-            onClick={spells.onCollectTax}
-            className="rounded bg-amber-700/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-100 hover:bg-amber-600/70"
-          >
-            COLLECT
-          </button>
-        </div>
       )}
       {spells.plotArmourRounds > 0 && (
         <span className="shrink-0 rounded border border-yellow-500/40 bg-yellow-950/40 px-1.5 py-0.5 text-[9px] font-bold text-yellow-200">
@@ -205,11 +190,6 @@ export function PlayerBar({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {taxStealBanner && (
-            <div className="rounded border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-300">
-              {taxStealBanner}
-            </div>
-          )}
           {statusLabel && (
             <div
               className={`text-[11px] font-bold tracking-wide ${
