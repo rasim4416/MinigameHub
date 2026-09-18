@@ -69,28 +69,24 @@ export function TutorialOverlay() {
 
   return (
     <>
-      <div
-        className="pointer-events-none fixed inset-0 z-[90] bg-slate-950/75 transition-opacity duration-300"
-        aria-hidden
-      />
       {highlightUi?.map((t) => (
         <TutorialUiHighlight key={t} target={t} />
       ))}
-      <div className="pointer-events-none fixed inset-0 z-[92] flex flex-col items-center justify-end p-4 pb-6 sm:justify-center sm:pb-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[92] flex justify-center p-3 md:inset-y-0 md:mx-auto md:max-w-5xl md:items-center md:justify-end md:p-4">
         <div
-          className={`pointer-events-auto w-full max-w-lg rounded-2xl border border-slate-700/80 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-sm transition-all duration-300 ${
+          className={`pointer-events-auto max-h-[45dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-amber-400/30 bg-slate-950/95 p-4 shadow-2xl shadow-slate-950/70 backdrop-blur-sm transition-all duration-300 md:max-h-[80dvh] md:w-[19rem] lg:w-[21rem] ${
             visible
-              ? "translate-y-0 opacity-100"
-              : "translate-y-4 opacity-0"
+              ? "translate-y-0 opacity-100 md:translate-x-0"
+              : "translate-y-4 opacity-0 md:translate-y-0 md:translate-x-4"
           }`}
         >
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[.18em] text-amber-300">{tr ? "Ders" : "Field lesson"} {String(stepIndex + 1).padStart(2, "0")} · {titleText ?? (tr ? "Temeller" : "Fundamentals")}</span>
             <button type="button" onClick={() => setGuideOpen((open) => !open)} className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300 hover:border-amber-400 hover:text-amber-200" aria-expanded={guideOpen}>{tr ? "Augment rehberi" : "Augment guide"}</button>
           </div>
           {guideOpen && <div className="mb-3"><AugmentGuide /></div>}
           {dialogueText && (
-            <p className="m-0 text-sm leading-relaxed text-slate-200 sm:text-base">
+            <p className="m-0 text-sm leading-relaxed text-slate-200">
               {dialogueText}
             </p>
           )}
