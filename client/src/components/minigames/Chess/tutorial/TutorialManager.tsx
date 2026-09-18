@@ -12,7 +12,10 @@ export function TutorialManager({
 }) {
   return (
     <TutorialProvider steps={TUTORIAL_STEPS} onExit={onExit}>
-      {children}
+      {/* Reserve the side panel's width so the lesson card never sits on the board. */}
+      <div className="flex w-full flex-col md:pr-[20.5rem] lg:pr-[22.5rem]">
+        {children}
+      </div>
       <TutorialOverlay />
     </TutorialProvider>
   );

@@ -72,7 +72,6 @@ tests.
 | İlkkan | Pass: identity tracking survives moves and clears on transformation/capture. |
 | Swap | Pass: frozen/cold-wind pieces are excluded and final king safety is checked. |
 | Horde | Pass: acquisition immediately advances each eligible pawn once. |
-| Tall Politician | Pass: positive credits deposit tax and full-round vault growth/collection are wired. |
 | Pawn Shop | Pass: original-rank placement, pricing, improvement, and buy count are enforced. |
 | Mastermind++ | Pass: prerequisite and all combined weight presets are enforced. |
 | I Am the Danger | Pass: check detection awards stacks and improvement amount. |
