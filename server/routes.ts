@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { setupPresence } from "./presence";
 import { setupWebSocket } from "./ws";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -12,6 +13,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   setupWebSocket(httpServer);
+  setupPresence(httpServer);
 
   return httpServer;
 }
