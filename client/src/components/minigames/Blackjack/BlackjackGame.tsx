@@ -311,22 +311,22 @@ export default function BlackjackGame() {
 
       {/* ── Table ── */}
       <div className="bj__table">
+        <HourlyBonus />
+
+        <div className="bj-shoe" title={`${shoeCards} cards left in the shoe`}>
+          <span className="bj-shoe__deck" aria-hidden />
+          <span className="bj-shoe__text">
+            <span className="bj-shoe__label">Shoe</span>
+            <span className="bj-shoe__value">{shoeCards}</span>
+          </span>
+        </div>
+
         <div className="bj__felt">
           <div className="bj__arc" aria-hidden />
           <div className="bj__rules" aria-hidden>
             <span className="bj__rules-main">BLACKJACK PAYS 3 TO 2</span>
             <span className="bj__rules-sub">
               DEALER MUST DRAW TO 16 AND HIT SOFT 17
-            </span>
-          </div>
-
-          <HourlyBonus />
-
-          <div className="bj-shoe" title={`${shoeCards} cards left in the shoe`}>
-            <span className="bj-shoe__deck" aria-hidden />
-            <span className="bj-shoe__text">
-              <span className="bj-shoe__label">Shoe</span>
-              <span className="bj-shoe__value">{shoeCards}</span>
             </span>
           </div>
 

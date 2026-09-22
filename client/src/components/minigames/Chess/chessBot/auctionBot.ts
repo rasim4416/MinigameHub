@@ -40,6 +40,8 @@ export function computeAuctionBid(input: {
 }): number | null {
   const { auction, goldBlack, position } = input;
   if (auction.status !== "active") return null;
+  // Already leading — wait until white outbids before raising again.
+  if (auction.highBidder === "black") return null;
 
   const minNext = Math.max(
     auction.minBid,
