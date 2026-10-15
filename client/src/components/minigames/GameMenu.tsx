@@ -2,61 +2,139 @@ import { useNavigate } from "react-router-dom";
 import GameHeader from "./GameHeader";
 import { useAudio } from "@/lib/stores/useAudio";
 import { useChips } from "@/lib/stores/useChips";
-import { useMinigames } from "@/lib/stores/useMinigames";
-import { useEffect, useState } from "react";
-import { Gamepad2 } from "lucide-react";
+import { useMinigames, type GameType } from "@/lib/stores/useMinigames";
+import { usePresence } from "@/hooks/usePresence";
+import { useEffect, type CSSProperties } from "react";
+import { ArrowRight, Bot, Globe2, Sparkles, UsersRound } from "lucide-react";
 
-const MENU_CHIPS = [
-  { value: 10000, bg: "#eab308", light: "#fde047", dark: "#a16207", text: "#422006" },
-  { value: 1000,  bg: "#06b6d4", light: "#67e8f9", dark: "#0e7490", text: "#083344" },
-  { value: 100,   bg: "#1e293b", light: "#475569", dark: "#0f172a", text: "#e2e8f0" },
+const GAME_ACCENTS: Record<string, { from: string; to: string; tagline: string }> = {
+  "speed-typer": { from: "#38bdf8", to: "#6366f1", tagline: "Fingers of fury" },
+  barricade: { from: "#f97316", to: "#ef4444", tagline: "Block, bluff, break through" },
+  blackjack: { from: "#22c55e", to: "#0f766e", tagline: "Hit me. Gently." },
+  rootbound: { from: "#84cc16", to: "#15803d", tagline: "Put down some roots" },
+  "reaction-test": { from: "#facc15", to: "#f97316", tagline: "Blink and you lose" },
+};
+
+const FALLBACK_ACCENT = { from: "#a78bfa", to: "#6366f1", tagline: "Give it a spin" };
+
+const HERO_PIECES: { glyph: string; style: CSSProperties }[] = [
+  { glyph: "♛", style: { left: "6%", top: "10%", fontSize: 64, "--hub-tilt": "-10deg", "--hub-delay": "0s" } as CSSProperties },
+  { glyph: "♞", style: { right: "8%", top: "6%", fontSize: 54, "--hub-tilt": "12deg", "--hub-delay": "1.2s" } as CSSProperties },
+  { glyph: "♜", style: { right: "18%", bottom: "8%", fontSize: 42, "--hub-tilt": "-6deg", "--hub-delay": "2.1s" } as CSSProperties },
 ];
+
+function MiniBoard() {
+  const pieces: Record<number, string> = {
+    3: "♚", 10: "♟", 13: "♟", 18: "♞", 27: "♙", 36: "♘", 44: "♙", 51: "♙", 59: "♔", 21: "♝", 42: "♗",
+  };
+  return (
+    <div className="relative aspect-square w-full max-w-[220px] rotate-[-4deg] rounded-xl bg-gradient-to-br from-[#6b4423] to-[#24140a] p-1.5 shadow-[0_24px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(231,192,99,0.35)] transition-transform duration-500 group-hover:rotate-0 group-hover:scale-[1.03]">
+      <div className="grid h-full w-full grid-cols-8 overflow-hidden rounded-md">
+        {Array.from({ length: 64 }, (_, i) => {
+          const dark = (Math.floor(i / 8) + i) % 2 === 1;
+          const glyph = pieces[i];
+          const white = glyph && "♔♕♖♗♘♙".includes(glyph);
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-center text-[clamp(12px,2.2vw,20px)] leading-none"
+              style={{ background: dark ? "#b58863" : "#f0d9b5" }}
+            >
+              {glyph && (
+                <span
+                  style={{
+                    color: white ? "#fff" : "#1a0f00",
+                    textShadow: white ? "0 0 2px #000, 0 1px 1px #000" : "0 0 2px rgba(255,255,255,0.7)",
+                  }}
+                >
+                  {glyph}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <span className="absolute -right-3 -top-3 rounded-full border border-amber-200/60 bg-gradient-to-b from-amber-300 to-amber-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#1a1204] shadow-lg">
+        +Augments
+      </span>
+    </div>
+  );
+}
 
 const HeroChessCard = () => {
   const navigate = useNavigate();
   const { playHit } = useAudio();
-  const [hovered, setHovered] = useState(false);
+
+  const tags = [
+    { icon: Sparkles, label: "Roguelike augments" },
+    { icon: Bot, label: "Vs Stockfish" },
+    { icon: Globe2, label: "Online" },
+    { icon: UsersRound, label: "2v2 teams" },
+  ];
 
   return (
-    <div
+    <button
+      type="button"
       onClick={() => { playHit(); navigate("/minigames/chess"); }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={`
-        w-full max-w-2xl mx-auto rounded-2xl border cursor-pointer select-none transition-all duration-300
-        ${hovered
-          ? "bg-gray-800 border-indigo-500 shadow-2xl shadow-indigo-900/40 scale-[1.02]"
-          : "bg-gray-900 border-gray-700 shadow-lg"}
-      `}
-      style={{ padding: "48px 32px" }}
+      className="hub-shine hub-rise group relative w-full overflow-hidden rounded-3xl border border-amber-300/20 bg-gradient-to-br from-[#16122a] via-[#0b0f1f] to-[#07090f] p-6 text-left shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition-all duration-300 hover:-translate-y-1 hover:border-amber-300/45 hover:shadow-[0_36px_90px_rgba(0,0,0,0.6),0_0_60px_rgba(231,192,99,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:p-8"
     >
-      <div className="flex flex-col items-center gap-4 text-center">
-        <div className={`text-7xl transition-transform duration-300 ${hovered ? "scale-110" : ""}`}>
-          ♟️
-        </div>
-        <div>
-          <h2 className={`text-3xl font-extrabold tracking-tight transition-colors duration-200 ${hovered ? "text-indigo-300" : "text-white"}`}>
-            Chess Augmented
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_80%_at_85%_40%,rgba(231,192,99,0.14),transparent_70%),radial-gradient(50%_70%_at_10%_0%,rgba(139,92,246,0.18),transparent_70%)]" />
+      {HERO_PIECES.map((p) => (
+        <span
+          key={p.glyph}
+          aria-hidden
+          className="hub-float pointer-events-none absolute select-none text-white/[0.05]"
+          style={p.style}
+        >
+          {p.glyph}
+        </span>
+      ))}
+
+      <div className="relative flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
+        <div className="flex max-w-md flex-col items-center gap-3 text-center sm:items-start sm:text-left">
+          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.24em] text-amber-200">
+            ★ Featured
+          </span>
+          <h2 className="m-0 text-4xl font-black leading-[0.95] tracking-tight text-white sm:text-5xl">
+            Chess
+            <span className="block bg-gradient-to-b from-amber-100 via-amber-300 to-amber-600 bg-clip-text text-transparent">
+              Augmented
+            </span>
           </h2>
-          <p className="mt-2 text-gray-400 text-base max-w-sm mx-auto">
-            Classic chess with roguelike augments — local or online multiplayer
+          <p className="m-0 text-sm leading-relaxed text-slate-400">
+            Classic chess, roguelike chaos. Draft powers, hoard gold, bid on mercenaries and survive the board events.
           </p>
-          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-            version 1.3.1.0   "Turkish added"
-          </p>
+          <div className="flex flex-wrap justify-center gap-1.5 sm:justify-start">
+            {tags.map(({ icon: Icon, label }) => (
+              <span
+                key={label}
+                className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10.5px] font-bold text-slate-300"
+              >
+                <Icon className="h-3 w-3 text-amber-300" aria-hidden />
+                {label}
+              </span>
+            ))}
+          </div>
+          <span className="mt-1 inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-amber-200 via-amber-400 to-amber-700 px-6 py-2.5 text-sm font-black uppercase tracking-[0.14em] text-[#1a1204] shadow-[0_10px_28px_rgba(231,192,99,0.35)] transition-transform group-hover:translate-x-0.5">
+            Play now
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+            v1.3.1.0 · "Turkish added"
+          </span>
         </div>
-        <div className={`mt-2 px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 ${hovered ? "bg-indigo-500 text-white" : "bg-gray-800 text-gray-300 border border-gray-700"}`}>
-          {hovered ? "Play Now" : "Featured Game"}
+        <div className="w-[180px] shrink-0 sm:w-[220px]">
+          <MiniBoard />
         </div>
       </div>
-    </div>
+    </button>
   );
 };
 
-const SmallGameCard = ({ game }: { game: { id: string; title: string; icon: string; description: string } }) => {
+const GameCard = ({ game, index }: { game: GameType; index: number }) => {
   const navigate = useNavigate();
   const { playHit } = useAudio();
-  const [hovered, setHovered] = useState(false);
+  const accent = GAME_ACCENTS[game.id] ?? FALLBACK_ACCENT;
 
   const openGame = () => {
     playHit();
@@ -65,39 +143,45 @@ const SmallGameCard = ({ game }: { game: { id: string; title: string; icon: stri
   };
 
   return (
-    <div
+    <button
+      type="button"
       onClick={openGame}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={`
-        rounded-xl border cursor-pointer select-none transition-all duration-200 p-5 flex flex-col items-center text-center gap-2
-        ${hovered
-          ? "bg-gray-800 border-indigo-500 shadow-lg shadow-indigo-900/30 scale-105"
-          : "bg-gray-900 border-gray-800"}
-      `}
+      className="hub-shine hub-rise group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0a0e1a]/90 p-4 text-left transition-all duration-300 hover:-translate-y-1 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+      style={{ "--hub-delay": `${0.08 + index * 0.06}s` } as CSSProperties}
     >
-      <div className={`text-3xl transition-transform duration-200 ${hovered ? "scale-110" : ""}`}>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl transition-opacity duration-300 group-hover:opacity-50"
+        style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
+      />
+      <span
+        className="relative flex h-12 w-12 items-center justify-center rounded-2xl text-2xl shadow-[0_10px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
+        style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}
+      >
         {game.icon}
-      </div>
-      <div className={`text-sm font-semibold transition-colors duration-200 ${hovered ? "text-indigo-300" : "text-gray-200"}`}>
-        {game.title}
-      </div>
-      {hovered && (
-        <div className="px-3 py-0.5 bg-indigo-600 rounded-full text-[11px] font-semibold text-white">
-          Play Now
-        </div>
-      )}
-    </div>
+      </span>
+      <span className="relative flex flex-col gap-1">
+        <span className="text-[15px] font-black tracking-tight text-white">{game.title}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: accent.from }}>
+          {accent.tagline}
+        </span>
+        <span className="line-clamp-2 text-[12px] leading-snug text-slate-500">{game.description}</span>
+      </span>
+      <span className="relative mt-auto inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-[0.16em] text-slate-400 transition-colors group-hover:text-white">
+        Play <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+      </span>
+    </button>
   );
 };
 
 const GameMenu = () => {
-  const navigate = useNavigate();
   const { backgroundMusic, isMuted } = useAudio();
-  const { chips } = useChips();
+  const chips = useChips((s) => s.chips);
+  const onlineCount = usePresence();
   const { games } = useMinigames();
 
   const otherGames = games.filter(g => g.isAvailable && g.id !== "chess");
+  const comingSoon = games.filter(g => !g.isAvailable);
 
   useEffect(() => {
     if (backgroundMusic && !isMuted) {
@@ -115,89 +199,87 @@ const GameMenu = () => {
     }
   }, [isMuted, backgroundMusic]);
 
+  const stats = [
+    { label: "Games", value: String(games.filter((g) => g.isAvailable).length) },
+    { label: "Your chips", value: chips.toLocaleString() },
+    { label: "Online now", value: onlineCount === null ? "—" : String(onlineCount) },
+  ];
+
   return (
-    <div className="flex flex-col min-h-screen bg-gray-950 text-white">
+    <div className="hub-backdrop flex h-full flex-col overflow-y-auto text-white">
       <GameHeader />
 
-      <main className="flex-1 flex flex-col items-center py-10 px-4 gap-8">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Gamepad2 className="h-6 w-6 text-indigo-400" />
-            <h2 className="text-2xl font-bold text-white tracking-wide">
-              Minigame hub
-            </h2>
-            <Gamepad2 className="h-6 w-6 text-indigo-400" />
-          </div>
-          <p className="text-sm text-gray-500">
-            Hemen tıkla oynamaya başla!
-          </p>
-
-          <div className="flex items-center justify-center mt-4">
-            <div style={{
-              display: "flex", alignItems: "center", gap: 14,
-              background: "linear-gradient(135deg,#0f172a,#111827)",
-              border: "1px solid rgba(234,179,8,0.25)",
-              borderRadius: 20, padding: "10px 22px",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                {MENU_CHIPS.map((c, i) => (
-                  <div key={c.value} style={{
-                    width: 28, height: 28, borderRadius: "50%",
-                    background: `radial-gradient(ellipse at 35% 30%, ${c.light}, ${c.bg} 55%, ${c.dark})`,
-                    boxShadow: `0 3px 8px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.25), inset 0 0 0 5px ${c.bg}, inset 0 0 0 6px rgba(0,0,0,0.15)`,
-                    marginLeft: i === 0 ? 0 : -10,
-                    zIndex: 3 - i,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <span style={{ fontSize: 8, fontWeight: 900, color: c.text, userSelect: "none" }}>
-                      {c.value >= 10000 ? "10K" : c.value >= 1000 ? "1K" : "100"}
-                    </span>
-                  </div>
-                ))}
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:py-10">
+        <section className="hub-rise flex flex-col items-center gap-4 text-center">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.32em] text-amber-300/80">
+            Hemen tıkla, oynamaya başla!
+          </span>
+          <h1 className="m-0 text-4xl font-black tracking-tight text-white sm:text-6xl">
+            Pick a game.
+            <span className="block bg-gradient-to-r from-indigo-300 via-violet-300 to-amber-200 bg-clip-text text-transparent">
+              Lose track of time.
+            </span>
+          </h1>
+          <div className="mt-1 flex flex-wrap justify-center gap-2">
+            {stats.map((s) => (
+              <div
+                key={s.label}
+                className="flex min-w-[104px] flex-col items-center rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 backdrop-blur"
+              >
+                <span className="text-xl font-black tabular-nums text-white">{s.value}</span>
+                <span className="text-[9px] font-extrabold uppercase tracking-[0.2em] text-slate-500">
+                  {s.label}
+                </span>
               </div>
-              <span style={{ fontSize: 22, fontWeight: 900, color: "#facc15", letterSpacing: "-0.02em", lineHeight: 1 }}>
-                {chips.toLocaleString()}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-                chips
-              </span>
-            </div>
+            ))}
           </div>
-        </div>
+        </section>
 
-        <div className="w-full max-w-2xl mx-auto px-4">
-          <HeroChessCard />
-        </div>
+        <HeroChessCard />
 
         {otherGames.length > 0 && (
-          <div className="w-full max-w-2xl mx-auto px-4">
-            <p className="text-xs text-gray-600 uppercase tracking-widest font-semibold mb-4 text-center">More Games</p>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {otherGames.map(game => (
-                <SmallGameCard key={game.id} game={game} />
+          <section className="flex flex-col gap-4">
+            <div className="flex items-end justify-between">
+              <div>
+                <h3 className="m-0 text-lg font-black tracking-tight text-white">More games</h3>
+                <p className="m-0 text-xs text-slate-500">Quick hits for when chess gets too serious.</p>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600">
+                {otherGames.length} ready
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {otherGames.map((game, i) => (
+                <GameCard key={game.id} game={game} index={i} />
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        <button
-          onClick={() => navigate('/')}
-          className="mt-4 px-5 py-2 text-sm font-semibold rounded-lg border border-gray-700 bg-gray-900 text-gray-300 hover:border-indigo-500 hover:text-white transition-all"
-        >
-          More games coming soon!
-        </button>
+        {comingSoon.length > 0 && (
+          <section className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.015] px-4 py-5 text-center">
+            <span className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-slate-500">
+              In the oven
+            </span>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {comingSoon.map((g) => (
+                <span
+                  key={g.id}
+                  className="flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-[11px] font-semibold text-slate-500"
+                >
+                  <span className="grayscale">{g.icon}</span>
+                  {g.title}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
-      <footer className="py-4 text-center border-t border-gray-800">
-        <p className="text-xs text-gray-600">© {new Date().getFullYear()} Minigame Collection</p>
-        <div className="text-[11px] text-gray-700 flex justify-center gap-2 mt-1">
-          <span>Fun Games</span>
-          <span>•</span>
-          <span>Play Anytime</span>
-          <span>•</span>
-          <span>Quick Challenges</span>
-        </div>
+      <footer className="border-t border-white/[0.05] py-4 text-center">
+        <p className="m-0 text-[11px] text-slate-600">
+          © {new Date().getFullYear()} Minigame Hub · Fun games · Play anytime · Quick challenges
+        </p>
       </footer>
     </div>
   );

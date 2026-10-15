@@ -21,23 +21,21 @@ const MinigamePage = () => {
   }, [backgroundMusic]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-gray-950 text-white">
-      <GameHeader
-        title={game?.title || "Game"}
-        showHomeButton={true}
-      />
-
-      <main className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        {game && game.isAvailable ? (
-          <GameArea game={game} />
-        ) : (
-          <PlaceholderGame />
-        )}
+    <div className="hub-backdrop flex h-screen flex-col overflow-hidden text-white">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        <GameHeader
+          title={game?.title || "Game"}
+          icon={game?.icon}
+          showHomeButton={true}
+        />
+        <div className="flex flex-1 flex-col items-center justify-start p-2 sm:p-3">
+          {game && game.isAvailable ? (
+            <GameArea game={game} />
+          ) : (
+            <PlaceholderGame />
+          )}
+        </div>
       </main>
-
-      <footer className="py-3 text-center border-t border-gray-800">
-        <p className="text-xs text-gray-600">© {new Date().getFullYear()} Minigame Collection</p>
-      </footer>
     </div>
   );
 };

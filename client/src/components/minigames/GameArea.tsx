@@ -181,18 +181,21 @@ const GameArea = ({ game }: GameAreaProps) => {
   };
   
   const isChess = game.id === "chess";
+  const isBlackjack = game.id === "blackjack";
 
   return (
     <Card className={cn(
-      "w-full transition-all duration-500 relative border-2",
+      "relative w-full rounded-2xl border border-white/[0.08] bg-[#060912]/90 shadow-[0_30px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-500",
       isChess
-        ? "mx-auto flex min-h-[min(720px,calc(100dvh-8rem))] max-w-5xl flex-col overflow-visible p-0 h-auto"
-        : "h-[50vh] md:h-[65vh] overflow-hidden",
-      isDedicatedGame && !isChess
+        ? "mx-auto flex min-h-[min(720px,calc(100dvh-5.5rem))] max-w-5xl flex-col overflow-hidden p-0 h-auto"
+        : isBlackjack
+          ? "mx-auto flex h-[calc(100dvh-5.5rem)] min-h-[560px] max-w-6xl flex-col overflow-hidden p-0"
+          : "h-[50vh] md:h-[65vh] overflow-hidden",
+      isDedicatedGame && !isChess && !isBlackjack
         ? "flex flex-col p-0"
-        : isDedicatedGame && isChess
-          ? "flex flex-col p-0"
-          : "flex items-center justify-center",
+        : !isDedicatedGame
+          ? "flex items-center justify-center"
+          : "",
       isLoading ? "opacity-50" : "opacity-100",
       isDedicatedGame ? "" : (gameStarted ? "border-primary" : "border-muted")
     )}>

@@ -3,6 +3,43 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --background: 228 45% 4%;
+    --foreground: 210 40% 96%;
+    --card: 226 40% 7%;
+    --card-foreground: 210 40% 96%;
+    --popover: 226 40% 8%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 42 72% 65%;
+    --primary-foreground: 30 60% 8%;
+    --secondary: 222 30% 15%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 222 25% 14%;
+    --muted-foreground: 215 18% 62%;
+    --accent: 252 80% 70%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 26% 17%;
+    --input: 222 26% 17%;
+    --ring: 42 72% 65%;
+    --radius: 0.75rem;
+    --chart-1: 42 72% 65%;
+    --chart-2: 252 80% 70%;
+    --chart-3: 160 60% 50%;
+    --chart-4: 200 80% 60%;
+    --chart-5: 340 75% 60%;
+    --sidebar-background: 226 40% 7%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 42 72% 65%;
+    --sidebar-primary-foreground: 30 60% 8%;
+    --sidebar-accent: 222 30% 15%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 222 26% 17%;
+    --sidebar-ring: 42 72% 65%;
+  }
+
   * {
     @apply border-border;
   }
@@ -14,6 +51,10 @@
     overflow-x: hidden;
     width: 100vw;
     height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(231, 192, 99, 0.35);
   }
 }
 
@@ -47,4 +88,90 @@ canvas {
 /* Custom gradient text for use with Tailwind */
 .gradient-text {
   @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+}
+
+/* ── Hub backdrop ────────────────────────────────────────────────────────── */
+
+.hub-backdrop {
+  position: relative;
+  isolation: isolate;
+  background: #04060d;
+}
+
+.hub-backdrop::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 32% at 18% 12%, rgba(99, 102, 241, 0.2), transparent 70%),
+    radial-gradient(34% 30% at 85% 8%, rgba(231, 192, 99, 0.14), transparent 70%),
+    radial-gradient(40% 36% at 70% 92%, rgba(20, 184, 166, 0.12), transparent 70%);
+  animation: hub-drift 26s ease-in-out infinite alternate;
+}
+
+.hub-backdrop::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(80% 70% at 50% 30%, #000, transparent 85%);
+  -webkit-mask-image: radial-gradient(80% 70% at 50% 30%, #000, transparent 85%);
+}
+
+.hub-shine {
+  position: relative;
+  overflow: hidden;
+}
+.hub-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.08) 48%, transparent 60%);
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  transition: background-position 0.9s ease;
+}
+.hub-shine:hover::after {
+  background-position: -30% 0;
+}
+
+.hub-rise {
+  animation: hub-rise 0.6s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  animation-delay: var(--hub-delay, 0s);
+}
+
+.hub-float {
+  animation: hub-float 6s ease-in-out infinite;
+  animation-delay: var(--hub-delay, 0s);
+}
+
+@keyframes hub-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.06); }
+}
+
+@keyframes hub-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes hub-float {
+  0%, 100% { transform: translateY(0) rotate(var(--hub-tilt, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--hub-tilt, 0deg)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-backdrop::before,
+  .hub-rise,
+  .hub-float {
+    animation: none !important;
+  }
 }
