@@ -2733,6 +2733,23 @@ export default function ChessGame({
     );
   }, [whiteAugments, blackAugments]);
 
+  // Local 2P debug: F3 +1000 white gold, F4 +1000 black gold
+  useEffect(() => {
+    if (mpConfig || botMode || tutorialMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F3" && e.key !== "F4") return;
+      if (phase !== "playing") return;
+      e.preventDefault();
+      if (e.key === "F3") {
+        setGame((g) => ({ ...g, goldWhite: g.goldWhite + 1000 }));
+      } else {
+        setGame((g) => ({ ...g, goldBlack: g.goldBlack + 1000 }));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mpConfig, botMode, tutorialMode, phase]);
+
   // ── Pre-game picks ───────────────────────────────────────────────────────
 
   const handleStart = () => {
