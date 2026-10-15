@@ -85,3 +85,5 @@ export function getEventFlavor(id: string, lang: Language): string | undefined {
   const flavor = EVENTS[lang][id]?.flavor ?? poolEvent(id)?.flavor;
   return flavor;
 }
+
+export { getAugmentPun } from "./augmentPuns";

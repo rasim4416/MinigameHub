@@ -1,13 +1,36 @@
 import type { Color, PieceType } from "../engine";
 import type { Augment } from "../augments";
 import type { AugmentTrigger } from "../chessTypes";
+import { useChessLanguage } from "../ChessLanguageContext";
 import { AugmentCard } from "./AugmentCard";
+import "./chess-ui.css";
 
-const MILESTONE_LABEL: Partial<Record<PieceType, string>> = {
-  N: "First Knight Captured!",
-  B: "First Bishop Captured!",
-  R: "First Rook Captured!",
+const MILESTONE_LABEL: Partial<Record<PieceType, [string, string]>> = {
+  N: ["First knight down — neigh-ce!", "İlk at düştü — eyvah!"],
+  B: ["First bishop down — holy moly!", "İlk fil düştü — vay be!"],
+  R: ["First rook down — rook 'n' roll!", "İlk kale düştü — kale gitti!"],
 };
+
+const TAGLINES_EN = [
+  "Pick your poison.",
+  "Choose wisely. Or chaotically.",
+  "One card. Infinite smugness.",
+  "Power up. Trash-talk optional.",
+  "Fortune favours the bold move.",
+];
+const TAGLINES_TR = [
+  "Zehrini seç.",
+  "Akıllıca seç. Ya da kaotikçe.",
+  "Bir kart, sonsuz özgüven.",
+  "Güçlen. Laf sokmak serbest.",
+  "Talih cesur hamleden yanadır.",
+];
+
+function pickTagline(offered: Augment[], tr: boolean): string {
+  const list = tr ? TAGLINES_TR : TAGLINES_EN;
+  const seed = offered.reduce((h, a) => h + a.id.length * 7 + a.id.charCodeAt(0), 0);
+  return list[seed % list.length];
+}
 
 export function AugmentSelector({
   playerColor,
@@ -24,143 +47,57 @@ export function AugmentSelector({
   pickMode?: "normal" | "blind-rage";
   enabledIds?: Set<string>;
 }) {
+  const tr = useChessLanguage() === "türkçe";
   const isWhite = playerColor === "white";
-  const badgeLabel =
+
+  const badge: { label: string; tone: string } | null =
     pickMode === "blind-rage"
-      ? "😤 Blind Rage — bonus pick!"
+      ? { label: tr ? "😤 Kör Öfke — bonus seçim!" : "😤 Blind Rage — horse-rible for them!", tone: "rage" }
       : trigger?.reason === "event"
-        ? "✨ Event Bonus!"
+        ? { label: tr ? "✨ Etkinlik bonusu!" : "✨ Event bonus — eventful!", tone: "event" }
         : trigger?.reason === "bloodlust"
-          ? "🩸 Bloodlust Bonus!"
-        : trigger?.reason === "promotion"
-          ? "♕ Promotion bonus!"
-          : trigger?.reason === "queen-capture"
-            ? "👑 Queen captured — bonus pick!"
-            : trigger?.milestoneType
-              ? `✦ ${MILESTONE_LABEL[trigger.milestoneType!]}`
-              : null;
+          ? { label: tr ? "🩸 Kan Hırsı bonusu!" : "🩸 Bloodlust — out for blood!", tone: "blood" }
+          : trigger?.reason === "promotion"
+            ? { label: tr ? "♕ Terfi bonusu!" : "♕ Promotion — moving on up!", tone: "event" }
+            : trigger?.reason === "queen-capture"
+              ? { label: tr ? "👑 Vezir düştü — bonus!" : "👑 Queen down — long live the loot!", tone: "gold" }
+              : trigger?.milestoneType && MILESTONE_LABEL[trigger.milestoneType]
+                ? { label: `✦ ${MILESTONE_LABEL[trigger.milestoneType]![tr ? 1 : 0]}`, tone: "event" }
+                : null;
+
   return (
     <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: pickMode === "blind-rage" ? 110 : 100,
-        background: "linear-gradient(160deg,#030712 0%,#080e1f 100%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
-        padding: "16px 12px",
-      }}
+      className={`augsel augsel--${isWhite ? "white" : "black"}`}
+      style={{ zIndex: pickMode === "blind-rage" ? 110 : 100 }}
     >
-      <div style={{ textAlign: "center" }}>
-        {badgeLabel && (
-          <div
-            style={{
-              display: "inline-block",
-              marginBottom: 10,
-              padding: "4px 14px",
-              borderRadius: 20,
-              background: "linear-gradient(135deg,#1c1f2e,#2d2f45)",
-              border: `1px solid ${
-                pickMode === "blind-rage"
-                  ? "#ea580c"
-                  : trigger?.reason === "bloodlust"
-                    ? "#dc2626"
-                    : "#4f46e5"
-              }`,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              color:
-                pickMode === "blind-rage"
-                  ? "#fdba74"
-                  : trigger?.reason === "bloodlust"
-                    ? "#fca5a5"
-                    : "#818cf8",
-              textTransform: "uppercase",
-            }}
-          >
-            {badgeLabel}
-          </div>
-        )}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            marginTop: badgeLabel ? 0 : 4,
-          }}
-        >
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              flexShrink: 0,
-              background: isWhite ? "#ffffff" : "#1a0f00",
-              border: `2px solid ${isWhite ? "#94a3b8" : "#6b7280"}`,
-              boxShadow: `0 0 10px ${isWhite ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}`,
-            }}
-          />
-          <h2
-            style={{
-              fontSize: 20,
-              fontWeight: 900,
-              margin: 0,
-              letterSpacing: "0.08em",
-              color: "#f1f5f9",
-            }}
-          >
-            {playerColor.toUpperCase()}
+      <div className="augsel__floor" aria-hidden />
+      <div className="augsel__head">
+        {badge && <div className={`augsel__badge augsel__badge--${badge.tone}`}>{badge.label}</div>}
+        <div className="augsel__player">
+          <span className={`augsel__king augsel__king--${isWhite ? "white" : "black"}`} aria-hidden>
+            {isWhite ? "♔" : "♚"}
+          </span>
+          <h2 className="augsel__title">
+            {isWhite ? (tr ? "Beyaz" : "White") : tr ? "Siyah" : "Black"}
+            <span className="augsel__title-sub">{tr ? "augmentini seç" : "picks an augment"}</span>
           </h2>
         </div>
-        {pickMode === "blind-rage" && (
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: "#94a3b8",
-              margin: "8px 0 0",
-              maxWidth: 320,
-              lineHeight: 1.45,
-            }}
-          >
-            Knight captured before both sides have finished four moves each
-            (four full rounds).
-          </p>
-        )}
-        {!badgeLabel && pickMode !== "blind-rage" && (
-          <p
-            style={{
-              fontSize: 10,
-              letterSpacing: "0.2em",
-              fontWeight: 700,
-              color: "#475569",
-              margin: "6px 0 0",
-              textTransform: "uppercase",
-            }}
-          >
-            Choose your augment
-          </p>
-        )}
+        <p className="augsel__tagline">
+          {pickMode === "blind-rage"
+            ? tr
+              ? "Dört tur dolmadan at aldın. Öfken ödüllendirildi."
+              : "Knight snatched before round four. Rage, rewarded."
+            : pickTagline(offered, tr)}
+        </p>
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          justifyContent: "center",
-        }}
-      >
-        {offered.map((aug) => {
-          const enabled =
-            !enabledIds || enabledIds.has(aug.id);
+
+      <div className="augsel__hand">
+        {offered.map((aug, i) => {
+          const enabled = !enabledIds || enabledIds.has(aug.id);
           return (
             <AugmentCard
               key={aug.id}
+              index={i}
               augment={aug}
               disabled={!enabled}
               highlighted={enabled && !!enabledIds}
@@ -170,8 +107,9 @@ export function AugmentSelector({
           );
         })}
       </div>
-      <p style={{ fontSize: 10, color: "#334155", margin: 0 }}>
-        Click a card to select it
+
+      <p className="augsel__hint">
+        {tr ? "Seçmek için karta tıkla · kurallar için ?" : "Click a card to claim it · tap ? for the fine print"}
       </p>
     </div>
   );
