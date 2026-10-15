@@ -63,13 +63,13 @@ export function isBlackjack(cards: Card[]): boolean {
   return cards.length === 2 && handTotal(cards) === 21;
 }
 
-/** Hand label shown on the felt: "17", "A/7" for soft hands, or "BUST". */
-export function handLabel(cards: Card[]): string {
+/** Hand label shown on the felt: "17", "7/17" for live soft hands, or "BUST". */
+export function handLabel(cards: Card[], final = false): string {
   if (cards.length === 0) return "";
   const { total, soft } = handValue(cards);
   if (total > 21) return "BUST";
   if (isBlackjack(cards)) return "BLACKJACK";
-  return soft ? `${total - 10}/${total}` : String(total);
+  return soft && !final ? `${total - 10}/${total}` : String(total);
 }
 
 export function createShoe(decks: number = SHOE_DECKS): Card[] {

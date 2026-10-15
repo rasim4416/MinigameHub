@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   getAugmentDescription,
   getAugmentName,
+  getAugmentPun,
 } from "../../../../locales/chess";
 import { useChessLanguage } from "../ChessLanguageContext";
 import type { Augment } from "../augments";
 import { RARITY_META } from "../augments";
+import "./chess-ui.css";
 
 export function AugmentCard({
   augment,
@@ -13,127 +15,90 @@ export function AugmentCard({
   disabled = false,
   highlighted = false,
   tutorialId,
+  index = 0,
 }: {
   augment: Augment;
   onSelect: () => void;
   disabled?: boolean;
   highlighted?: boolean;
   tutorialId?: string;
+  /** Position in the hand, used to stagger the deal-in animation. */
+  index?: number;
 }) {
   const lang = useChessLanguage();
-  const [hov, setHov] = useState(false);
+  const tr = lang === "türkçe";
+  const [flipped, setFlipped] = useState(false);
   const m = RARITY_META[augment.rarity];
   const name = getAugmentName(augment.id, lang);
+  const pun = getAugmentPun(augment.id, lang);
   const description = getAugmentDescription(augment.id, lang);
+
+  const vars = {
+    "--aug-border": m.border,
+    "--aug-glow": m.glow,
+    "--aug-text": m.text,
+    "--aug-badge": m.badge,
+    "--aug-delay": `${index * 0.09}s`,
+  } as CSSProperties;
+
   return (
     <div
       data-tutorial-id={tutorialId}
       role="button"
       tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      aria-label={`${name} — ${m.label}. ${description}`}
       onClick={disabled ? undefined : onSelect}
       onKeyDown={(event) => {
-        if (!disabled && (event.key === "Enter" || event.key === " ")) {
+        if (disabled) return;
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect();
         }
+        if (event.key === "?" || event.key === "i") setFlipped((f) => !f);
       }}
-      onMouseEnter={() => !disabled && setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        width: 155,
-        padding: "18px 14px 14px",
-        borderRadius: 14,
-        position: "relative",
-        border: `2px solid ${
-          highlighted
-            ? "#fbbf24"
-            : hov && !disabled
-              ? m.border
-              : "rgba(255,255,255,0.07)"
-        }`,
-        background: hov && !disabled ? "#0b1120" : "#080e1a",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.4 : 1,
-        pointerEvents: disabled ? "none" : "auto",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 10,
-        boxShadow: highlighted
-          ? "0 0 20px rgba(251,191,36,0.45)"
-          : hov
-            ? `0 0 22px ${m.glow},0 4px 16px rgba(0,0,0,0.5)`
-            : "0 2px 8px rgba(0,0,0,0.4)",
-        transform: hov
-          ? "translateY(-5px) scale(1.02)"
-          : "translateY(0) scale(1)",
-        transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-        userSelect: "none",
-      }}
+      className={`aug aug--${augment.rarity}${flipped ? " aug--flipped" : ""}${
+        disabled ? " aug--disabled" : ""
+      }${highlighted ? " aug--highlighted" : ""}`}
+      style={vars}
     >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 14,
-          right: 14,
-          height: 3,
-          borderRadius: "0 0 3px 3px",
-          background:
-            m.shimmer ??
-            `linear-gradient(90deg,transparent,${m.border},transparent)`,
-          opacity: hov ? 1 : augment.rarity === "legendary" ? 0.8 : 0.4,
-          transition: "opacity 0.2s",
-        }}
-      />
-      <span
-        style={{
-          fontSize: 32,
-          lineHeight: 1,
-          filter: hov ? "drop-shadow(0 0 8px rgba(255,255,255,0.3))" : "none",
-          transition: "filter 0.2s",
+      <div className="aug__flipper">
+        <div className="aug__face aug__face--front">
+          <span className="aug__foil" aria-hidden />
+          <div className="aug__ribbon">{m.label}</div>
+          <div className="aug__medallion">
+            <span className="aug__rays" aria-hidden />
+            <span className="aug__icon">{augment.icon}</span>
+          </div>
+          <h3 className="aug__name">{name}</h3>
+          <span className="aug__divider" aria-hidden>
+            ◆
+          </span>
+          <p className="aug__pun">{pun ?? description}</p>
+        </div>
+        <div className="aug__face aug__face--back">
+          <div className="aug__ribbon">{tr ? "Kurallar" : "Fine print"}</div>
+          <span className="aug__back-icon" aria-hidden>
+            {augment.icon}
+          </span>
+          <p className="aug__rules">{description}</p>
+          <span className="aug__back-hint">{tr ? "Seçmek için tıkla" : "Click to claim"}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="aug__info"
+        aria-label={flipped ? (tr ? "Kartı çevir" : "Show front") : tr ? "Kuralları göster" : "Show rules"}
+        aria-pressed={flipped}
+        tabIndex={disabled ? -1 : 0}
+        onKeyDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setFlipped((f) => !f);
         }}
       >
-        {augment.icon}
-      </span>
-      <div style={{ textAlign: "center" }}>
-        <p
-          style={{
-            fontSize: 13,
-            fontWeight: 800,
-            color: "#f1f5f9",
-            margin: "0 0 5px",
-            letterSpacing: "0.01em",
-          }}
-        >
-          {name}
-        </p>
-        <p
-          style={{
-            fontSize: 10.5,
-            color: "#64748b",
-            margin: 0,
-            lineHeight: 1.45,
-          }}
-        >
-          {description}
-        </p>
-      </div>
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          padding: "2px 10px",
-          borderRadius: 20,
-          background: m.badge,
-          color: m.text,
-          border: `1px solid ${m.border}`,
-        }}
-      >
-        {m.label}
-      </div>
+        {flipped ? "↺" : "?"}
+      </button>
     </div>
   );
 }
@@ -142,9 +107,11 @@ export function AugmentCard({
 export function AugmentCardPick({
   aug,
   onPick,
+  index,
 }: {
   aug: Augment;
   onPick: () => void;
+  index?: number;
 }) {
-  return <AugmentCard augment={aug} onSelect={onPick} />;
+  return <AugmentCard augment={aug} onSelect={onPick} index={index} />;
 }

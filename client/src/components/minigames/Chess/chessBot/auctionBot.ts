@@ -8,30 +8,8 @@ import {
   reserveFraction,
 } from "./constants";
 import type { PositionAssessment } from "./assessPosition";
-import {
-  getBoardCols,
-  getBoardRows,
-  getDerivedBoard,
-  type ChessState,
-} from "../engine";
-
-function isPermaFrostSquare(state: ChessState, r: number, c: number): boolean {
-  return (
-    state.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false
-  );
-}
-
-function isOriginalPawnSpawnSquare(
-  r: number,
-  c: number,
-  color: "white" | "black",
-  boardSize: number,
-): boolean {
-  const off = (boardSize - 8) / 2;
-  const pawnRow = color === "white" ? 6 + off : 1 + off;
-  if (r !== pawnRow) return false;
-  return c >= off && c < off + 8;
-}
+import { getBoardRows, type ChessState } from "../engine";
+import { listAuctionPlacements, minNextBid } from "../auctionRules";
 
 export function computeAuctionBid(input: {
   auction: AuctionState;
@@ -43,10 +21,8 @@ export function computeAuctionBid(input: {
   // Already leading — wait until white outbids before raising again.
   if (auction.highBidder === "black") return null;
 
-  const minNext = Math.max(
-    auction.minBid,
-    auction.highBid > 0 ? auction.highBid + 1 : auction.minBid,
-  );
+  if (auction.passed?.includes("black")) return null;
+  const minNext = minNextBid(auction);
   const reserve = Math.floor(goldBlack * reserveFraction(position.scoreCp));
   const budget = goldBlack - reserve;
   if (minNext > budget) return null;
@@ -77,25 +53,10 @@ export function pickAuctionPlacement(
   game: ChessState,
   pieceType: AuctionPieceType,
   color: "white" | "black" = "black",
+  isBlocked?: (r: number, c: number) => boolean,
 ): [number, number] | null {
   const rows = getBoardRows(game);
-  const cols = getBoardCols(game);
-  const board = getDerivedBoard(game);
-  const candidates: [number, number][] = [];
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (board[r][c]) continue;
-      if (isPermaFrostSquare(game, r, c)) continue;
-      if (pieceType === "P") {
-        if (isOriginalPawnSpawnSquare(r, c, color, rows)) {
-          candidates.push([r, c]);
-        }
-      } else {
-        candidates.push([r, c]);
-      }
-    }
-  }
+  const candidates = listAuctionPlacements(game, pieceType, color, isBlocked);
   if (candidates.length === 0) return null;
 
   const off = (rows - 8) / 2;

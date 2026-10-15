@@ -62,13 +62,15 @@ function Hand({
               card={card}
               faceDown={holeHidden && i === 1}
               dealDelay={i < 2 ? i * 0.18 : 0}
+              index={i}
+              count={cards.length}
             />
           ))
         )}
       </div>
       <span className={`bj-hand__badge${badgeTone ? ` bj-hand__badge--${badgeTone}` : ""}`}>
-        <span>{label}</span>
-        {badge || "—"}
+        <span className="bj-hand__label">{label}</span>
+        <span className="bj-hand__total">{badge || "—"}</span>
       </span>
     </div>
   );
@@ -211,7 +213,6 @@ export default function BlackjackGame() {
     const [drawn, rest] = drawCards(shoe, 1);
     const hand = [...playerHand, ...drawn];
     setWager(doubled);
-    setLastWager(doubled);
     setPlayerHand(hand);
     setShoe(rest);
     setPhase("dealerTurn");
@@ -254,6 +255,7 @@ export default function BlackjackGame() {
   }, [phase, hit, stand, doubleDown, deal, nextHand]);
 
   const displayedBet = phase === "betting" ? bet : wager;
+  const handsFinal = phase === "result";
   const piles = useMemo(() => decomposeBet(displayedBet), [displayedBet]);
   const playerTotal = handTotal(playerHand);
   const dealerCardsShown = holeHidden ? dealerHand.slice(0, 1) : dealerHand;
@@ -322,20 +324,35 @@ export default function BlackjackGame() {
         </div>
 
         <div className="bj__felt">
-          <div className="bj__arc" aria-hidden />
-          <div className="bj__rules" aria-hidden>
-            <span className="bj__rules-main">BLACKJACK PAYS 3 TO 2</span>
-            <span className="bj__rules-sub">
-              DEALER MUST DRAW TO 16 AND HIT SOFT 17
-            </span>
-          </div>
+          <svg className="bj__print" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet" aria-hidden>
+            <defs>
+              <path id="bj-arc-main" d="M 150 150 Q 500 330 850 150" />
+              <path id="bj-arc-sub" d="M 205 190 Q 500 350 795 190" />
+            </defs>
+            <path d="M 110 120 Q 500 345 890 120" className="bj__print-line" />
+            <path d="M 210 215 Q 500 375 790 215" className="bj__print-line bj__print-line--thin" />
+            <text className="bj__print-main">
+              <textPath href="#bj-arc-main" startOffset="50%" textAnchor="middle">
+                BLACKJACK PAYS 3 TO 2
+              </textPath>
+            </text>
+            <text className="bj__print-sub">
+              <textPath href="#bj-arc-sub" startOffset="50%" textAnchor="middle">
+                DEALER MUST DRAW TO 16 · HITS SOFT 17
+              </textPath>
+            </text>
+          </svg>
 
           <div className="bj__zone bj__zone--dealer">
             <Hand
               label="Dealer"
               cards={dealerHand}
               holeHidden={holeHidden}
-              badge={handLabel(dealerCardsShown)}
+              badge={
+                holeHidden && dealerHand.length > 1
+                  ? `${handLabel(dealerCardsShown)} + ?`
+                  : handLabel(dealerCardsShown, handsFinal)
+              }
               badgeTone={
                 !holeHidden && isBust(dealerHand)
                   ? "bust"
@@ -350,7 +367,7 @@ export default function BlackjackGame() {
             <Hand
               label="You"
               cards={playerHand}
-              badge={handLabel(playerHand)}
+              badge={handLabel(playerHand, handsFinal)}
               badgeTone={playerBadgeTone}
             />
             <div className={`bj-spot${displayedBet > 0 ? " bj-spot--active" : ""}`}>
@@ -368,7 +385,7 @@ export default function BlackjackGame() {
           </div>
 
           {phase === "result" && settlement && (
-            <div className="bj__result" onClick={nextHand} role="presentation">
+            <div className="bj__result" onClick={nextHand} role="status">
               <div
                 className="bj-result-card"
                 style={
@@ -399,7 +416,7 @@ export default function BlackjackGame() {
                 <span className="bj-result-card__hint">
                   {playerTotal > 21
                     ? "You went over 21"
-                    : `You ${handLabel(playerHand)} · Dealer ${handLabel(dealerHand)}`}
+                    : `You ${handLabel(playerHand, true)} · Dealer ${handLabel(dealerHand, true)}`}
                 </span>
               </div>
             </div>

@@ -1,0 +1,205 @@
+/* Chess pre-game "versus" screen. */
+
+.cstart {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3.4vh, 30px);
+  padding: 24px 16px 32px;
+  overflow: hidden auto;
+  color: #f8fafc;
+  background: linear-gradient(180deg, #050814 0%, #0a0f22 50%, #04060d 100%);
+  animation: augsel-in 0.35s ease-out both;
+}
+
+.cstart__board {
+  position: absolute;
+  left: 50%;
+  bottom: -30%;
+  width: 150%;
+  height: 80%;
+  pointer-events: none;
+  background-image: conic-gradient(rgba(240, 217, 181, 0.08) 25%, rgba(181, 136, 99, 0.05) 0 50%, rgba(240, 217, 181, 0.08) 0 75%, rgba(181, 136, 99, 0.05) 0);
+  background-size: 96px 96px;
+  transform: translateX(-50%) perspective(500px) rotateX(58deg);
+  transform-origin: 50% 0;
+  mask-image: linear-gradient(180deg, transparent, #000 30%, transparent 92%);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 30%, transparent 92%);
+}
+
+.cstart__glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 28% 50%, rgba(241, 245, 249, 0.09), transparent 70%),
+    radial-gradient(40% 35% at 72% 50%, rgba(139, 92, 246, 0.14), transparent 70%),
+    radial-gradient(50% 30% at 50% 10%, rgba(231, 192, 99, 0.14), transparent 70%);
+}
+
+.cstart__brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.cstart__kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: #e7c063;
+}
+
+.cstart__title {
+  margin: 0;
+  font-size: clamp(30px, 5.4vw, 52px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+}
+.cstart__title span {
+  background: linear-gradient(180deg, #fdf3d0, #e7c063 55%, #a97c25);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.cstart__subtitle {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.cstart__versus {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 4vw, 40px);
+}
+
+.cstart__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: clamp(120px, 18vw, 170px);
+  padding: 18px 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.6), rgba(8, 12, 24, 0.85));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  animation: cstart-side-l 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+}
+.cstart__side--black { animation-name: cstart-side-r; border-color: rgba(167, 139, 250, 0.3); }
+.cstart__side--white { border-color: rgba(241, 245, 249, 0.28); }
+
+.cstart__piece {
+  font-size: clamp(46px, 7vw, 66px);
+  line-height: 1;
+}
+.cstart__side--white .cstart__piece { color: #fff; text-shadow: 0 0 3px #000, 0 0 22px rgba(255, 255, 255, 0.45); }
+.cstart__side--black .cstart__piece { color: #1a0f00; text-shadow: 0 0 2px rgba(255, 255, 255, 0.8), 0 0 24px rgba(139, 92, 246, 0.8); }
+
+.cstart__name { font-size: 16px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.cstart__role { font-size: 9.5px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #64748b; }
+
+.cstart__vs {
+  font-size: clamp(22px, 3.6vw, 34px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  background: linear-gradient(180deg, #fde68a, #f59e0b 60%, #b45309);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 16px rgba(245, 158, 11, 0.5));
+  animation: cstart-vs 0.6s 0.25s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.cstart__features {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(520px, 100%);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 720px) {
+  .cstart__features { grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(720px, 100%); }
+}
+
+.cstart__feature {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(10, 15, 30, 0.7);
+}
+.cstart__feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  font-size: 15px;
+  background: rgba(231, 192, 99, 0.1);
+  border: 1px solid rgba(231, 192, 99, 0.25);
+}
+.cstart__feature-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.cstart__feature-text strong { font-size: 11.5px; font-weight: 800; color: #e2e8f0; }
+.cstart__feature-text span { font-size: 10px; color: #64748b; }
+
+.cstart__go {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(252, 211, 77, 0.7);
+  background: linear-gradient(180deg, #fde68a, #e7c063 45%, #a97c25);
+  color: #1a1204;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(231, 192, 99, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.14s ease;
+}
+.cstart__go:hover { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 14px 38px rgba(231, 192, 99, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
+.cstart__go:active { transform: translateY(1px); }
+.cstart__go:focus-visible { outline: 2px solid #f8fafc; outline-offset: 3px; }
+
+.cstart__key {
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  background: rgba(26, 18, 4, 0.18);
+}
+
+@keyframes cstart-side-l { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+@keyframes cstart-side-r { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+@keyframes cstart-vs { from { opacity: 0; transform: scale(2.2) rotate(-12deg); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cstart, .cstart * { animation: none !important; transition: none !important; }
+}

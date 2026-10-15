@@ -3,7 +3,6 @@ import {
   BOARD_THEMES,
   type BoardThemeId,
 } from "../boardThemes";
-import { chessShell } from "../chessTheme";
 
 export function BoardStage({
   boardPx,
@@ -33,36 +32,57 @@ export function BoardStage({
 
   return (
     <section
-      className="relative flex w-full flex-shrink-0 flex-col items-center justify-center px-4 py-3"
+      className="relative flex w-full flex-shrink-0 flex-col items-center justify-center px-3 pb-3 pt-2"
       style={{ minHeight: stageMinHeight }}
     >
-      {showEventBanner && (
-        <div className="pointer-events-none absolute left-0 right-0 top-2 z-[4] flex justify-center">
-          {eventBanner}
+      <div
+        className="mb-2.5 flex min-h-8 w-full flex-shrink-0 flex-wrap items-center justify-between gap-2"
+        style={{ maxWidth: Math.max(w + 16, 320) }}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {showEventBanner && eventBanner}
         </div>
-      )}
-
-      <div className="mb-3 flex flex-shrink-0 items-center gap-2">
-        <span className={chessShell.label}>Board</span>
-        <select
-          value={boardThemeId}
-          onChange={(e) => onThemeChange(e.target.value as BoardThemeId)}
-          className="cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-semibold text-slate-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        <div
+          className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-950/70 p-1"
+          role="radiogroup"
+          aria-label="Board theme"
         >
-          {(Object.keys(BOARD_THEMES) as BoardThemeId[]).map((id) => (
-            <option key={id} value={id}>
-              {BOARD_THEMES[id].label}
-            </option>
-          ))}
-        </select>
+          {(Object.keys(BOARD_THEMES) as BoardThemeId[]).map((id) => {
+            const { label, palette } = BOARD_THEMES[id];
+            const active = id === boardThemeId;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                title={label}
+                aria-label={`${label} board`}
+                onClick={() => onThemeChange(id)}
+                className={`grid h-5 w-5 grid-cols-2 overflow-hidden rounded-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                  active
+                    ? "scale-110 ring-2 ring-amber-300 ring-offset-1 ring-offset-slate-950"
+                    : "opacity-70 hover:scale-110 hover:opacity-100"
+                }`}
+              >
+                <span style={{ background: palette.light }} />
+                <span style={{ background: palette.dark }} />
+                <span style={{ background: palette.dark }} />
+                <span style={{ background: palette.light }} />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div
-        className="relative flex-shrink-0"
-        style={{ width: w, height: h }}
-      >
-        {children}
-        {overlays}
+      <div className="relative flex-shrink-0 rounded-[10px] bg-gradient-to-br from-[#6b4423] via-[#3d2412] to-[#24140a] p-[6px] shadow-[0_18px_50px_rgba(0,0,0,0.75),0_0_0_1px_rgba(231,192,99,0.35),inset_0_1px_0_rgba(255,255,255,0.12)]">
+        <div
+          className="relative flex-shrink-0 rounded-[3px] ring-1 ring-[#e7c063]/40"
+          style={{ width: w, height: h }}
+        >
+          {children}
+          {overlays}
+        </div>
       </div>
     </section>
   );
