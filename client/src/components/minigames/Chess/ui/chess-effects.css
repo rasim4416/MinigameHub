@@ -14,16 +14,6 @@
   animation: chess-trail .7s ease-out both;
 }
 
-.chess-effects__burst {
-  position: absolute;
-  width: 22%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border: 2px solid rgba(255, 218, 124, .9);
-  border-radius: 999px;
-  animation: chess-burst .6s cubic-bezier(.16, 1, .3, 1) both;
-}
-
 .chess-effects__freeze {
   position: absolute;
   width: calc(100% / var(--board-cols));
@@ -56,7 +46,6 @@
 }
 
 @keyframes chess-trail { from { opacity: 0; } 25% { opacity: 1; } to { opacity: 0; } }
-@keyframes chess-burst { from { opacity: 1; transform: translate(-50%, -50%) scale(.2); } to { opacity: 0; transform: translate(-50%, -50%) scale(2.8); } }
 @keyframes chess-freeze { 50% { opacity: .62; } }
 @keyframes chess-gain { from { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -22px); } }
 @keyframes chess-flash { from { opacity: 0; } 35% { opacity: 1; } to { opacity: 0; } }
