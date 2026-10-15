@@ -1,58 +1,88 @@
-import { useState } from "react";
-import { chessShell } from "../chessTheme";
+import { useEffect } from "react";
+import { useChessLanguage } from "../ChessLanguageContext";
+import "./chess-ui.css";
+import "./start-screen.css";
+
+const FEATURES: { icon: string; en: [string, string]; tr: [string, string] }[] = [
+  { icon: "🃏", en: ["Augments", "Pick a power before move one"], tr: ["Augmentler", "İlk hamleden önce güç seç"] },
+  { icon: "🪙", en: ["Gold & shop", "Captures pay. Spend wisely."], tr: ["Altın & dükkan", "Alımlar öder. Akıllı harca."] },
+  { icon: "⚡", en: ["Board events", "Fate rolls every few rounds"], tr: ["Tahta olayları", "Kader birkaç turda bir zar atar"] },
+  { icon: "🔨", en: ["Auctions", "Bid gold for mercenaries"], tr: ["Müzayede", "Paralı askerlere teklif ver"] },
+];
 
 export function StartScreen({
   onStart,
   subtitle,
+  botMode = false,
 }: {
   onStart: () => void;
   subtitle?: string;
+  botMode?: boolean;
 }) {
-  const [hov, setHov] = useState(false);
+  const tr = useChessLanguage() === "türkçe";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") onStart();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onStart]);
+
+  const whiteName = botMode ? (tr ? "Sen" : "You") : tr ? "Beyaz" : "White";
+  const blackName = botMode ? "Stockfish" : tr ? "Siyah" : "Black";
 
   return (
-    <div className={chessShell.overlay}>
-      <div className="mb-1 grid grid-cols-4 gap-px opacity-15">
-        {Array.from({ length: 16 }, (_, i) => (
-          <div
-            key={i}
-            className="h-2.5 w-2.5"
-            style={{
-              background:
-                (Math.floor(i / 4) + i) % 2 === 0 ? "#f0d9b5" : "#b58863",
-            }}
-          />
-        ))}
-      </div>
-      <span className="text-5xl drop-shadow-[0_4px_16px_rgba(99,102,241,0.4)]">
-        ♟️
-      </span>
-      <div className="text-center">
-        <h2 className="mb-1.5 text-[22px] font-black tracking-wide text-slate-100">
-          Chess Augmented
+    <div className="cstart">
+      <div className="cstart__board" aria-hidden />
+      <div className="cstart__glow" aria-hidden />
+
+      <div className="cstart__brand">
+        <span className="cstart__kicker">{tr ? "Satranç" : "Chess"} · Augmented</span>
+        <h2 className="cstart__title">
+          Chess <span>Augmented</span>
         </h2>
-        <p className="m-0 text-xs leading-relaxed text-slate-500">
-          {subtitle ?? (
-            <>
-              Classic chess · Each player picks an augment
-              <br />
-              before the game begins
-            </>
-          )}
+        <p className="cstart__subtitle">
+          {subtitle ?? (tr ? "Aynı tahta. Yeni kurallar. Sıfır merhamet." : "Same board. New rules. Zero chill.")}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onStart}
-        onMouseEnter={() => setHov(true)}
-        onMouseLeave={() => setHov(false)}
-        className={`rounded-xl px-11 py-2.5 text-sm font-extrabold uppercase tracking-widest text-white transition-all ${
-          hov
-            ? "-translate-y-0.5 bg-gradient-to-br from-indigo-700 to-indigo-500 shadow-[0_6px_28px_rgba(99,102,241,0.65)]"
-            : "bg-gradient-to-br from-indigo-600 to-indigo-400 shadow-[0_4px_18px_rgba(99,102,241,0.45)]"
-        }`}
-      >
-        Start Game
+
+      <div className="cstart__versus">
+        <div className="cstart__side cstart__side--white">
+          <span className="cstart__piece">♔</span>
+          <span className="cstart__name">{whiteName}</span>
+          <span className="cstart__role">{tr ? "İlk hamle" : "Moves first"}</span>
+        </div>
+        <span className="cstart__vs">VS</span>
+        <div className="cstart__side cstart__side--black">
+          <span className="cstart__piece">{botMode ? "🤖" : "♚"}</span>
+          <span className="cstart__name">{blackName}</span>
+          <span className="cstart__role">
+            {botMode ? (tr ? "Hiç uyumaz" : "Never sleeps") : tr ? "Rövanşa hazır" : "Plots revenge"}
+          </span>
+        </div>
+      </div>
+
+      <ul className="cstart__features">
+        {FEATURES.map((f) => {
+          const [title, body] = tr ? f.tr : f.en;
+          return (
+            <li key={f.icon} className="cstart__feature">
+              <span className="cstart__feature-icon" aria-hidden>
+                {f.icon}
+              </span>
+              <span className="cstart__feature-text">
+                <strong>{title}</strong>
+                <span>{body}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <button type="button" onClick={onStart} className="cstart__go">
+        {tr ? "Oyuna başla" : "Start game"}
+        <span className="cstart__key">ENTER</span>
       </button>
     </div>
   );
