@@ -199,7 +199,6 @@ export function ChessEffects({
       })}
       {movePulse && <>
         <span key={`trail-${movePulse.key}`} className="chess-effects__trail" style={{ ...point(movePulse.move.from), width: `${length}%`, transform: `rotate(${angle}deg)` }} />
-        <span key={`burst-${movePulse.key}`} className="chess-effects__burst" style={point(movePulse.move.to)} />
         {movePulse.move.promotion && <span key={`promotion-${movePulse.key}`} className="chess-effects__promotion" />}
       </>}
       {notices.map((notice) => <span key={notice.id} className={`chess-effects__gain chess-effects__gain--${notice.tone}`} style={notice.square ? point(notice.square) : undefined}>{notice.label}</span>)}
