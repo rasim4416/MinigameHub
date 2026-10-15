@@ -130,28 +130,56 @@ export function PlayerBar({
     </>
   );
 
+  const turnLabel = isOver ? "" : canAct ? "To move" : phase === "playing" ? "Waiting" : "";
+
   return (
     <div
-      className={`flex shrink-0 flex-col gap-1 border-slate-800 bg-[#0a0f1a] px-3 py-1.5 md:min-h-14 md:flex-row md:items-center md:justify-between md:gap-2 md:py-0 ${
+      className={`relative flex shrink-0 flex-col gap-1.5 px-3 py-2 transition-colors duration-300 md:min-h-[60px] md:flex-row md:items-center md:justify-between md:gap-3 md:py-1.5 ${
         color === "white" ? "border-t" : "border-b"
+      } ${
+        canAct
+          ? "border-amber-400/25 bg-gradient-to-r from-amber-500/[0.09] via-[#0b1222] to-[#0a0f1a]"
+          : "border-slate-800/80 bg-[#090e19]"
       }`}
     >
+      <span
+        aria-hidden
+        className={`absolute inset-y-0 left-0 w-[3px] transition-opacity duration-300 ${
+          canAct ? "bg-gradient-to-b from-amber-200 via-amber-400 to-amber-600 opacity-100" : "opacity-0"
+        }`}
+      />
       <div className="flex min-w-0 items-center justify-between gap-2 md:flex-1 md:justify-start">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
-            className={`h-2.5 w-2.5 shrink-0 rounded-full border-2 ${
+            className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-[22px] leading-none transition-shadow duration-300 ${
               color === "white"
-                ? "border-slate-400 bg-white"
-                : "border-slate-500 bg-[#1a0f00]"
-            } ${canAct ? "ring-2 ring-indigo-500 ring-offset-1 ring-offset-[#0a0f1a]" : ""}`}
-          />
-          <span
-            className={`shrink-0 text-[13px] font-bold tracking-wide ${
-              canAct ? "text-slate-200" : "text-slate-500"
-            }`}
+                ? "border-slate-300/40 bg-gradient-to-br from-slate-200 to-slate-400 text-white [text-shadow:0_0_2px_#000,0_1px_2px_#000]"
+                : "border-violet-400/40 bg-gradient-to-br from-[#2a2140] to-[#120c1f] text-[#1a0f00] [text-shadow:0_0_2px_rgba(255,255,255,0.85)]"
+            } ${canAct ? "shadow-[0_0_0_2px_rgba(251,191,36,0.7),0_0_18px_rgba(251,191,36,0.35)]" : ""}`}
           >
-            {color.toUpperCase()}
-          </span>
+            {color === "white" ? "♔" : "♚"}
+          </div>
+          <div className="flex min-w-0 flex-col leading-none">
+            <span
+              className={`text-[13px] font-black uppercase tracking-[0.14em] ${
+                canAct ? "text-slate-50" : "text-slate-400"
+              }`}
+            >
+              {color}
+            </span>
+            {turnLabel && (
+              <span
+                className={`mt-1 text-[9px] font-extrabold uppercase tracking-[0.2em] ${
+                  canAct ? "text-amber-300" : "text-slate-600"
+                }`}
+              >
+                {canAct && (
+                  <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 align-middle motion-reduce:animate-none" />
+                )}
+                {turnLabel}
+              </span>
+            )}
+          </div>
           {ordered.length > 0 && (
             <div className="hidden items-center gap-1 sm:flex">
               {ordered.map((a) => (
@@ -164,27 +192,29 @@ export function PlayerBar({
             </div>
           )}
           <GoldBadge gold={gold} active={canAct} />
-          <div className="flex items-center gap-1">
-            {sorted.map((t, i) => (
-              <span
-                key={i}
-                className={`text-base leading-none ${
-                  captureColor === "white"
-                    ? "text-white drop-shadow-[0_0_2px_#000]"
-                    : "text-[#1a0f00] drop-shadow-[0_0_2px_rgba(255,255,255,0.6)]"
-                }`}
-              >
-                {PIECE_UNICODE[captureColor][t]}
-              </span>
-            ))}
-            {advantage > 0 && (
-              <span className="ml-0.5 text-xs font-semibold text-slate-400">
-                +{advantage}
-              </span>
-            )}
-          </div>
+          {(sorted.length > 0 || advantage > 0) && (
+            <div className="flex min-h-7 items-center gap-0.5 rounded-lg border border-slate-800 bg-black/25 px-1.5 py-0.5">
+              {sorted.map((t, i) => (
+                <span
+                  key={i}
+                  className={`-mr-1 text-[15px] leading-none last:mr-0 ${
+                    captureColor === "white"
+                      ? "text-white drop-shadow-[0_0_2px_#000]"
+                      : "text-[#1a0f00] drop-shadow-[0_0_2px_rgba(255,255,255,0.6)]"
+                  }`}
+                >
+                  {PIECE_UNICODE[captureColor][t]}
+                </span>
+              ))}
+              {advantage > 0 && (
+                <span className="ml-1.5 text-[11px] font-extrabold text-emerald-300">
+                  +{advantage}
+                </span>
+              )}
+            </div>
+          )}
           {spells.hasBloodlust && (
-            <span className="shrink-0 text-[9px] tracking-wide text-slate-500">
+            <span className="shrink-0 rounded-full border border-red-500/30 bg-red-950/40 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-red-200">
               🩸 {spells.captureCount % 4}/4
             </span>
           )}
@@ -192,10 +222,10 @@ export function PlayerBar({
         <div className="flex shrink-0 items-center gap-2">
           {statusLabel && (
             <div
-              className={`text-[11px] font-bold tracking-wide ${
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold tracking-wide ${
                 statusBadge
-                  ? "rounded-full border border-red-500/40 bg-red-500/15 px-2.5 py-0.5"
-                  : ""
+                  ? "border border-red-500/40 bg-red-500/15 shadow-[0_0_14px_rgba(239,68,68,0.25)]"
+                  : "border border-slate-700/60 bg-slate-900/60"
               }`}
               style={{ color: statusColor ?? "#e2e8f0" }}
             >

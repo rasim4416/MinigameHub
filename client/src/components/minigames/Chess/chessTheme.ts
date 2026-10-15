@@ -9,9 +9,12 @@ export const chessShell = {
 } as const;
 
 export const CHESS_LAYOUT = {
-  playerBarHeight: 48,
-  playerBarHeightMd: 56,
-  eventBannerHeight: 36,
-  themeRowHeight: 36,
-  stagePadding: 24,
+  playerBarHeight: 56,
+  playerBarHeightMd: 60,
+  eventBannerHeight: 0,
+  themeRowHeight: 42,
+  /** Board bezel plus stage padding. */
+  stagePadding: 34,
+  /** Site header and page padding around the game card. */
+  siteChrome: 84,
 } as const;

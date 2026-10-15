@@ -49,6 +49,7 @@ import { PlayerBar } from "./ui/PlayerBar";
 import { ShopPanel } from "./ui/ShopPanel";
 import { AugmentSelector } from "./ui/AugmentSelector";
 import { StartScreen } from "./ui/StartScreen";
+import { EventReveal } from "./ui/EventReveal";
 import {
   buildBotMoveContext,
   buildBotSpellContext,
@@ -129,19 +130,24 @@ import {
 } from "./augments";
 import {
   GameEvent,
-  EVENT_RARITY_META,
   rollEvent,
   rollFullRoundsUntilNextEvent,
   rollFullRoundsUntilNextAuction,
   EVENT_POOL,
 } from "./events";
-import { AuctionPanel, type AuctionState } from "./ui/AuctionPanel";
 import {
-  getEventDescription,
-  getEventFlavor,
-  getEventName,
-} from "../../../locales/chess";
-import { useChessLanguage } from "./ChessLanguageContext";
+  AUCTION_PIECE_LABEL,
+  AuctionPanel,
+  type AuctionState,
+} from "./ui/AuctionPanel";
+import {
+  AUCTION_ANTI_SNIPE_MS,
+  AUCTION_DURATION_MS,
+  auctionIsSettled,
+  listAuctionPlacements,
+  minNextBid,
+  type AuctionSide,
+} from "./auctionRules";
 import { ChessEffects } from "./ui/ChessEffects";
 
 type PlayerColor = "white" | "black";
@@ -1486,128 +1492,6 @@ function SquareEl({
   );
 }
 
-// ─── EventAnnouncement ────────────────────────────────────────────────────────
-
-function EventAnnouncement({
-  event,
-  peaceTreatyLeft,
-  onClose,
-}: {
-  event: GameEvent;
-  peaceTreatyLeft: number;
-  onClose: () => void;
-}) {
-  const lang = useChessLanguage();
-  const meta = EVENT_RARITY_META[event.rarity];
-  const eventName = getEventName(event.id, lang);
-  const eventDescription = getEventDescription(event.id, lang);
-  const eventFlavor = getEventFlavor(event.id, lang);
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        background: "rgba(0,0,0,0.72)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 30,
-      }}
-    >
-      <div
-        style={{
-          background: "#0f172a",
-          border: `2px solid ${meta.border}`,
-          borderRadius: 16,
-          padding: "28px 36px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 12,
-          boxShadow: `0 0 40px ${meta.glow}, 0 8px 40px rgba(0,0,0,0.8)`,
-          minWidth: 300,
-          maxWidth: 420,
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: meta.text,
-            background: meta.badge,
-            padding: "3px 12px",
-            borderRadius: 20,
-            border: `1px solid ${meta.border}`,
-          }}
-        >
-          ⚡ EVENT · {meta.label}
-        </div>
-        <div style={{ fontSize: 36, lineHeight: 1, marginTop: 4 }}>
-          {event.icon}
-        </div>
-        <div
-          style={{
-            fontSize: 22,
-            fontWeight: 900,
-            color: "#f1f5f9",
-            letterSpacing: "0.02em",
-          }}
-        >
-          {eventName}
-        </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: "#94a3b8",
-            lineHeight: 1.5,
-            maxWidth: 300,
-          }}
-        >
-          {eventDescription}
-        </div>
-        {event.id === "peace-treaty" && peaceTreatyLeft > 0 && (
-          <div style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>
-            ({peaceTreatyLeft} rounds remaining)
-          </div>
-        )}
-        {eventFlavor && (
-          <div
-            style={{
-              fontSize: 12,
-              color: meta.text,
-              fontStyle: "italic",
-              marginTop: 2,
-              opacity: 0.85,
-            }}
-          >
-            {eventFlavor}
-          </div>
-        )}
-        <button
-          onClick={onClose}
-          style={{
-            marginTop: 8,
-            padding: "9px 32px",
-            fontSize: 13,
-            fontWeight: 700,
-            borderRadius: 10,
-            border: "none",
-            cursor: "pointer",
-            background: `linear-gradient(135deg,${meta.border},${meta.text})`,
-            color: "#0f172a",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Continue
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── PromotionDialog ──────────────────────────────────────────────────────────
 
 function PromotionDialog({
@@ -2853,62 +2737,125 @@ export default function ChessGame({
     ],
   );
 
+  const auctionBlockedSquare = useCallback(
+    (r: number, c: number) => wallSquares.some((w) => w.row === r && w.col === c),
+    [wallSquares],
+  );
+
   const resolveAuction = useCallback(() => {
     if (!activeAuction || activeAuction.status !== "active") return;
-    if (Date.now() < activeAuction.timerEndsAt) return;
-    const winner = activeAuction.highBidder;
+    const winner = activeAuction.highBidder as AuctionSide | null;
+    const piece = AUCTION_PIECE_LABEL[activeAuction.pieceType];
     if (winner && activeAuction.highBid > 0) {
-      setGame((g) => ({
-        ...g,
-        goldWhite:
-          winner === "white"
-            ? g.goldWhite - activeAuction.highBid
-            : g.goldWhite,
-        goldBlack:
-          winner === "black"
-            ? g.goldBlack - activeAuction.highBid
-            : g.goldBlack,
-      }));
-      setAuctionPlaceFor({
-        color: winner,
-        pieceType: activeAuction.pieceType,
-      });
+      const spots = listAuctionPlacements(
+        game,
+        activeAuction.pieceType,
+        winner,
+        auctionBlockedSquare,
+      );
+      if (spots.length === 0) {
+        setAuctionAnnouncement(
+          `No room for the ${piece} — ${winner} keeps their ${activeAuction.highBid}g.`,
+        );
+      } else {
+        setGame((g) => ({
+          ...g,
+          goldWhite:
+            winner === "white"
+              ? Math.max(0, g.goldWhite - activeAuction.highBid)
+              : g.goldWhite,
+          goldBlack:
+            winner === "black"
+              ? Math.max(0, g.goldBlack - activeAuction.highBid)
+              : g.goldBlack,
+        }));
+        setAuctionPlaceFor({
+          color: winner,
+          pieceType: activeAuction.pieceType,
+        });
+        setAuctionAnnouncement(
+          `SOLD! ${winner === "white" ? "White" : "Black"} hires the ${piece} for ${activeAuction.highBid}g.`,
+        );
+      }
+    } else {
+      setAuctionAnnouncement(`No takers — the ${piece} wanders off.`);
     }
     setActiveAuction(null);
     requestSnapshot();
-  }, [activeAuction, requestSnapshot]);
+  }, [activeAuction, game, auctionBlockedSquare, requestSnapshot]);
 
   const handleAuctionBid = useCallback(
     (amount: number, asColor?: Color) => {
       if (!activeAuction || activeAuction.status !== "active") return;
       const bidderColor = asColor ?? mpConfig?.myColor ?? game.turn;
+      if (bidderColor === activeAuction.highBidder) return;
       const myGold =
         bidderColor === "white" ? game.goldWhite : game.goldBlack;
-      const minNext = Math.max(
-        activeAuction.minBid,
-        activeAuction.highBid > 0
-          ? activeAuction.highBid + 1
-          : activeAuction.minBid,
-      );
-      if (amount < minNext || amount > myGold) return;
+      if (amount < minNextBid(activeAuction) || amount > myGold) return;
       setActiveAuction({
         ...activeAuction,
         highBid: amount,
         highBidder: bidderColor,
-        timerEndsAt: Date.now() + 20000,
+        timerEndsAt: Math.max(
+          activeAuction.timerEndsAt,
+          Date.now() + AUCTION_ANTI_SNIPE_MS,
+        ),
+        passed: [],
       });
       requestSnapshot();
     },
     [activeAuction, game, mpConfig, requestSnapshot],
   );
 
+  const handleAuctionPass = useCallback(
+    (asColor: AuctionSide) => {
+      if (!activeAuction || activeAuction.status !== "active") return;
+      if (asColor === activeAuction.highBidder) return;
+      if (activeAuction.passed?.includes(asColor)) return;
+      setActiveAuction({
+        ...activeAuction,
+        passed: [...(activeAuction.passed ?? []), asColor],
+      });
+      requestSnapshot();
+    },
+    [activeAuction, requestSnapshot],
+  );
+
+  const auctionPaused =
+    !!pendingEvent || currentTrigger !== null || blindRagePickColor !== null;
+  const auctionWasPausedRef = useRef(false);
+
   useEffect(() => {
     if (!activeAuction || activeAuction.status !== "active") return;
+    if (auctionPaused) {
+      auctionWasPausedRef.current = true;
+      return;
+    }
+    if (auctionWasPausedRef.current) {
+      auctionWasPausedRef.current = false;
+      if (activeAuction.timerEndsAt < Date.now() + AUCTION_ANTI_SNIPE_MS) {
+        setActiveAuction({
+          ...activeAuction,
+          timerEndsAt: Date.now() + AUCTION_ANTI_SNIPE_MS,
+        });
+        return;
+      }
+    }
+    if (auctionIsSettled(activeAuction, game.goldWhite, game.goldBlack)) {
+      const id = setTimeout(resolveAuction, 900);
+      return () => clearTimeout(id);
+    }
     const id = setInterval(() => {
       if (Date.now() >= activeAuction.timerEndsAt) resolveAuction();
     }, 250);
     return () => clearInterval(id);
-  }, [activeAuction, resolveAuction]);
+  }, [activeAuction, auctionPaused, game.goldWhite, game.goldBlack, resolveAuction]);
+
+  useEffect(() => {
+    if (!auctionAnnouncement) return;
+    const id = setTimeout(() => setAuctionAnnouncement(null), 3800);
+    return () => clearTimeout(id);
+  }, [auctionAnnouncement]);
 
   useEffect(() => {
     if (
@@ -3776,12 +3723,14 @@ export default function ChessGame({
               minBid,
               highBid: 0,
               highBidder: null,
-              timerEndsAt: Date.now() + 20000,
+              timerEndsAt: Date.now() + AUCTION_DURATION_MS,
               status: "active",
+              passed: [],
             });
+            setShopOpen(false);
           } else {
             setAuctionAnnouncement(
-              "Auction skipped — neither player can afford the minimum bid.",
+              "Auction skipped — nobody can afford the opening bid.",
             );
           }
           setNextAuctionTurn(
@@ -4779,18 +4728,13 @@ export default function ChessGame({
         const ap = auctionPlaceFor;
         const isLocalPlacer = !mpConfig || mpConfig.myColor === ap.color;
         if (!isLocalPlacer) return;
-        const rows = getBoardRows(game);
-        const cols = getBoardCols(game);
-        const canPlacePawn =
-          ap.pieceType === "P" &&
-          !piece &&
-          isOriginalPawnSpawnSquare(r, c, ap.color as PlayerColor, rows) &&
-          !isPermaFrostSquare(game, r, c);
-        const canPlaceOther =
-          ap.pieceType !== "P" &&
-          !piece &&
-          !isPermaFrostSquare(game, r, c);
-        if (canPlacePawn || canPlaceOther) {
+        const canPlace = listAuctionPlacements(
+          game,
+          ap.pieceType as AuctionPieceType,
+          ap.color as AuctionSide,
+          auctionBlockedSquare,
+        ).some(([pr, pc]) => pr === r && pc === c);
+        if (canPlace) {
           const nb = cloneBoard(getDerivedBoard(game));
           if (gameIs2v2) {
             const slot = ap.color === "white" ? "white1" : "black1";
@@ -5906,6 +5850,7 @@ export default function ChessGame({
       tutorialMode,
       tutorialRestrictions,
       tutorialEmit,
+      auctionBlockedSquare,
       game,
       selected,
       validMoves,
@@ -6003,6 +5948,7 @@ export default function ChessGame({
     toggleShop: () => {},
     handleBuy: (_aug: Augment) => {},
     handleAuctionBid: (_amount: number, _asColor?: Color) => {},
+    handleAuctionPass: (_asColor: AuctionSide) => {},
   });
   botHandlersRef.current = {
     handleBlackPick,
@@ -6023,6 +5969,7 @@ export default function ChessGame({
     toggleShop: handleToggleShop,
     handleBuy,
     handleAuctionBid,
+    handleAuctionPass,
   };
 
   const runBotSpell = (spellId: string, target: [number, number]) => {
@@ -6066,7 +6013,9 @@ export default function ChessGame({
       phase === "playing" &&
       !gameOver &&
       activeAuction?.status === "active" &&
-      !auctionPlaceFor;
+      !auctionPlaceFor &&
+      activeAuction.highBidder !== "black" &&
+      !activeAuction.passed?.includes("black");
 
     const shouldAuctionPlace =
       phase === "playing" &&
@@ -6149,6 +6098,8 @@ export default function ChessGame({
             });
             if (bid !== null) {
               botEconomyRef.current.handleAuctionBid(bid, "black");
+            } else {
+              botEconomyRef.current.handleAuctionPass("black");
             }
           }
           return;
@@ -6159,6 +6110,7 @@ export default function ChessGame({
             gameRef.current,
             auctionPlaceFor.pieceType as AuctionPieceType,
             "black",
+            auctionBlockedSquare,
           );
           if (sq) botSquareClickRef.current(sq[0], sq[1]);
           return;
@@ -6670,14 +6622,18 @@ export default function ChessGame({
     requestSnapshot,
   ]);
 
+  const auctionLocksActions =
+    activeAuction?.status === "active" && !auctionPlaceFor;
   const turnGuard = (fn: () => void) => () => {
     if (!isMyTurn && mpConfig) return;
+    if (auctionLocksActions) return;
     if (tutorialMode && tutorialRestrictions?.blockShopToggle) return;
     fn();
   };
 
   const spellGuard = (fn: () => void, spellId?: string) => () => {
     if (!isMyTurn && mpConfig) return;
+    if (auctionLocksActions) return;
     if (augmentSpellBlockedFor && game.turn === augmentSpellBlockedFor) return;
     if (tutorialMode && tutorialRestrictions) {
       if (spellId && !tutorialAllowsSpell(spellId, tutorialRestrictions))
@@ -6868,7 +6824,7 @@ export default function ChessGame({
       };
     if (auctionPlaceFor)
       return {
-        text: `🏷️ Place your auction ${auctionPlaceFor.pieceType} on the board`,
+        text: `🏷️ ${auctionPlaceFor.color === "white" ? "White" : "Black"} — drop your new ${AUCTION_PIECE_LABEL[auctionPlaceFor.pieceType as AuctionPieceType]} on a glowing square`,
         color: "#fbbf24",
       };
     if (littleBigManMode)
@@ -7023,12 +6979,33 @@ export default function ChessGame({
     !!currentTrigger &&
     !isLocalAugmentPicker(currentTrigger.color, augmentPickSlot);
 
-  const myAuctionColor = mpConfig?.myColor ?? game.turn;
-  const myAuctionGold =
-    myAuctionColor === "white" ? game.goldWhite : game.goldBlack;
+  const auctionControllableSides: AuctionSide[] = mpConfig
+    ? [mpConfig.myColor as AuctionSide]
+    : botMode
+      ? ["white"]
+      : ["white", "black"];
+  const auctionSideNames: Record<AuctionSide, string> = mpConfig
+    ? {
+        white: mpConfig.myColor === "white" ? "You" : "Opponent",
+        black: mpConfig.myColor === "black" ? "You" : "Opponent",
+      }
+    : botMode
+      ? { white: "You", black: "Stockfish" }
+      : { white: "White", black: "Black" };
   const auctionPlacementPending =
     !!auctionPlaceFor &&
-    (!mpConfig || mpConfig.myColor === auctionPlaceFor.color);
+    (!mpConfig || mpConfig.myColor === auctionPlaceFor.color) &&
+    !(botMode && auctionPlaceFor.color === "black");
+  const auctionDropSquares = auctionPlacementPending
+    ? new Set(
+        listAuctionPlacements(
+          game,
+          auctionPlaceFor!.pieceType as AuctionPieceType,
+          auctionPlaceFor!.color as AuctionSide,
+          auctionBlockedSquare,
+        ).map(([r, c]) => `${r},${c}`),
+      )
+    : null;
 
   const preGamePhase =
     phase === "start" ||
@@ -7055,36 +7032,45 @@ export default function ChessGame({
     );
   }
 
+  const hudPill =
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-bold tracking-wide shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
   const eventBannerEl = (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/90 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-slate-400 shadow-lg">
-      <span className="text-slate-300">Board event</span>
-      {" — fires after full round "}
-      <span className="text-amber-400">{nextEventTurn}</span>
-      {" · "}
-      <span className="text-slate-200">
-        {fullRoundsUntilBoardEvent} full round
-        {fullRoundsUntilBoardEvent === 1 ? "" : "s"} away
+    <>
+      <span
+        className={`${hudPill} border-violet-400/30 bg-violet-950/50 text-violet-200`}
+        title={`Board event fires after full round ${nextEventTurn}`}
+      >
+        <span aria-hidden>⚡</span>
+        Event
+        <span className="rounded-full bg-violet-400/20 px-1.5 tabular-nums text-violet-100">
+          {fullRoundsUntilBoardEvent === 0 ? "now" : `${fullRoundsUntilBoardEvent}r`}
+        </span>
+        {chaosEventTiming && <span className="text-pink-300">· chaos</span>}
       </span>
-      {" · "}
-      <span className="text-slate-300">Auction</span>
-      {" — "}
-      <span className="text-slate-200">
-        {fullRoundsUntilAuction} full round
-        {fullRoundsUntilAuction === 1 ? "" : "s"} away
+      <span
+        className={`${hudPill} border-amber-400/30 bg-amber-950/40 text-amber-200`}
+        title="Rounds until the next mercenary auction"
+      >
+        <span aria-hidden>🔨</span>
+        Auction
+        <span className="rounded-full bg-amber-400/20 px-1.5 tabular-nums text-amber-100">
+          {activeAuction?.status === "active"
+            ? "live"
+            : fullRoundsUntilAuction === 0
+              ? "now"
+              : `${fullRoundsUntilAuction}r`}
+        </span>
       </span>
       {activeApocalypse && (
-        <>
-          {" · "}
-          <span className="text-red-400">
-            Apocalypse in {activeApocalypse.fullRoundsLeft} round
-            {activeApocalypse.fullRoundsLeft === 1 ? "" : "s"}
+        <span className={`${hudPill} border-red-500/40 bg-red-950/50 text-red-200`}>
+          <span aria-hidden>☄️</span>
+          Apocalypse
+          <span className="rounded-full bg-red-500/25 px-1.5 tabular-nums">
+            {activeApocalypse.fullRoundsLeft}r
           </span>
-        </>
+        </span>
       )}
-      {chaosEventTiming && (
-        <span className="ml-2 text-pink-400">(Chaos)</span>
-      )}
-    </div>
+    </>
   );
 
   const boardOverlays = (
@@ -7092,28 +7078,29 @@ export default function ChessGame({
       {promotionPending && (
         <PromotionDialog color={game.turn} onChoose={handlePromotion} />
       )}
-      {pendingEvent && (
-        <EventAnnouncement
-          event={pendingEvent}
-          peaceTreatyLeft={peaceTreatyRoundsLeft}
-          onClose={() => setPendingEvent(null)}
-        />
-      )}
       {isOver && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55">
-          <div className={`${chessShell.card} pointer-events-auto flex flex-col items-center gap-2.5 px-9 py-5`}>
+          <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-2xl border border-amber-300/40 bg-gradient-to-b from-[#1a1608] via-[#0c0f1c] to-[#05070e] px-10 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.75),0_0_40px_rgba(231,192,99,0.15)] animate-in fade-in zoom-in-90 duration-300 motion-reduce:animate-none">
+            <span className="text-5xl leading-none drop-shadow-[0_6px_18px_rgba(231,192,99,0.45)]" aria-hidden>
+              {game.status === "stalemate" ? "🤝" : "👑"}
+            </span>
             <span
-              className="text-[22px] font-black tracking-wide"
+              className="mt-1 text-[24px] font-black tracking-wide"
               style={{ color: statusText.color }}
             >
               {statusText.label}
             </span>
+            <span className="text-xs italic text-slate-400">
+              {game.status === "stalemate"
+                ? "Nobody wins. Everybody's board."
+                : "Check, mate. Thanks for playing."}
+            </span>
             <button
               type="button"
               onClick={resetGame}
-              className="rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-400 px-7 py-2 text-sm font-bold text-white shadow-[0_3px_12px_rgba(99,102,241,0.5)]"
+              className="mt-2 rounded-xl border border-amber-300/70 bg-gradient-to-b from-amber-200 via-amber-400 to-amber-700 px-8 py-2.5 text-sm font-black uppercase tracking-[0.14em] text-[#1a1204] shadow-[0_8px_24px_rgba(231,192,99,0.35)] transition-transform hover:-translate-y-0.5"
             >
-              Play Again
+              Play again
             </button>
           </div>
         </div>
@@ -7221,7 +7208,7 @@ export default function ChessGame({
             style={{ width: boardPxW, height: boardPxH }}
           >
             <div
-            className="grid shrink-0 rounded-sm border-[3px] border-[#5c3d1e] shadow-[0_8px_40px_rgba(0,0,0,0.8),0_2px_8px_rgba(0,0,0,0.5)]"
+            className="grid shrink-0 overflow-hidden rounded-[3px]"
             style={{
               width: boardPxW,
               height: boardPxH,
@@ -7235,7 +7222,9 @@ export default function ChessGame({
               const c = mpViewFlipped ? boardCols - 1 - dc : dc;
               const piece = getDerivedBoard(game)[r]?.[c] ?? null;
               const isSel = selected?.[0] === r && selected?.[1] === c;
-              const isVM = validMoves.some(([vr, vc]) => vr === r && vc === c);
+              const isVM =
+                validMoves.some(([vr, vc]) => vr === r && vc === c) ||
+                !!auctionDropSquares?.has(`${r},${c}`);
               const isLM = !!(
                 game.lastMove &&
                 ((game.lastMove.from[0] === r && game.lastMove.from[1] === c) ||
@@ -7379,7 +7368,11 @@ export default function ChessGame({
         advantage={adv.white > 0 ? adv.white : 0}
         spells={makeSpells("white")}
         statusLabel={
-          phase === "playing" && !isOver ? statusText.label : undefined
+          phase === "playing" &&
+          !isOver &&
+          (game.status === "check" || gameIs2v2)
+            ? statusText.label
+            : undefined
         }
         statusColor={statusText.color}
         statusBadge={game.status === "check"}
@@ -7388,11 +7381,20 @@ export default function ChessGame({
       {activeAuction?.status === "active" && phase === "playing" && !isOver && (
         <AuctionPanel
           auction={activeAuction}
-          myColor={myAuctionColor}
-          myGold={myAuctionGold}
+          controllableSides={auctionControllableSides}
+          sideNames={auctionSideNames}
+          goldWhite={game.goldWhite}
+          goldBlack={game.goldBlack}
           onBid={handleAuctionBid}
-          placementPending={auctionPlacementPending}
+          onPass={handleAuctionPass}
+          paused={auctionPaused}
         />
+      )}
+      {auctionAnnouncement && (
+        <div key={auctionAnnouncement} className="ca-toast" role="status">
+          <span aria-hidden>🔨</span>
+          {auctionAnnouncement}
+        </div>
       )}
 
       <ShopPanel
@@ -7430,12 +7432,7 @@ export default function ChessGame({
         <div className="absolute inset-0 z-[100]">
           {phase === "start" && (
             <div className="pointer-events-auto h-full w-full">
-              <StartScreen
-                onStart={handleStart}
-                subtitle={
-                  botMode ? "Face Stockfish as White" : undefined
-                }
-              />
+              <StartScreen onStart={handleStart} botMode={botMode} />
             </div>
           )}
           {phase === "white-augment" && (
@@ -7462,6 +7459,13 @@ export default function ChessGame({
             </div>
           )}
         </div>
+      )}
+      {pendingEvent && (
+        <EventReveal
+          event={pendingEvent}
+          peaceTreatyLeft={peaceTreatyRoundsLeft}
+          onClose={() => setPendingEvent(null)}
+        />
       )}
       {phase === "playing" &&
         currentTrigger !== null &&

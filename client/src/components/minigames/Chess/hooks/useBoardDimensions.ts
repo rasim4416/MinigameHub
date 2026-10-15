@@ -26,10 +26,11 @@ export function useBoardDimensions(
       CHESS_LAYOUT.playerBarHeight * 2 +
       CHESS_LAYOUT.eventBannerHeight +
       CHESS_LAYOUT.themeRowHeight +
-      CHESS_LAYOUT.stagePadding;
+      CHESS_LAYOUT.stagePadding +
+      CHESS_LAYOUT.siteChrome;
     const availH = window.innerHeight - chrome;
     const stageW = stageRef.current?.clientWidth ?? window.innerWidth;
-    const availW = Math.max(200, stageW - 32);
+    const availW = Math.max(200, stageW - 44);
     const sqFromW = availW / cols;
     const sqFromH = availH / rows;
     let sq = Math.floor(Math.min(sqFromW, sqFromH));
@@ -61,6 +62,6 @@ export function useBoardDimensions(
       dims.boardPxH +
       CHESS_LAYOUT.themeRowHeight +
       CHESS_LAYOUT.eventBannerHeight +
-      16,
+      CHESS_LAYOUT.stagePadding,
   };
 }
