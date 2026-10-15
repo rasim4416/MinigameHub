@@ -255,6 +255,7 @@ export default function BlackjackGame() {
   }, [phase, hit, stand, doubleDown, deal, nextHand]);
 
   const displayedBet = phase === "betting" ? bet : wager;
+  const handsFinal = phase === "result";
   const piles = useMemo(() => decomposeBet(displayedBet), [displayedBet]);
   const playerTotal = handTotal(playerHand);
   const dealerCardsShown = holeHidden ? dealerHand.slice(0, 1) : dealerHand;
@@ -350,7 +351,7 @@ export default function BlackjackGame() {
               badge={
                 holeHidden && dealerHand.length > 1
                   ? `${handLabel(dealerCardsShown)} + ?`
-                  : handLabel(dealerCardsShown)
+                  : handLabel(dealerCardsShown, handsFinal)
               }
               badgeTone={
                 !holeHidden && isBust(dealerHand)
@@ -366,7 +367,7 @@ export default function BlackjackGame() {
             <Hand
               label="You"
               cards={playerHand}
-              badge={handLabel(playerHand)}
+              badge={handLabel(playerHand, handsFinal)}
               badgeTone={playerBadgeTone}
             />
             <div className={`bj-spot${displayedBet > 0 ? " bj-spot--active" : ""}`}>
@@ -415,7 +416,7 @@ export default function BlackjackGame() {
                 <span className="bj-result-card__hint">
                   {playerTotal > 21
                     ? "You went over 21"
-                    : `You ${handLabel(playerHand)} · Dealer ${handLabel(dealerHand)}`}
+                    : `You ${handLabel(playerHand, true)} · Dealer ${handLabel(dealerHand, true)}`}
                 </span>
               </div>
             </div>
