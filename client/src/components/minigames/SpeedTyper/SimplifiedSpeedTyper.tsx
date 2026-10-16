@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Clock, PauseCircle, PlayCircle, Ban, Award, ChevronLeft, AlertTriangle, ArrowUp } from 'lucide-react';
+import {
+  ALargeSmall, ChevronLeft, CloudRain, Coins, Crown, Flag, Flame, Mountain,
+  Pause, Play, RotateCcw, Sparkles, Target, TrainFront, Trophy, Zap,
+} from 'lucide-react';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/700.css';
+import './speed-typer.css';
 import { useAudio } from '@/lib/stores/useAudio';
-import { useLevelMode } from '@/lib/stores/useLevelMode';
 import { useChips } from '@/lib/stores/useChips';
+import { levelThresholds } from '@/lib/stores/useLevelMode';
 import {
   Language,
   getRandomWord,
@@ -11,911 +17,984 @@ import {
   getWordInRange,
   getLetterCountForLevel,
 } from './wordBanks';
+import {
+  GAME_MODES, SPAWN_RATES, GameMode, SpawnRateMultiplier,
+  gradeFor, levelUpQuip, modeAccent, modeName, modePun, modeRules,
+  randomTagline, rateName, t,
+} from './speedTyperCopy';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types & constants ───────────────────────────────────────────────────────
 
 interface FallingWord {
-  id: string;
+  id: number;
   word: string;
   x: number;
   y: number;
   speed: number;
-  color: string;
+  hue: number;
 }
 
-type SpawnRateMultiplier = 0.25 | 0.5 | 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
-type GameMode = 'falling' | 'linear' | 'letter-level' | 'score-level';
+interface Pop {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  kind: 'hit' | 'miss' | 'wrong';
+}
 
-// ─── (Word banks moved to wordBanks.ts) ──────────────────────────────────────
+interface RunStats {
+  correct: number;
+  wrong: number;
+  missed: number;
+  chars: number;
+  combo: number;
+  bestCombo: number;
+  elapsed: number;
+}
 
-const _unused_wordBanks = {
-  english: [
-    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
-    "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
-    "his", "how", "new", "now", "old", "see", "two", "way", "who", "eye",
-    "act", "add", "age", "air", "arm", "art", "ask", "bad", "bag", "bar",
-    "bed", "bet", "big", "bit", "box", "boy", "bus", "car", "cat", "cup",
-    "cut", "dad", "dog", "dry", "due", "ear", "eat", "egg", "end", "far",
-    "fat", "few", "fit", "fly", "fun", "gas", "gun", "guy", "hit", "hot",
-    "ice", "job", "joy", "key", "kid", "lay", "leg", "let", "lie", "lip",
-    "low", "map", "mom", "mud", "net", "odd", "oil", "pay", "pen", "pet",
-    "pie", "pin", "pop", "put", "red", "rub", "run", "sad", "sea", "set",
-    "shy", "sin", "sit", "six", "ski", "sky", "son", "sun", "tax", "tea",
-    "ten", "tip", "toe", "top", "try", "use", "war", "win", "yes", "yet",
-    "book", "game", "life", "time", "year", "work", "code", "play", "fast",
-    "slow", "good", "last", "long", "make", "many", "more", "most", "only",
-    "over", "very", "word", "love", "help", "find", "look", "hand", "part",
-    "able", "area", "army", "away", "baby", "back", "ball", "band", "bank",
-    "base", "bath", "bear", "beat", "beer", "bell", "belt", "best", "bill",
-    "bird", "blow", "blue", "boat", "body", "bomb", "bond", "bone", "born",
-    "both", "bowl", "burn", "bush", "busy", "cake", "call", "calm", "came",
-    "camp", "card", "care", "case", "cash", "cast", "cell", "chat", "chip",
-    "city", "club", "coal", "coat", "cold", "come", "cook", "cool", "copy",
-    "core", "cost", "crew", "crop", "dark", "data", "date", "dawn", "dead",
-    "deal", "dear", "debt", "deep", "deny", "desk", "diet", "dirt", "dish",
-    "disk", "does", "done", "door", "dose", "down", "draw", "drop", "drug",
-    "dual", "duke", "dust", "duty", "each", "earn", "ease", "east", "easy",
-    "edge", "else", "even", "ever", "evil", "exit", "face", "fact", "fade",
-    "fail", "fair", "fall", "farm", "fear", "feel", "feet", "fell", "felt",
-    "file", "fill", "film", "fire", "firm", "fish", "five", "flag", "flat",
-    "flow", "folk", "food", "foot", "form", "fort", "four", "free", "from",
-    "fuel", "full", "fund", "gain", "gave", "gear", "gift", "girl", "give",
-    "glad", "goal", "goes", "gold", "golf", "gone", "grew", "grey", "grow",
-    "gulf", "hair", "half", "hall", "hang", "hard", "harm", "hate", "have",
-    "head", "hear", "heat", "held", "hell", "here", "hero", "high", "hill",
-    "hire", "hold", "hole", "holy", "home", "hope", "host", "hour", "huge",
-    "hung", "hunt", "hurt", "idea", "inch", "into", "iron", "item", "java",
-    "join", "jump", "jury", "just", "keen", "keep", "kick", "kill", "kind",
-    "king", "knew", "know", "lack", "lady", "laid", "lake", "land", "lane",
-    "lead", "left", "less", "like", "line", "link", "list", "live", "load",
-    "loan", "lock", "logo", "went", "west", "what", "when", "whom", "wide",
-    "wife", "wild", "will", "wind", "wine", "wing", "wire", "wise", "wish",
-    "with", "wood", "wool", "wore", "work", "yard", "yeah", "year", "your",
-    "zero", "zone",
-    "after", "again", "about", "below", "could", "every", "first", "found",
-    "great", "house", "large", "learn", "never", "other", "place", "plant",
-    "point", "right", "small", "sound", "spell", "still", "study", "think",
-    "water", "where", "which", "world", "would", "write", "happy", "peace",
-    "black", "board", "brave", "break", "bring", "build", "built", "carry",
-    "catch", "cause", "chain", "chair", "chart", "chase", "cheap", "check",
-    "chest", "chief", "child", "chose", "civil", "claim", "class", "clean",
-    "clear", "clock", "close", "coach", "coast", "color", "count", "court",
-    "cover", "crash", "crazy", "cream", "crime", "cross", "crowd", "crown",
-    "cycle", "daily", "dance", "death", "dozen", "draft", "drama", "drawn",
-    "dream", "dress", "drink", "drive", "dying", "eager", "early", "earth",
-    "eight", "elite", "empty", "enemy", "enjoy", "enter", "entry", "equal",
-    "error", "event", "exact", "exist", "extra", "power", "press", "price",
-    "pride", "prime", "print", "prior", "prize", "proof", "proud", "prove",
-    "queen", "quick", "quiet", "quite", "radio", "raise", "range", "rapid",
-    "ratio", "reach", "ready", "refer", "rival", "river", "robot", "rough",
-    "round", "route", "royal", "rural", "scale", "scene", "scope", "score",
-    "sense", "serve", "seven", "shade", "shake", "shall", "shape", "share",
-    "sharp", "sheep", "shelf", "shell", "shift", "shirt", "shock", "shoot",
-    "short", "shown", "sight", "since", "sixty", "skill", "sleep", "slide",
-    "smart", "smile", "smoke", "solid", "solve", "sorry", "south", "space",
-    "spare", "speak", "speed", "spend", "spent", "split", "spoke", "sport",
-    "staff", "stage", "stake", "stand", "worth", "wound", "yacht", "young",
-    "around", "enough", "coding", "access", "analog", "anchor", "backup",
-    "binary", "bitmap", "buffer", "bundle", "button", "bypass", "client",
-    "column", "cookie", "cursor", "device", "dialog", "domain", "driver",
-    "engine", "entity", "export", "filter", "folder", "format", "global",
-    "header", "import", "insert", "kernel", "linker", "logger", "memory",
-    "method", "module", "object", "packet", "parser", "plugin", "portal",
-    "prefix", "prompt", "python", "render", "router", "script", "sector",
-    "server", "socket", "source", "static", "stream", "string", "struct",
-    "syntax", "system", "tablet", "thread", "toggle", "upload", "vector",
-    "widget", "digital", "amazing", "explore", "develop", "creative",
-    "because", "between", "brought", "certain", "example", "explain",
-    "message", "picture", "program", "quality", "receive", "science",
-    "someone", "student", "success", "support", "through", "ability",
-    "absence", "academy", "account", "accused", "achieve", "acquire",
-    "address", "advance", "advised", "against", "airline", "airport",
-    "alcohol", "already", "analyst", "ancient", "another", "anxiety",
-    "applied", "arrange", "arrival", "article", "assault", "assumed",
-    "attempt", "attract", "average", "balance", "banking", "barrier",
-    "battery", "because", "bedroom", "believe", "beneath", "benefit",
-    "billion", "brother", "burning", "cabinet", "capital", "captain",
-    "capture", "careful", "carrier", "ceiling", "central", "century",
-    "chamber", "channel", "chapter", "charity", "checked", "chicken",
-    "circuit", "citizen", "clarity", "classic", "climate", "closely",
-    "cluster", "comfort", "command", "comment", "company", "compare",
-    "compete", "complex", "concept", "concern", "conduct", "confirm",
-    "connect", "consist", "contact", "contain", "content", "context",
-    "control", "convert", "correct", "council", "country", "crystal",
-    "culture", "current", "dealing", "decided", "decline", "deliver",
-    "density", "deposit", "desktop", "despite", "destroy", "develop",
-    "browser", "computer", "software", "keyboard", "website", "internet",
-    "network", "database", "function", "variable", "algorithm", "framework",
-    "virtual", "learning",
-  ],
-  türkçe: [
-    "bir", "çok", "göz", "yol", "son", "gün", "bak", "iki", "ben", "sen",
-    "git", "gel", "yer", "sev", "ara", "bul", "yap", "sor", "ver", "dün",
-    "acı", "adı", "ana", "art", "aşk", "bal", "baş", "bay", "bez", "biz",
-    "boş", "buz", "cam", "can", "cep", "çay", "çek", "dağ", "dal", "dam",
-    "dil", "diş", "duş", "düz", "ebe", "erk", "far", "fal", "fes", "göl",
-    "güç", "güz", "hal", "ham", "has", "hat", "hep", "her", "his", "hoş",
-    "hız", "iyi", "ile", "ilk", "iri", "kel", "kız", "kim", "kir", "köy",
-    "kum", "kuş", "kül", "laf", "mal", "maç", "mum", "net", "not", "oda",
-    "oku", "onu", "oto", "ova", "öne", "öte", "pas", "pek", "pul", "raf",
-    "rol", "sağ", "sal", "sat", "sel", "ses", "sık", "sır", "sol", "son",
-    "süt", "şah", "şal", "şey", "taç", "tam", "tas", "taş", "tel", "tem",
-    "ten", "tez", "top", "toz", "tüm", "tür", "tüy", "var", "vay", "vur",
-    "yağ", "yak", "yan", "yaş", "yel", "yen", "yok", "yön", "yüz", "zam",
-    "zar", "zil", "zor",
-    "daha", "hava", "gece", "ayak", "anne", "baba", "kedi", "masa", "kapı",
-    "ayna", "boya", "kova", "toka", "okul", "renk", "adam", "adım", "ağır",
-    "aile", "akıl", "aksi", "alan", "alma", "altı", "amca", "anma", "araç",
-    "arka", "artı", "arzu", "asal", "asıl", "asır", "atak", "ateş", "avlu",
-    "ayna", "ayva", "azim", "azot", "bant", "barış", "basit", "baskı",
-    "batı", "bavul", "bayır", "bebek", "beden", "bela", "belge", "belki",
-    "belli", "beyin", "beyaz", "bilgi", "bilet", "bilim", "bina", "birim",
-    "bitki", "bomba", "borç", "boyun", "boyut", "bölge", "bölüm", "börek",
-    "budak", "burun", "butik", "bütün", "büyük", "cami", "canlı", "ceket",
-    "cesur", "cevap", "ceza", "coşku", "çaba", "çadır", "çanta", "çare",
-    "çatal", "çatı", "çelik", "çeşit", "çevre", "çiçek", "çizgi", "çocuk",
-    "çözüm", "daire", "damat", "damla", "darbe", "dava", "davul", "dergi",
-    "bugün", "yarın", "sonra", "önce", "beyaz", "siyah", "elma", "armut",
-    "kaşık", "kenar", "fırın", "tarih", "müzik", "yaprak", "toprak", "tohum",
-    "lamba", "ışık", "açlık", "adres", "ahşap", "akran", "alarm", "albüm",
-    "alçak", "alıcı", "alkış", "altın", "ambar", "amber", "ampul", "anket",
-    "anlam", "antik", "araba", "arama", "arazi", "arena", "arıza", "arşiv",
-    "asker", "aşçı", "aşırı", "atlas", "avize", "ayran", "bahis", "bakır",
-    "balkan", "banyo", "baraj", "bayat", "bedel", "benzin", "berber", "besin",
-    "beste", "bıçak", "biber", "bıyık", "bilim", "binek", "birey", "birlik",
-    "bitki", "boğaz", "bomba", "borsa", "bozkır", "bronz", "bucak", "bugün",
-    "bukle", "buluş", "burak", "burun", "büyü", "büyük", "canan", "canlı",
-    "cazibe", "ceket", "cennet", "cephe", "cesur", "cevap", "ceviz", "ceylan",
-    "ciğer", "cimri", "cömert", "çabuk", "çağrı", "çakal", "çalgı", "çanak",
-    "çardak", "çatış", "çekim", "çelik", "çember", "çeper",
-    "ekran", "klavye", "fare", "yazılım", "uygulama", "veri", "bellek",
-    "tarayıcı", "işlemci", "çevrimiçi", "kablosuz", "dijital", "sanal",
-    "dosya", "klasör", "şifre", "hesap", "adres", "android", "animasyon",
-    "arayüz", "arşivleme", "ayarlar", "başlangıç", "bilgisayar", "bulut",
-    "derleyici", "donanım", "dosya", "etiket", "forum", "gezgin", "grafik",
-    "güncelleme", "güvenlik", "hesaplama", "iletişim", "imleç", "izleme",
-    "karakter", "kayıt", "kısayol", "kodlama", "masaüstü", "metin",
-    "modem", "motor", "oturum", "oyun", "paket", "parola", "paylaşım",
-    "program", "sekme", "sertifika", "simge", "slayt", "sürücü", "sürüm",
-    "tıklama", "tuş", "vektör", "virüs", "yama", "yazılım", "yedekleme",
-    "telefon", "bilgisayar", "internet", "kütüphane", "hastane", "öğrenci",
-    "öğretmen", "arkadaş", "kelebek", "balina", "yunus", "güneş", "gezegen",
-    "başarı", "mutluluk", "sağlık", "yaşam", "abartı", "abone", "acayip",
-    "acemi", "acente", "adalet", "algoritma", "analiz", "anahtar",
-  ]
+type Phase = 'lobby' | 'playing' | 'over';
+type EndReason = 'time' | 'quit' | 'victory';
+interface RunResult { reason: EndReason; newBest: boolean; chips: number }
+
+const ROUND_SECONDS = 60;
+const MAX_LEVEL = levelThresholds.length;
+const LEVEL_UP_MS = 2600;
+const DROP_HUES = [199, 217, 262, 291, 330, 168, 38, 142];
+const MODE_ICONS: Record<GameMode, typeof CloudRain> = {
+  falling: CloudRain,
+  linear: TrainFront,
+  'letter-level': ALargeSmall,
+  'score-level': Mountain,
 };
+const PREFS_KEY = 'speedTyper.prefs.v1';
+const BEST_KEY = 'speedTyper.best.v1';
 
-const generateId = (): string => Math.random().toString(36).substring(2, 9);
+const EMPTY_STATS: RunStats = { correct: 0, wrong: 0, missed: 0, chars: 0, combo: 0, bestCombo: 0, elapsed: 0 };
 
-const wordColors = [
-  'text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]',
-  'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.8)]',
-  'text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]',
-  'text-purple-400 drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]',
-  'text-pink-400 drop-shadow-[0_0_8px_rgba(244,114,182,0.8)]',
-  'text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.8)]',
-  'text-teal-400 drop-shadow-[0_0_8px_rgba(45,212,191,0.8)]',
-  'text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.8)]',
-  'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]',
-];
-
-// ─── Mode label helpers ────────────────────────────────────────────────────────
-
-const modeName = (mode: GameMode, lang: Language): string => {
-  if (lang === 'english') {
-    if (mode === 'falling')      return 'Classic';
-    if (mode === 'linear')       return 'Linear Train';
-    if (mode === 'letter-level') return 'Letter Levels';
-    return 'Score Levels';
-  } else {
-    if (mode === 'falling')      return 'Klasik';
-    if (mode === 'linear')       return 'Sıralı Kelimeler';
-    if (mode === 'letter-level') return 'Harf Seviyeleri';
-    return 'Puan Seviyeleri';
+const readJson = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
   }
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const comboMultiplier = (combo: number) => 1 + Math.min(combo, 20) * 0.05;
+const targetForLevel = (level: number) => levelThresholds[Math.min(level, MAX_LEVEL) - 1].requiredScore;
+const isLevelModeOf = (m: GameMode) => m === 'letter-level' || m === 'score-level';
+
+let uid = 0;
+const nextId = () => ++uid;
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 const SimplifiedSpeedTyper: React.FC = () => {
   const navigate = useNavigate();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const wordSpawnerRef = useRef<NodeJS.Timeout | null>(null);
-  const animationRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [score, setScore]           = useState(0);
-  const [timeLeft, setTimeLeft]     = useState(60);
-  const [isPlaying, setIsPlaying]   = useState(false);
-  const [isPaused, setIsPaused]     = useState(false);
-  const [isGameOver, setIsGameOver] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [fallingWords, setFallingWords] = useState<FallingWord[]>([]);
-  const [spawnRate, setSpawnRate]   = useState<SpawnRateMultiplier>(1);
-  const [language, setLanguage]     = useState<Language>('english');
-  const [gameMode, setGameMode]     = useState<GameMode>('falling');
-  const [flashMsg, setFlashMsg]     = useState<{ text: string; ok: boolean } | null>(null);
-
-  const [linearQueue, setLinearQueue]             = useState<string[]>([]);
-  const [currentLinearWord, setCurrentLinearWord] = useState<string>('');
-
-  const {
-    currentLevel, targetScore,
-    score: levelScore,
-    isLevelCompleted, isLevelTransition,
-    setScore: setLevelScore,
-    incrementScore: incrementLevelScore,
-    setLevelCompleted, setLevelTransition,
-    setPlaying: setLevelPlaying,
-    advanceToNextLevel, resetGame: resetLevelGame,
-  } = useLevelMode();
-
   const { playHit, playSuccess } = useAudio();
   const { addChips } = useChips();
 
-  const isLevelMode = gameMode === 'letter-level' || gameMode === 'score-level';
+  const prefs = useMemo(
+    () => readJson<{ language: Language; mode: GameMode; rate: SpawnRateMultiplier }>(PREFS_KEY, {
+      language: 'english', mode: 'falling', rate: 1,
+    }),
+    [],
+  );
+  const [language, setLanguage] = useState<Language>(prefs.language);
+  const [gameMode, setGameMode] = useState<GameMode>(prefs.mode);
+  const [spawnRate, setSpawnRate] = useState<SpawnRateMultiplier>(prefs.rate);
+  const [best, setBest] = useState<Record<GameMode, number>>(() =>
+    readJson(BEST_KEY, { falling: 0, linear: 0, 'letter-level': 0, 'score-level': 0 }),
+  );
+  const tagline = useMemo(() => randomTagline(language), [language]);
 
-  // Award chips equal to score when game ends
-  const prevGameOverRef = useRef(false);
+  const [phase, setPhase] = useState<Phase>('lobby');
+  const [isPaused, setIsPaused] = useState(false);
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(ROUND_SECONDS);
+  const [stats, setStats] = useState<RunStats>(EMPTY_STATS);
+  const [input, setInput] = useState('');
+  const [words, setWords] = useState<FallingWord[]>([]);
+  const [queue, setQueue] = useState<string[]>([]);
+  const [lastResult, setLastResult] = useState<{ word: string; ok: boolean; id: number } | null>(null);
+  const [pops, setPops] = useState<Pop[]>([]);
+  const [shakeKey, setShakeKey] = useState(0);
+  const [missKey, setMissKey] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [levelScore, setLevelScore] = useState(0);
+  const [levelUp, setLevelUp] = useState(false);
+  const [result, setResult] = useState<RunResult | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wordsRef = useRef<FallingWord[]>([]);
+  const pausedRef = useRef(false);
+  const scoreRef = useRef(0);
+  const comboRef = useRef(0);
+  const overAtRef = useRef(0);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  pausedRef.current = isPaused || levelUp;
+  scoreRef.current = score;
+  comboRef.current = stats.combo;
+
+  const isLevelMode = isLevelModeOf(gameMode);
+  const isFalling = gameMode === 'falling';
+  const accent = modeAccent(gameMode);
+  const locale = language === 'türkçe' ? 'tr' : 'en';
+  const norm = useCallback((s: string) => s.trim().toLocaleLowerCase(locale), [locale]);
+
   useEffect(() => {
-    if (isGameOver && !prevGameOverRef.current && score > 0) {
-      addChips(score);
-    }
-    prevGameOverRef.current = isGameOver;
-  }, [isGameOver, score, addChips]);
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ language, mode: gameMode, rate: spawnRate }));
+  }, [language, gameMode, spawnRate]);
 
-  // ── Refs to avoid stale closures ──
-  const gameModeRef        = useRef(gameMode);
-  const isLevelTransRef    = useRef(isLevelTransition);
-  const isLevelCompletedRef = useRef(isLevelCompleted);
-  gameModeRef.current         = gameMode;
-  isLevelTransRef.current     = isLevelTransition;
-  isLevelCompletedRef.current = isLevelCompleted;
-
-  // ── Flash feedback helper ──
-  const flash = useCallback((text: string, ok: boolean) => {
-    setFlashMsg({ text, ok });
-    setTimeout(() => setFlashMsg(null), 800);
-  }, []);
-
-  // ── Word generator for current mode/level ──
-  const makeWord = useCallback((): string => {
-    if (gameMode === 'letter-level') return getWordOfLength(language, getLetterCountForLevel(currentLevel));
-    if (gameMode === 'score-level')  return getWordInRange(language, 3, 9);
-    return getRandomWord(language);
-  }, [gameMode, language, currentLevel]);
-
-  const makeWordRef = useRef(makeWord);
-  makeWordRef.current = makeWord;
-
-  // ── Initialize linear / level queue ──
-  const initQueue = useCallback((gen?: () => string) => {
-    const g = gen ?? (() => makeWordRef.current());
-    const words = Array.from({ length: 20 }, g);
-    setLinearQueue(words);
-    setCurrentLinearWord(words[0]);
+  const focusInput = useCallback(() => {
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
-  // ── Process next word in queue ──
-  const processQueue = useCallback(() => {
-    setLinearQueue(q => {
-      const next = q.slice(1);
-      if (next.length < 10) {
-        next.push(...Array.from({ length: 10 }, () => makeWordRef.current()));
-      }
-      setCurrentLinearWord(next[0] ?? '');
-      return next;
-    });
+  const addPop = useCallback((pop: Omit<Pop, 'id'>) => {
+    const id = nextId();
+    setPops((ps) => [...ps.slice(-12), { ...pop, id }]);
+    setTimeout(() => setPops((ps) => ps.filter((p) => p.id !== id)), 900);
   }, []);
 
-  // ── Falling mode helpers ──
-  const startWordSpawner = useCallback(() => {
-    if (wordSpawnerRef.current) clearInterval(wordSpawnerRef.current);
-    const interval = Math.round(1000 / spawnRate);
-    wordSpawnerRef.current = setInterval(() => {
-      if (!isPaused) {
-        const newWord: FallingWord = {
-          id: generateId(),
-          word: getRandomWord(language),
-          x: Math.random() * 80 + 10,
-          y: 0,
-          speed: 1 * spawnRate,
-          color: wordColors[Math.floor(Math.random() * wordColors.length)],
-        };
-        setFallingWords(ws => [...ws, newWord]);
-      }
-    }, interval);
-  }, [spawnRate, language, isPaused]);
+  const makeWord = useCallback(
+    (lvl: number) => {
+      if (gameMode === 'letter-level') return getWordOfLength(language, getLetterCountForLevel(lvl));
+      if (gameMode === 'score-level') return getWordInRange(language, 3, 9);
+      return getRandomWord(language);
+    },
+    [gameMode, language],
+  );
 
-  const startFallingAnimation = useCallback(() => {
-    if (animationRef.current) clearInterval(animationRef.current);
-    animationRef.current = setInterval(() => {
-      if (!isPaused) {
-        setFallingWords(ws => {
-          const moved = ws.map(w => ({ ...w, y: w.y + w.speed }));
-          const kept  = moved.filter(w => w.y < 100);
-          if (kept.length < moved.length) setScore(s => Math.max(0, s - 5));
-          return kept;
-        });
-      }
-    }, 50);
-  }, [isPaused]);
+  const buildQueue = useCallback((lvl: number) => Array.from({ length: 20 }, () => makeWord(lvl)), [makeWord]);
 
-  const cleanupTimers = useCallback(() => {
-    if (wordSpawnerRef.current) { clearInterval(wordSpawnerRef.current); wordSpawnerRef.current = null; }
-    if (animationRef.current)   { clearInterval(animationRef.current);   animationRef.current   = null; }
-  }, []);
-
-  // ── Simple countdown timer ──
   useEffect(() => {
-    if (!isPlaying || isPaused) return;
-    const id = setInterval(() => setTimeLeft(t => Math.max(0, t - 1)), 1000);
-    return () => clearInterval(id);
-  }, [isPlaying, isPaused]);
+    const el = fieldRef.current;
+    if (!shakeKey || !el) return;
+    el.classList.remove('is-shake');
+    void el.offsetWidth;
+    el.classList.add('is-shake');
+    const clear = () => el.classList.remove('is-shake');
+    el.addEventListener('animationend', clear, { once: true });
+    return () => el.removeEventListener('animationend', clear);
+  }, [shakeKey]);
 
-  // ── Time = 0 → game over ──
-  useEffect(() => {
-    if (timeLeft === 0 && isPlaying && !isLevelTransRef.current) {
-      cleanupTimers();
-      setIsGameOver(true);
-      setIsPlaying(false);
-      setLevelPlaying(false);
+  // ── Game lifecycle ──
+
+  const endGame = useCallback(
+    (reason: EndReason, pendingPoints = 0) => {
+      const finalScore = scoreRef.current + pendingPoints;
+      overAtRef.current = Date.now();
+      const newBest = finalScore > 0 && finalScore > (best[gameMode] ?? 0);
+      if (newBest) {
+        const next = { ...best, [gameMode]: finalScore };
+        setBest(next);
+        localStorage.setItem(BEST_KEY, JSON.stringify(next));
+      }
+      if (finalScore > 0) addChips(finalScore);
+      setResult({ reason, newBest, chips: finalScore });
+      setPhase('over');
+      setIsPaused(false);
+      setLevelUp(false);
+      wordsRef.current = [];
+      setWords([]);
       playSuccess();
-    }
-  }, [timeLeft, isPlaying, cleanupTimers, setLevelPlaying, playSuccess]);
+    },
+    [best, gameMode, addChips, playSuccess],
+  );
 
-  // ── Level transition: delay then start next level ──
-  useEffect(() => {
-    if (!isLevelMode || !isLevelTransition) return;
-    const delay = setTimeout(() => {
-      advanceToNextLevel();
-      setTimeLeft(60);
-      setInputValue('');
-      setLevelTransition(false);
-      // Queue will be rebuilt by the next effect after advanceToNextLevel updates currentLevel
-    }, 3000);
-    return () => clearTimeout(delay);
-  }, [isLevelTransition, isLevelMode, advanceToNextLevel, setLevelTransition]);
-
-  // ── After level advances, rebuild word queue ──
-  useEffect(() => {
-    if (isPlaying && isLevelMode && !isLevelTransition && !isLevelCompleted) {
-      // Re-init queue whenever level changes (currentLevel changes after advanceToNextLevel)
-      initQueue();
-    }
-  }, [currentLevel]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Start game ──
-  const handleStartGame = useCallback(() => {
-    cleanupTimers();
+  const startGame = useCallback(() => {
+    wordsRef.current = [];
+    setWords([]);
+    setPops([]);
     setScore(0);
-    setTimeLeft(60);
-    setIsGameOver(false);
+    setTimeLeft(ROUND_SECONDS);
+    setStats(EMPTY_STATS);
+    setInput('');
+    setLastResult(null);
+    setLevel(1);
+    setLevelScore(0);
+    setLevelUp(false);
     setIsPaused(false);
-    setFallingWords([]);
-    setLinearQueue([]);
-    setCurrentLinearWord('');
-    setInputValue('');
-    setFlashMsg(null);
-    setIsPlaying(true);
+    setResult(null);
+    setQueue(isFalling ? [] : buildQueue(1));
+    setPhase('playing');
+    focusInput();
+  }, [isFalling, buildQueue, focusInput]);
 
-    if (isLevelMode) {
-      resetLevelGame();
-      setLevelPlaying(true);
-      initQueue();
-    } else if (gameMode === 'falling') {
-      startWordSpawner();
-      startFallingAnimation();
-    } else {
-      initQueue();
-    }
+  const togglePause = useCallback(() => {
+    if (phase !== 'playing' || levelUp) return;
+    setIsPaused((p) => {
+      if (p) focusInput();
+      return !p;
+    });
+  }, [phase, levelUp, focusInput]);
 
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, [
-    cleanupTimers, isLevelMode, gameMode,
-    resetLevelGame, setLevelPlaying, initQueue,
-    startWordSpawner, startFallingAnimation,
-  ]);
+  // Countdown; frozen while paused or during the level-up card.
+  useEffect(() => {
+    if (phase !== 'playing' || isPaused || levelUp) return;
+    const id = setInterval(() => {
+      setTimeLeft((s) => Math.max(0, s - 1));
+      setStats((st) => ({ ...st, elapsed: st.elapsed + 1 }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [phase, isPaused, levelUp]);
 
-  // ── Trigger level complete ──
-  const triggerLevelComplete = useCallback(() => {
-    if (isLevelCompletedRef.current) return;
-    setLevelCompleted(true);
-    setLevelTransition(true);
-    playSuccess();
-  }, [setLevelCompleted, setLevelTransition, playSuccess]);
+  useEffect(() => {
+    if (phase === 'playing' && timeLeft === 0 && !levelUp) endGame('time');
+  }, [phase, timeLeft, levelUp, endGame]);
 
-  // ── Handle submit ──
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim()) return;
+  // ── Word Rain loop ──
 
-    if (gameMode === 'falling') {
-      const idx = fallingWords.findIndex(
-        w => w.word.toLowerCase() === inputValue.toLowerCase()
-      );
-      if (idx !== -1) {
-        const matched = fallingWords[idx];
-        setFallingWords(ws => ws.filter(w => w.id !== matched.id));
-        const pts = Math.floor(matched.word.length * 5 * Math.min(spawnRate * 1.2, 3));
-        setScore(s => s + pts);
-        playHit();
-        flash(`+${pts}`, true);
+  const onMissRef = useRef<(missed: FallingWord[]) => void>(() => {});
+  onMissRef.current = (missed) => {
+    setScore((s) => Math.max(0, s - 5 * missed.length));
+    setStats((st) => ({ ...st, missed: st.missed + missed.length, combo: 0 }));
+    setMissKey((k) => k + 1);
+    missed.forEach((w) => addPop({ x: w.x, y: 96, text: '−5', kind: 'miss' }));
+  };
+
+  useEffect(() => {
+    if (phase !== 'playing' || !isFalling) return;
+    const interval = 1000 / spawnRate;
+    const speed = 20 * spawnRate;
+    let spawnAcc = interval;
+    let last = performance.now();
+    let raf = 0;
+
+    const spawn = (current: FallingWord[]): FallingWord => {
+      let x = 50;
+      for (let i = 0; i < 8; i++) {
+        x = Math.random() * 76 + 12;
+        if (!current.some((w) => w.y < 22 && Math.abs(w.x - x) < 16)) break;
       }
-      setInputValue('');
+      return {
+        id: nextId(),
+        word: getRandomWord(language),
+        x,
+        y: 0,
+        speed: speed * (0.85 + Math.random() * 0.3),
+        hue: DROP_HUES[Math.floor(Math.random() * DROP_HUES.length)],
+      };
+    };
+
+    const tick = (now: number) => {
+      const dt = Math.min(100, now - last);
+      last = now;
+      if (!pausedRef.current) {
+        spawnAcc += dt;
+        const kept: FallingWord[] = [];
+        const missed: FallingWord[] = [];
+        for (const w of wordsRef.current) {
+          const moved = { ...w, y: w.y + (w.speed * dt) / 1000 };
+          (moved.y >= 100 ? missed : kept).push(moved);
+        }
+        if (spawnAcc >= interval) {
+          spawnAcc -= interval;
+          kept.push(spawn(kept));
+        }
+        wordsRef.current = kept;
+        setWords(kept);
+        if (missed.length) onMissRef.current(missed);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, isFalling, spawnRate, language]);
+
+  const zap = useCallback(
+    (typed: string): boolean => {
+      const n = norm(typed);
+      if (!n) return false;
+      const hits = wordsRef.current.filter((w) => norm(w.word) === n);
+      if (!hits.length) return false;
+      const target = hits.reduce((a, b) => (b.y > a.y ? b : a));
+      wordsRef.current = wordsRef.current.filter((w) => w.id !== target.id);
+      setWords(wordsRef.current);
+      const pts = Math.round(
+        Math.floor(target.word.length * 5 * Math.min(spawnRate * 1.2, 3)) * comboMultiplier(comboRef.current),
+      );
+      setScore((s) => s + pts);
+      setStats((st) => {
+        const combo = st.combo + 1;
+        return { ...st, correct: st.correct + 1, chars: st.chars + target.word.length, combo, bestCombo: Math.max(st.bestCombo, combo) };
+      });
+      addPop({ x: target.x, y: target.y, text: `+${pts}`, kind: 'hit' });
+      playHit();
+      return true;
+    },
+    [norm, spawnRate, addPop, playHit],
+  );
+
+  // ── Train / level submit ──
+
+  const completeLevel = useCallback((pendingPoints: number) => {
+    if (level >= MAX_LEVEL) {
+      endGame('victory', pendingPoints);
       return;
     }
+    setLevelUp(true);
+    playSuccess();
+  }, [level, endGame, playSuccess]);
 
-    // Linear / Level modes
-    const correct = inputValue.toLowerCase() === currentLinearWord.toLowerCase();
+  useEffect(() => {
+    if (!levelUp) return;
+    const id = setTimeout(() => {
+      const next = level + 1;
+      setLevel(next);
+      setLevelScore(0);
+      setTimeLeft(ROUND_SECONDS);
+      setQueue(buildQueue(next));
+      setLastResult(null);
+      setInput('');
+      setLevelUp(false);
+      focusInput();
+    }, LEVEL_UP_MS);
+    return () => clearTimeout(id);
+  }, [levelUp, level, buildQueue, focusInput]);
 
-    if (correct) {
-      const pts = currentLinearWord.length * 5;
-      setScore(s => s + pts);
-      flash(`+${pts}`, true);
-      playHit();
+  const submitQueued = useCallback(
+    (typed: string) => {
+      const current = queue[0];
+      if (!current || !norm(typed)) return;
+      const ok = norm(typed) === norm(current);
+      setQueue((q) => {
+        const rest = q.slice(1);
+        return rest.length < 10 ? [...rest, ...Array.from({ length: 10 }, () => makeWord(level))] : rest;
+      });
+      setLastResult({ word: current, ok, id: nextId() });
 
-      if (isLevelMode) {
-        const newLevelScore = levelScore + pts;
-        incrementLevelScore(pts);
-        // +1 sec for correct answer in level modes
-        setTimeLeft(t => t + 1);
-        // Instant level complete
-        if (newLevelScore >= targetScore) {
-          triggerLevelComplete();
-          setInputValue('');
-          return;
+      if (ok) {
+        const pts = Math.round(current.length * 5 * comboMultiplier(comboRef.current));
+        setScore((s) => s + pts);
+        setStats((st) => {
+          const combo = st.combo + 1;
+          return { ...st, correct: st.correct + 1, chars: st.chars + current.length, combo, bestCombo: Math.max(st.bestCombo, combo) };
+        });
+        addPop({ x: 50, y: 24, text: `+${pts}`, kind: 'hit' });
+        playHit();
+        if (isLevelMode) {
+          setTimeLeft((s) => s + 1);
+          const nextLevelScore = levelScore + pts;
+          setLevelScore(nextLevelScore);
+          if (nextLevelScore >= targetForLevel(level)) completeLevel(pts);
         }
-      }
-      // Linear: no time bonus — just move on
-      processQueue();
-    } else {
-      playHit();
-
-      if (isLevelMode) {
-        // -2 sec for wrong input in level modes
-        flash('-2s', false);
-        setTimeLeft(t => Math.max(0, t - 2));
       } else {
-        flash('✗', false);
+        setStats((st) => ({ ...st, wrong: st.wrong + 1, combo: 0 }));
+        setShakeKey((k) => k + 1);
+        addPop({ x: 50, y: 24, text: isLevelMode ? '−2s' : '✗', kind: 'wrong' });
+        if (isLevelMode) setTimeLeft((s) => Math.max(0, s - 2));
       }
-      processQueue();
+    },
+    [queue, norm, makeWord, level, addPop, playHit, isLevelMode, levelScore, completeLevel],
+  );
+
+  // ── Input ──
+
+  const submit = useCallback(
+    (raw: string) => {
+      if (!raw.trim()) return;
+      if (isFalling) {
+        if (!zap(raw)) {
+          setStats((st) => ({ ...st, wrong: st.wrong + 1, combo: 0 }));
+          setShakeKey((k) => k + 1);
+        }
+      } else {
+        submitQueued(raw);
+      }
+      setInput('');
+    },
+    [isFalling, zap, submitQueued],
+  );
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/\s$/.test(value)) {
+      submit(value);
+      return;
     }
-
-    setInputValue('');
+    if (isFalling && zap(value)) {
+      setInput('');
+      return;
+    }
+    setInput(value);
   };
 
-  const handleTogglePause = () => {
-    setIsPaused(p => !p);
-    if (isPaused) setTimeout(() => inputRef.current?.focus(), 0);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submit(input);
+    }
   };
 
-  const handleGiveUp = () => {
-    cleanupTimers();
-    setIsGameOver(true);
-    setIsPlaying(false);
-    setLevelPlaying(false);
-    playSuccess();
-  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (phase === 'playing') {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          togglePause();
+        }
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (Date.now() - overAtRef.current < 900) return;
+        startGame();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [phase, togglePause, startGame]);
 
-  const handleGameModeChange = (mode: GameMode) => {
-    if (!isPlaying || isPaused) setGameMode(mode);
-  };
+  // ── Derived ──
 
-  const handleSpawnRateChange = (rate: SpawnRateMultiplier) => {
-    if (!isPlaying || isPaused) setSpawnRate(rate);
-  };
+  const minutes = Math.max(stats.elapsed, 1) / 60;
+  const wpm = stats.elapsed >= 3 ? Math.round(stats.chars / 5 / minutes) : 0;
+  const attempts = stats.correct + stats.wrong + stats.missed;
+  const accuracy = attempts ? Math.round((stats.correct / attempts) * 100) : 100;
+  const multiplier = comboMultiplier(stats.combo);
+  const target = targetForLevel(level);
+  const levelPct = Math.min(100, (levelScore / target) * 100);
+  const typed = norm(input);
 
-  const handleLanguageChange = (lang: Language) => {
-    if (!isPlaying || isPaused) setLanguage(lang);
-  };
+  const targetWordId = useMemo(() => {
+    if (!isFalling || !typed) return null;
+    let bestW: FallingWord | null = null;
+    for (const w of words) if (norm(w.word).startsWith(typed) && (!bestW || w.y > bestW.y)) bestW = w;
+    return bestW?.id ?? null;
+  }, [isFalling, typed, words, norm]);
 
-  const handleBackToMenu = () => {
-    cleanupTimers();
-    playSuccess();
-    navigate('/minigames');
-  };
+  const leaveToMenu = () => navigate('/minigames');
 
-  const formatTime = (s: number): string => {
-    const m = Math.floor(s / 60);
-    return `${m.toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
-  };
+  const stageStyle = { '--st-from': accent.from, '--st-to': accent.to } as CSSProperties;
+  const ModeIcon = MODE_ICONS[gameMode];
 
-  const timeColor = timeLeft <= 10 ? 'text-red-400' : timeLeft <= 30 ? 'text-yellow-400' : 'text-green-400';
-
-  // Level progress %
-  const levelProgress = isLevelMode ? Math.min(100, Math.floor((levelScore / targetScore) * 100)) : 0;
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full h-full flex flex-col bg-gray-950 text-white select-none">
-
-      {/* ── Top bar ── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 shrink-0">
-        <button
-          onClick={handleBackToMenu}
-          className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-gray-700 bg-gray-900 hover:border-gray-500 hover:bg-gray-800 transition-all"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          <span>{language === 'english' ? 'Menu' : 'Menü'}</span>
-        </button>
-
-        {/* Score */}
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-gray-900 border border-gray-700">
-          <Trophy className="h-4 w-4 text-yellow-400" />
-          <span className="text-xs text-gray-400">{language === 'english' ? 'Score' : 'Puan'}:</span>
-          <span className="font-bold text-yellow-300">{score}</span>
-          {isLevelMode && (
-            <span className="text-xs text-gray-500 ml-1">/ {targetScore}</span>
-          )}
-        </div>
-
-        {/* Timer */}
-        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-md bg-gray-900 border ${
-          timeLeft <= 10 ? 'border-red-700' : 'border-gray-700'
-        }`}>
-          <Clock className={`h-4 w-4 ${timeColor}`} />
-          <span className={`font-bold font-mono ${timeColor}`}>{formatTime(timeLeft)}</span>
-        </div>
-
-        {/* Level badge (level modes only) */}
-        {isLevelMode && isPlaying && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-indigo-900/50 border border-indigo-700">
-            <span className="text-xs text-indigo-300">{language === 'english' ? 'Level' : 'Seviye'}</span>
-            <span className="font-bold text-indigo-200">{currentLevel}</span>
-            {gameMode === 'letter-level' && (
-              <span className="text-[10px] text-indigo-400 ml-0.5">
-                ({getLetterCountForLevel(currentLevel)}{language === 'english' ? 'L' : 'H'})
+    <div className="st" style={stageStyle} data-phase={phase}>
+      <header className="st-hud">
+        <div className="st-hud__left">
+          <button
+            type="button"
+            className="st-icon-btn"
+            onClick={phase === 'playing' ? () => endGame('quit') : leaveToMenu}
+            title={phase === 'playing' ? t('Quit run', 'Bitir', language) : t('Back to games', 'Oyunlara dön', language)}
+          >
+            {phase === 'playing' ? <Flag size={15} /> : <ChevronLeft size={16} />}
+          </button>
+          <div className="st-hud__mode">
+            <span className="st-hud__mode-icon"><ModeIcon size={15} /></span>
+            <div className="st-hud__mode-text">
+              <span className="st-hud__eyebrow">Speed Typer</span>
+              <span className="st-hud__mode-name">
+                {modeName(gameMode, language)}
+                {isFalling && phase === 'playing' && <em> · {rateName(spawnRate, language)}</em>}
               </span>
-            )}
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Pause / Give up (in-game) */}
-        {isPlaying && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleTogglePause}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-gray-700 bg-gray-900 hover:border-gray-500 transition-all"
-            >
-              {isPaused
-                ? <><PlayCircle className="h-3.5 w-3.5" /><span className="hidden sm:inline">{language === 'english' ? 'Resume' : 'Devam'}</span></>
-                : <><PauseCircle className="h-3.5 w-3.5" /><span className="hidden sm:inline">{language === 'english' ? 'Pause' : 'Duraklat'}</span></>
-              }
-            </button>
-            <button
-              onClick={handleGiveUp}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-red-800 text-red-400 hover:bg-red-900/30 transition-all"
-            >
-              <Ban className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{language === 'english' ? 'Give Up' : 'Pes Et'}</span>
+        {phase === 'playing' ? (
+          <div className="st-hud__stats">
+            <Stat label={t('Score', 'Puan', language)} value={score.toLocaleString()} tone="gold" big />
+            <Stat
+              label={t('Combo', 'Kombo', language)}
+              value={stats.combo ? `${stats.combo}` : '—'}
+              sub={stats.combo ? `×${multiplier.toFixed(2)}` : undefined}
+              tone={stats.combo >= 10 ? 'hot' : 'plain'}
+              icon={stats.combo >= 10 ? <Flame size={11} /> : undefined}
+            />
+            <Stat label="WPM" value={String(wpm)} className="st-hide-sm" />
+            <Stat label={t('Accuracy', 'İsabet', language)} value={`${accuracy}%`} className="st-hide-sm" />
+            <TimerRing seconds={timeLeft} />
+            <button type="button" className="st-icon-btn" onClick={togglePause} title={t('Pause (Esc)', 'Duraklat (Esc)', language)}>
+              {isPaused ? <Play size={15} /> : <Pause size={15} />}
             </button>
           </div>
+        ) : (
+          <div className="st-hud__stats">
+            <div className="st-best">
+              <Trophy size={13} />
+              <span>{t('Best', 'Rekor', language)}</span>
+              <strong>{(best[gameMode] ?? 0).toLocaleString()}</strong>
+            </div>
+            <div className="st-seg st-seg--lang" role="radiogroup" aria-label="Language">
+              {(['english', 'türkçe'] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  role="radio"
+                  aria-checked={language === l}
+                  className={language === l ? 'is-on' : ''}
+                  onClick={() => setLanguage(l)}
+                >
+                  {l === 'english' ? 'EN' : 'TR'}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
-      </div>
+      </header>
 
-      {/* ── Level progress bar (level modes, while playing) ── */}
-      {isLevelMode && isPlaying && !isLevelTransition && (
-        <div className="w-full h-1.5 bg-gray-800 shrink-0">
-          <div
-            className="h-full bg-indigo-500 transition-all duration-300"
-            style={{ width: `${levelProgress}%` }}
-          />
+      {isLevelMode && phase === 'playing' && (
+        <div className="st-level">
+          <span className="st-level__badge">
+            {t('Level', 'Seviye', language)} <strong>{level}</strong>
+            <span>/{MAX_LEVEL}</span>
+          </span>
+          <div className="st-level__bar">
+            <div className="st-level__fill" style={{ width: `${levelPct}%` }} />
+          </div>
+          <span className="st-level__target">
+            {levelScore.toLocaleString()} / {target.toLocaleString()}
+          </span>
         </div>
       )}
 
-      {/* ── Game area ── */}
-      <div className="flex-1 relative overflow-hidden min-h-0 bg-gray-900/30">
-        {isPlaying ? (
-          <>
-            {/* Falling mode */}
-            {gameMode === 'falling' && (
-              <div className="absolute inset-0">
-                {fallingWords.map(w => (
-                  <div
-                    key={w.id}
-                    className={`absolute font-bold transform -translate-x-1/2 ${w.color}`}
-                    style={{
-                      left: `${w.x}%`,
-                      top: `${w.y}%`,
-                      fontSize: `${Math.max(18, 28 - w.word.length * 2)}px`,
-                      textShadow: '0 0 6px currentColor',
-                      opacity: isPaused ? 0.6 : 1,
-                    }}
-                  >
-                    {w.word}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Linear / Level mode */}
-            {gameMode !== 'falling' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                {/* Flash feedback */}
-                {flashMsg && (
-                  <div className={`absolute top-3 right-4 text-sm font-bold px-2 py-0.5 rounded ${
-                    flashMsg.ok ? 'text-green-400' : 'text-red-400'
-                  } animate-pulse`}>
-                    {flashMsg.text}
-                  </div>
-                )}
-
-                {/* Letter-level hint */}
-                {gameMode === 'letter-level' && (
-                  <div className="text-xs text-gray-500 tracking-widest uppercase">
-                    {language === 'english'
-                      ? `Level ${currentLevel} — ${getLetterCountForLevel(currentLevel)}-letter words`
-                      : `Seviye ${currentLevel} — ${getLetterCountForLevel(currentLevel)} harfli kelimeler`}
-                  </div>
-                )}
-
-                {/* Current word */}
-                <div
-                  className="text-5xl font-bold tracking-wide"
-                  style={{ textShadow: '0 0 20px rgba(99,102,241,0.6)', color: '#818cf8' }}
-                >
-                  {currentLinearWord}
-                </div>
-
-                {/* Upcoming words */}
-                <div className="flex flex-wrap justify-center gap-2 max-w-lg px-4">
-                  {linearQueue.slice(1, 6).map((word, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded bg-gray-800/60 text-gray-400 text-sm"
-                      style={{ opacity: 1 - i * 0.18 }}
-                    >
-                      {word}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Hint line */}
-                <div className="text-xs text-gray-600 mt-2">
-                  {isLevelMode
-                    ? (language === 'english'
-                        ? '+1s correct · -2s wrong · reach target to advance'
-                        : 'Doğru +1s · Yanlış -2s · Hedefe ulaş')
-                    : (language === 'english'
-                        ? 'Type and press Enter to continue'
-                        : 'Yaz ve Enter\'a bas')
-                  }
-                </div>
-              </div>
-            )}
-
-            {/* Pause overlay */}
-            {isPaused && (
-              <div className="absolute inset-0 bg-gray-950/85 flex items-center justify-center z-20">
-                <div className="text-center bg-gray-900 border border-gray-700 p-6 rounded-lg shadow-xl">
-                  <h3 className="text-2xl font-bold mb-4 text-white">
-                    {language === 'english' ? 'Paused' : 'Duraklatıldı'}
-                  </h3>
-                  <button
-                    onClick={handleTogglePause}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold transition-all"
-                  >
-                    {language === 'english' ? 'Resume' : 'Devam Et'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Level complete overlay */}
-            {isLevelCompleted && isLevelTransition && (
-              <div className="absolute inset-0 bg-gray-950/90 flex items-center justify-center z-20">
-                <div className="text-center bg-gray-900 border border-indigo-700 p-6 rounded-xl shadow-2xl max-w-sm mx-auto">
-                  <div className="flex justify-center mb-3">
-                    <div className="relative">
-                      <Award className="h-14 w-14 text-yellow-400 animate-pulse" />
-                      <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-gray-900">
-                        {currentLevel}
-                      </span>
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2 text-white">
-                    {language === 'english' ? 'Level Complete!' : 'Seviye Tamamlandı!'}
-                  </h3>
-                  <p className="text-gray-400 text-sm mb-3">
-                    {language === 'english'
-                      ? `Score: ${levelScore} / ${targetScore}`
-                      : `Puan: ${levelScore} / ${targetScore}`}
-                  </p>
-                  <div className="flex items-center justify-center gap-1 text-indigo-300 text-sm">
-                    <ArrowUp className="h-4 w-4" />
-                    <span>
-                      {language === 'english'
-                        ? `Advancing to Level ${currentLevel + 1}…`
-                        : `Seviye ${currentLevel + 1}'e yükseltiliyor…`}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Input */}
-            {!isPaused && !isLevelTransition && (
-              <form
-                onSubmit={handleSubmit}
-                className="absolute bottom-4 left-0 right-0 z-10 px-4"
-              >
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
-                  disabled={isGameOver}
-                  className="block w-full max-w-md mx-auto px-4 py-2 rounded-lg border border-gray-700 bg-gray-900 text-white text-center text-base font-medium focus:border-indigo-500 focus:outline-none placeholder:text-gray-600"
-                  placeholder={language === 'english' ? 'Type and press Enter…' : 'Yaz ve Enter\'a bas…'}
-                  autoComplete="off"
-                  spellCheck="false"
-                />
-              </form>
-            )}
-          </>
-        ) : (
-          /* ── Idle / Game Over screen ── */
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center px-4">
-              {isGameOver ? (
-                <>
-                  <h3 className="text-3xl font-bold mb-1 text-white">
-                    {language === 'english' ? 'Game Over' : 'Oyun Bitti'}
-                  </h3>
-                  <p className="text-gray-400 mb-1">
-                    {language === 'english' ? 'Final Score' : 'Son Puan'}: <span className="text-yellow-300 font-bold">{score}</span>
-                  </p>
-                  {score > 0 && (
-                    <p className="text-green-400 text-sm font-semibold mb-1">
-                      +{score} {language === 'english' ? 'chips earned!' : 'chip kazandınız!'}
-                    </p>
-                  )}
-                  {isLevelMode && (
-                    <p className="text-gray-500 text-sm mb-4">
-                      {language === 'english'
-                        ? `Reached Level ${currentLevel}`
-                        : `${currentLevel}. Seviyeye Ulaştınız`}
-                    </p>
-                  )}
-                  <button
-                    onClick={handleStartGame}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold transition-all shadow"
-                  >
-                    {language === 'english' ? 'Play Again' : 'Tekrar Oyna'}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-3xl font-bold mb-2 text-white">
-                    {language === 'english' ? 'Speed Typer' : 'Hızlı Yazma'}
-                  </h3>
-                  <p className="text-gray-500 text-sm mb-5">
-                    {language === 'english'
-                      ? 'Choose a mode and start typing!'
-                      : 'Bir mod seç ve yazmaya başla!'}
-                  </p>
-                  <button
-                    onClick={handleStartGame}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold transition-all shadow"
-                  >
-                    {language === 'english' ? 'Start Game' : 'Oyunu Başlat'}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Bottom controls ── */}
-      <div className="shrink-0 flex flex-col gap-2 px-4 py-2.5 border-t border-gray-800 bg-gray-950">
-        {/* Row 1: Language + Mode selector */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* Language */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">{language === 'english' ? 'Language:' : 'Dil:'}</span>
-            <div className="flex rounded border border-gray-700 overflow-hidden h-7">
-              {(['english', 'türkçe'] as const).map(lang => (
-                <button
-                  key={lang}
-                  onClick={() => handleLanguageChange(lang)}
-                  disabled={isPlaying && !isPaused}
-                  className={`px-2 text-xs transition-all ${
-                    lang === language
-                      ? lang === 'english' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white'
-                      : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
-                  } ${isPlaying && !isPaused ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                  {lang === 'english' ? 'EN' : 'TR'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Game mode */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">{language === 'english' ? 'Mode:' : 'Mod:'}</span>
-            <div className="flex rounded border border-gray-700 overflow-hidden h-7">
-              {(['falling', 'linear', 'letter-level', 'score-level'] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => handleGameModeChange(mode)}
-                  disabled={isPlaying && !isPaused}
-                  title={modeName(mode, language)}
-                  className={`px-2 text-xs whitespace-nowrap transition-all ${
-                    mode === gameMode
-                      ? mode === 'letter-level' ? 'bg-purple-600 text-white font-semibold'
-                        : mode === 'score-level' ? 'bg-green-700 text-white font-semibold'
-                        : 'bg-indigo-600 text-white font-semibold'
-                      : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
-                  } ${isPlaying && !isPaused ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                  {mode === 'falling'
-                    ? (language === 'english' ? 'Classic' : 'Klasik')
-                    : mode === 'linear'
-                    ? (language === 'english' ? 'Linear' : 'Sıralı')
-                    : mode === 'letter-level'
-                    ? (language === 'english' ? 'Letters' : 'Harfler')
-                    : (language === 'english' ? 'Scores' : 'Puanlar')}
-                </button>
-              ))}
-            </div>
-          </div>
+      <main className="st-stage" onMouseDown={(e) => { if (phase === 'playing' && e.target !== inputRef.current) { e.preventDefault(); inputRef.current?.focus(); } }}>
+        <div className="st-stage__bg" aria-hidden>
+          <div className="st-stage__glow" />
+          <div className="st-stage__floor" />
         </div>
 
-        {/* Row 2: spawn rate (falling only) */}
-        {gameMode === 'falling' && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">
-              {language === 'english' ? 'Spawn Rate:' : 'Hız:'}
-              <span className="ml-1 font-semibold text-gray-300">{spawnRate}x</span>
-            </span>
-            <div className="flex rounded border border-gray-700 overflow-hidden h-7 bg-gray-900">
-              {([0.25, 0.5, 1, 1.25, 1.5, 2, 2.5, 3] as const).map(rate => (
-                <button
-                  key={rate}
-                  onClick={() => handleSpawnRateChange(rate)}
-                  disabled={isPlaying && !isPaused}
-                  className={`px-1.5 text-xs transition-all ${
-                    rate === spawnRate
-                      ? 'bg-indigo-600 text-white font-bold'
-                      : 'text-gray-400 hover:bg-gray-800'
-                  } ${isPlaying && !isPaused ? 'opacity-40 cursor-not-allowed' : ''}`}
+        {phase === 'lobby' && (
+          <Lobby
+            language={language}
+            tagline={tagline}
+            gameMode={gameMode}
+            spawnRate={spawnRate}
+            best={best}
+            onMode={setGameMode}
+            onRate={setSpawnRate}
+            onStart={startGame}
+          />
+        )}
+
+        {phase === 'playing' && isFalling && (
+          <div className="st-rain">
+            {words.map((w) => {
+              const hit = typed && norm(w.word).startsWith(typed) ? typed.length : 0;
+              return (
+                <div
+                  key={w.id}
+                  className={`st-drop${w.id === targetWordId ? ' is-target' : ''}${w.y > 72 ? ' is-danger' : ''}`}
+                  style={{ left: `${w.x}%`, top: `${w.y}%`, '--hue': w.hue } as CSSProperties}
                 >
-                  {rate}x
-                </button>
-              ))}
-            </div>
-            {spawnRate >= 2 && (
-              <div className="flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-yellow-500" />
-                <span className="text-xs text-yellow-500">
-                  {spawnRate >= 2.5
-                    ? (language === 'english' ? 'Very fast!' : 'Çok hızlı!')
-                    : (language === 'english' ? 'Fast!' : 'Hızlı!')}
-                </span>
-              </div>
-            )}
+                  {hit > 0 && <span className="st-drop__hit">{w.word.slice(0, hit)}</span>}
+                  <span>{w.word.slice(hit)}</span>
+                </div>
+              );
+            })}
+            <div key={missKey} className={`st-rain__floor${missKey ? ' is-hit' : ''}`} />
           </div>
         )}
 
-        {/* Row 2: Level progress (level modes, not playing) */}
-        {isLevelMode && !isPlaying && (
-          <p className="text-xs text-gray-600 text-center">
-            {gameMode === 'letter-level'
-              ? (language === 'english'
-                  ? 'Each level uses longer words. Same score targets, increasing word length.'
-                  : 'Her seviyede daha uzun kelimeler. Aynı puan hedefleri, artan kelime uzunluğu.')
-              : (language === 'english'
-                  ? 'Random 3-9 letter words. Score targets increase each level.'
-                  : 'Rastgele 3-9 harfli kelimeler. Her seviyede hedef puan artar.')}
-          </p>
+        {phase === 'playing' && !isFalling && (
+          <Track
+            language={language}
+            queue={queue}
+            input={input}
+            norm={norm}
+            lastResult={lastResult}
+            gameMode={gameMode}
+            level={level}
+            shakeKey={shakeKey}
+          />
         )}
-      </div>
+
+        {pops.map((p) => (
+          <span
+            key={p.id}
+            className={`st-pop st-pop--${p.kind}`}
+            style={{ left: `${p.x}%`, top: `${p.y}%` }}
+          >
+            {p.text}
+          </span>
+        ))}
+
+        {phase === 'playing' && isPaused && (
+          <div className="st-overlay">
+            <div className="st-modal">
+              <span className="st-modal__icon"><Pause size={22} /></span>
+              <h3 className="st-modal__title">{t('Paused', 'Duraklatıldı', language)}</h3>
+              <p className="st-modal__sub">{t('Keys cooling down. Take a breather.', 'Tuşlar soğuyor. Bir nefes al.', language)}</p>
+              <div className="st-modal__actions">
+                <button type="button" className="st-btn st-btn--primary" onClick={togglePause} autoFocus>
+                  <Play size={15} /> {t('Resume', 'Devam', language)} <kbd>Esc</kbd>
+                </button>
+                <button type="button" className="st-btn" onClick={() => endGame('quit')}>
+                  <Flag size={14} /> {t('End run', 'Bitir', language)}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {phase === 'playing' && levelUp && (
+          <div className="st-overlay st-overlay--clear">
+            <div className="st-levelup">
+              <div className="st-levelup__ring">
+                <span>{level + 1}</span>
+              </div>
+              <h3>{t('Level up!', 'Seviye atladın!', language)}</h3>
+              <p className="st-levelup__quip">{levelUpQuip(level, language)}</p>
+              <p className="st-levelup__next">
+                {gameMode === 'letter-level'
+                  ? t(
+                      `Next: ${getLetterCountForLevel(level + 1)}-letter words`,
+                      `Sıradaki: ${getLetterCountForLevel(level + 1)} harfli kelimeler`,
+                      language,
+                    )
+                  : t(
+                      `Next target: ${targetForLevel(level + 1).toLocaleString()}`,
+                      `Yeni hedef: ${targetForLevel(level + 1).toLocaleString()}`,
+                      language,
+                    )}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {phase === 'over' && result && (
+          <Results
+            language={language}
+            gameMode={gameMode}
+            score={score}
+            wpm={wpm}
+            accuracy={accuracy}
+            stats={stats}
+            level={isLevelMode ? level : null}
+            result={result}
+            best={best[gameMode] ?? 0}
+            onAgain={startGame}
+            onLobby={() => setPhase('lobby')}
+          />
+        )}
+      </main>
+
+      {phase === 'playing' && (
+        <form
+          className="st-dock"
+          onSubmit={(e) => { e.preventDefault(); submit(input); }}
+        >
+          <div ref={fieldRef} className="st-dock__field">
+            <span className="st-dock__prompt">›</span>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              disabled={isPaused || levelUp}
+              placeholder={
+                isFalling
+                  ? t('Type any falling word…', 'Düşen bir kelimeyi yaz…', language)
+                  : t('Type the glowing word…', 'Parlayan kelimeyi yaz…', language)
+              }
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-label={t('Type here', 'Buraya yaz', language)}
+            />
+            <span className="st-dock__keys">
+              {isFalling ? t('auto-zaps', 'otomatik', language) : <><kbd>Space</kbd><kbd>Enter</kbd></>}
+            </span>
+          </div>
+          <span className="st-dock__hint">
+            <kbd>Esc</kbd> {t('pause', 'duraklat', language)}
+          </span>
+        </form>
+      )}
     </div>
   );
 };
+
+// ─── HUD pieces ──────────────────────────────────────────────────────────────
+
+function Stat({
+  label, value, sub, tone = 'plain', big, icon, className = '',
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'plain' | 'gold' | 'hot';
+  big?: boolean;
+  icon?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`st-stat st-stat--${tone}${big ? ' st-stat--big' : ''} ${className}`}>
+      <span className="st-stat__label">{icon}{label}</span>
+      <span className="st-stat__value">
+        {value}
+        {sub && <small>{sub}</small>}
+      </span>
+    </div>
+  );
+}
+
+function TimerRing({ seconds }: { seconds: number }) {
+  const r = 17;
+  const c = 2 * Math.PI * r;
+  const ratio = Math.min(1, seconds / ROUND_SECONDS);
+  const tone = seconds <= 10 ? 'danger' : seconds <= 30 ? 'warn' : 'ok';
+  return (
+    <div className={`st-timer st-timer--${tone}`} aria-label={`${seconds} seconds left`}>
+      <svg viewBox="0 0 40 40">
+        <circle cx="20" cy="20" r={r} className="st-timer__track" />
+        <circle
+          cx="20" cy="20" r={r}
+          className="st-timer__arc"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - ratio)}
+        />
+      </svg>
+      <span>{seconds}</span>
+    </div>
+  );
+}
+
+// ─── Lobby ───────────────────────────────────────────────────────────────────
+
+function Lobby({
+  language, tagline, gameMode, spawnRate, best, onMode, onRate, onStart,
+}: {
+  language: Language;
+  tagline: string;
+  gameMode: GameMode;
+  spawnRate: SpawnRateMultiplier;
+  best: Record<GameMode, number>;
+  onMode: (m: GameMode) => void;
+  onRate: (r: SpawnRateMultiplier) => void;
+  onStart: () => void;
+}) {
+  return (
+    <div className="st-lobby">
+      <section className="st-lobby__hero">
+        <div className="st-keycaps" aria-hidden>
+          {'TYPE'.split('').map((ch, i) => (
+            <span key={i} className="st-keycap" style={{ '--i': i } as CSSProperties}>{ch}</span>
+          ))}
+        </div>
+        <h2 className="st-lobby__title">
+          Speed <span>Typer</span>
+        </h2>
+        <p className="st-lobby__tagline">{tagline}</p>
+        <div className="st-lobby__chips">
+          <span><Zap size={12} /> {t('60s rounds', '60 sn tur', language)}</span>
+          <span><Flame size={12} /> {t('Combos up to ×2', '×2 kombo', language)}</span>
+          <span><Coins size={12} /> {t('Score = chips', 'Puan = çip', language)}</span>
+        </div>
+      </section>
+
+      <section className="st-lobby__setup">
+        <p className="st-section-label">{t('Pick your poison', 'Modunu seç', language)}</p>
+        <div className="st-modes" role="radiogroup" aria-label="Game mode">
+          {GAME_MODES.map((m) => {
+            const Icon = MODE_ICONS[m];
+            const a = modeAccent(m);
+            return (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={gameMode === m}
+                className={`st-mode${gameMode === m ? ' is-on' : ''}`}
+                style={{ '--m-from': a.from, '--m-to': a.to } as CSSProperties}
+                onClick={() => onMode(m)}
+              >
+                <span className="st-mode__icon"><Icon size={18} /></span>
+                <span className="st-mode__body">
+                  <span className="st-mode__name">{modeName(m, language)}</span>
+                  <span className="st-mode__pun">{modePun(m, language)}</span>
+                  <span className="st-mode__rules">
+                    {modeRules(m, language).map((r) => <span key={r}>{r}</span>)}
+                  </span>
+                </span>
+                {best[m] > 0 && (
+                  <span className="st-mode__best"><Crown size={10} /> {best[m].toLocaleString()}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {gameMode === 'falling' && (
+          <div className="st-rate">
+            <div className="st-rate__head">
+              <p className="st-section-label">{t('Forecast', 'Hava durumu', language)}</p>
+              <span className={`st-rate__name${spawnRate >= 2 ? ' is-wild' : ''}`}>
+                <CloudRain size={12} /> {rateName(spawnRate, language)} · {spawnRate}×
+              </span>
+            </div>
+            <div className="st-seg st-seg--rate" role="radiogroup" aria-label="Spawn rate">
+              {SPAWN_RATES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  role="radio"
+                  aria-checked={spawnRate === r}
+                  className={`${spawnRate === r ? 'is-on' : ''}${r >= 2 ? ' is-wild' : ''}`}
+                  onClick={() => onRate(r)}
+                >
+                  {r}×
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button type="button" className="st-start" onClick={onStart}>
+          <Play size={17} fill="currentColor" />
+          {t(`Start ${modeName(gameMode, language)}`, `${modeName(gameMode, language)} başlat`, language)}
+          <kbd>Enter</kbd>
+        </button>
+      </section>
+    </div>
+  );
+}
+
+// ─── Train / level track ─────────────────────────────────────────────────────
+
+function Track({
+  language, queue, input, norm, lastResult, gameMode, level, shakeKey,
+}: {
+  language: Language;
+  queue: string[];
+  input: string;
+  norm: (s: string) => string;
+  lastResult: { word: string; ok: boolean; id: number } | null;
+  gameMode: GameMode;
+  level: number;
+  shakeKey: number;
+}) {
+  const current = queue[0] ?? '';
+  const typedChars = Array.from(norm(input));
+  const letters = Array.from(current);
+  const lower = Array.from(norm(current));
+
+  return (
+    <div className="st-track">
+      <p className="st-track__label">
+        {gameMode === 'letter-level'
+          ? t(`${getLetterCountForLevel(level)}-letter words`, `${getLetterCountForLevel(level)} harfli kelimeler`, language)
+          : gameMode === 'score-level'
+            ? t('Now climbing', 'Tırmanıyor', language)
+            : t('Now boarding', 'Biniş başladı', language)}
+      </p>
+
+      <div className="st-track__prev">
+        {lastResult && (
+          <span key={lastResult.id} className={`st-track__last ${lastResult.ok ? 'is-ok' : 'is-bad'}`}>
+            {lastResult.ok ? '✓' : '✗'} {lastResult.word}
+          </span>
+        )}
+      </div>
+
+      <div key={shakeKey} className={`st-word${shakeKey ? ' is-shake' : ''}`}>
+        {letters.map((ch, i) => {
+          const state = i < typedChars.length ? (typedChars[i] === lower[i] ? 'ok' : 'bad') : 'todo';
+          return (
+            <span key={i} className={`st-word__ch is-${state}${i === typedChars.length ? ' is-caret' : ''}`}>
+              {ch}
+            </span>
+          );
+        })}
+        {typedChars.length > letters.length && (
+          <span className="st-word__extra">{typedChars.slice(letters.length).join('')}</span>
+        )}
+      </div>
+
+      <div className="st-train">
+        {queue.slice(1, 6).map((w, i) => (
+          <span key={`${w}-${i}`} className="st-car" style={{ '--i': i } as CSSProperties}>
+            {w}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Results ─────────────────────────────────────────────────────────────────
+
+function Results({
+  language, gameMode, score, wpm, accuracy, stats, level, result, best, onAgain, onLobby,
+}: {
+  language: Language;
+  gameMode: GameMode;
+  score: number;
+  wpm: number;
+  accuracy: number;
+  stats: RunStats;
+  level: number | null;
+  result: RunResult;
+  best: number;
+  onAgain: () => void;
+  onLobby: () => void;
+}) {
+  const grade = gradeFor(wpm, language);
+  const victory = result.reason === 'victory';
+  return (
+    <div className="st-overlay">
+      <div className={`st-results${victory ? ' is-victory' : ''}`}>
+        {result.newBest && (
+          <span className="st-results__ribbon"><Sparkles size={11} /> {t('New best', 'Yeni rekor', language)}</span>
+        )}
+        <p className="st-results__eyebrow">
+          {victory
+            ? t('All 10 levels cleared', '10 seviye tamam', language)
+            : result.reason === 'quit'
+              ? t('Run ended', 'Tur bitti', language)
+              : t("Time's up", 'Süre doldu', language)}{' '}
+          · {modeName(gameMode, language)}
+        </p>
+        <h3 className="st-results__title">
+          {victory ? t('Champion of the Keys', 'Klavye Şampiyonu', language) : grade.title}
+        </h3>
+        <p className="st-results__quip">{grade.quip}</p>
+
+        <div className="st-results__score">
+          <span>{score.toLocaleString()}</span>
+          <small>{t('points', 'puan', language)} · {t('best', 'rekor', language)} {best.toLocaleString()}</small>
+        </div>
+
+        <div className="st-results__grid">
+          <ResultCell icon={<Zap size={13} />} label="WPM" value={String(wpm)} />
+          <ResultCell icon={<Target size={13} />} label={t('Accuracy', 'İsabet', language)} value={`${accuracy}%`} />
+          <ResultCell icon={<Flame size={13} />} label={t('Best combo', 'En iyi kombo', language)} value={String(stats.bestCombo)} />
+          {level !== null ? (
+            <ResultCell icon={<Mountain size={13} />} label={t('Level', 'Seviye', language)} value={`${level}/${MAX_LEVEL}`} />
+          ) : (
+            <ResultCell icon={<CloudRain size={13} />} label={t('Words', 'Kelime', language)} value={String(stats.correct)} />
+          )}
+        </div>
+
+        {result.chips > 0 && (
+          <p className="st-results__chips"><Coins size={14} /> +{result.chips.toLocaleString()} {t('chips banked', 'çip kazandın', language)}</p>
+        )}
+
+        <div className="st-modal__actions">
+          <button type="button" className="st-btn st-btn--primary" onClick={onAgain} autoFocus>
+            <RotateCcw size={15} /> {t('Run it back', 'Bir daha', language)} <kbd>Enter</kbd>
+          </button>
+          <button type="button" className="st-btn" onClick={onLobby}>
+            {t('Change mode', 'Mod değiştir', language)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultCell({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="st-results__cell">
+      <span className="st-results__cell-label">{icon}{label}</span>
+      <span className="st-results__cell-value">{value}</span>
+    </div>
+  );
+}
 
 export default SimplifiedSpeedTyper;
