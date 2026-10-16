@@ -182,16 +182,17 @@ const GameArea = ({ game }: GameAreaProps) => {
   
   const isChess = game.id === "chess";
   const isBlackjack = game.id === "blackjack";
+  const isFullHeight = isBlackjack || game.id === "speed-typer";
 
   return (
     <Card className={cn(
       "relative w-full rounded-2xl border border-white/[0.08] bg-[#060912]/90 shadow-[0_30px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-500",
       isChess
         ? "mx-auto flex min-h-[min(720px,calc(100dvh-5.5rem))] max-w-5xl flex-col overflow-hidden p-0 h-auto"
-        : isBlackjack
+        : isFullHeight
           ? "mx-auto flex h-[calc(100dvh-5.5rem)] min-h-[560px] max-w-6xl flex-col overflow-hidden p-0"
           : "h-[50vh] md:h-[65vh] overflow-hidden",
-      isDedicatedGame && !isChess && !isBlackjack
+      isDedicatedGame && !isChess && !isFullHeight
         ? "flex flex-col p-0"
         : !isDedicatedGame
           ? "flex items-center justify-center"
