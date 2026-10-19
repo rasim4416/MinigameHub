@@ -85,6 +85,9 @@ export type SpellState = {
   puppetAvailable: boolean;
   puppetActive: boolean;
   onPuppet: () => void;
+  /** Auction wins waiting for a free home square. */
+  heldAuctionPieces: import("./augments").AuctionPieceType[];
+  onPlaceHeldAuction: () => void;
   evadeCharges: number;
   evadeActive: boolean;
   onEvade: () => void;

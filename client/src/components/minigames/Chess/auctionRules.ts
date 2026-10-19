@@ -3,7 +3,9 @@ import {
   getBoardCols,
   getBoardRows,
   getDerivedBoard,
+  is2v2Mode,
   type ChessState,
+  type PieceType,
 } from "./engine";
 import type { AuctionState } from "./ui/AuctionPanel";
 
@@ -14,26 +16,31 @@ export const AUCTION_ANTI_SNIPE_MS = 8_000;
 type Square = [number, number];
 export type AuctionSide = "white" | "black";
 
+/** Starting back-rank layout (files a–h). Kings are never auctioned. */
+const BACK_RANK: PieceType[] = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+
 function isPermaFrost(game: ChessState, r: number, c: number): boolean {
   return game.permaFrozenSquares?.some((s) => s.row === r && s.col === c) ?? false;
 }
 
-function pawnRankSquares(game: ChessState, color: AuctionSide): Square[] {
+/**
+ * Column starts of each 8-file army for this board.
+ * 1v1: one centered block. 2v2 / wide boards: both team halves.
+ */
+function armyFileStarts(game: ChessState): number[] {
   const rows = getBoardRows(game);
   const cols = getBoardCols(game);
-  const off = (rows - 8) / 2;
-  const row = color === "white" ? 6 + off : 1 + off;
-  // 2v2 boards are wider than tall; every file there belongs to a pawn rank.
-  const [c0, c1] = rows === cols ? [off, off + 8] : [0, cols];
-  const out: Square[] = [];
-  for (let c = c0; c < c1; c++) out.push([row, c]);
-  return out;
+  if (is2v2Mode(game) || cols >= 16) {
+    const pad = Math.max(0, Math.floor((cols - 16) / 2));
+    return [pad, pad + 8];
+  }
+  return [(Math.min(rows, cols) - 8) / 2];
 }
 
 /**
- * Squares the auction winner may drop their piece on. Pawns prefer their
- * original rank; if that is full they may land anywhere on their own half
- * short of either back rank so the won pawn is never stranded.
+ * Original starting squares for an auctioned piece type — pawn rank for pawns,
+ * back-rank home squares for N/B/R/Q. No fallback: if every home square is
+ * taken the piece is held for later placement from the spell bar.
  */
 export function listAuctionPlacements(
   game: ChessState,
@@ -42,26 +49,32 @@ export function listAuctionPlacements(
   isBlocked: (r: number, c: number) => boolean = () => false,
 ): Square[] {
   const rows = getBoardRows(game);
-  const cols = getBoardCols(game);
   const board = getDerivedBoard(game);
   const free = (r: number, c: number) =>
     !board[r]?.[c] && !isPermaFrost(game, r, c) && !isBlocked(r, c);
 
-  if (pieceType !== "P") {
-    const out: Square[] = [];
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) if (free(r, c)) out.push([r, c]);
+  const rowOff = (rows - 8) / 2;
+  const out: Square[] = [];
+
+  if (pieceType === "P") {
+    const pawnRow = color === "white" ? 6 + rowOff : 1 + rowOff;
+    for (const start of armyFileStarts(game)) {
+      for (let i = 0; i < 8; i++) {
+        const c = start + i;
+        if (free(pawnRow, c)) out.push([pawnRow, c]);
+      }
+    }
     return out;
   }
 
-  const home = pawnRankSquares(game, color).filter(([r, c]) => free(r, c));
-  if (home.length > 0) return home;
-
-  const half = Math.floor(rows / 2);
-  const [r0, r1] = color === "white" ? [half, rows - 1] : [1, rows - half];
-  const out: Square[] = [];
-  for (let r = r0; r < r1; r++)
-    for (let c = 0; c < cols; c++) if (free(r, c)) out.push([r, c]);
+  const backRow = color === "white" ? 7 + rowOff : rowOff;
+  for (const start of armyFileStarts(game)) {
+    for (let i = 0; i < 8; i++) {
+      if (BACK_RANK[i] !== pieceType) continue;
+      const c = start + i;
+      if (free(backRow, c)) out.push([backRow, c]);
+    }
+  }
   return out;
 }
 
