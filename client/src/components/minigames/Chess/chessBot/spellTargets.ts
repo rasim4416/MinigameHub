@@ -17,9 +17,13 @@ function legalMovesForPiece(
   const piece = getDerivedBoard(game)[row]?.[col];
   if (!piece || piece.color === "orange") return [];
   // Engine legal-move generation validates the side to move. Target spells
-  // inspect enemy pieces while black is to move, so switch only the preview
-  // turn rather than mistaking every enemy target for immobile.
-  return getLegalMoves({ ...game, turn: piece.color }, row, col);
+  // inspect enemy pieces while black is to move, so switch the preview turn
+  // (and 2v2 slot) rather than mistaking every enemy target for immobile.
+  const preview =
+    piece.slot != null
+      ? { ...game, turn: piece.color, turnSlot: piece.slot }
+      : { ...game, turn: piece.color };
+  return getLegalMoves(preview, row, col);
 }
 
 export function enumerateFrostTargets(

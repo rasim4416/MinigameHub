@@ -283,6 +283,44 @@ type AugmentSnapshot = {
   blackNecroPPCharges: number;
   whiteLittleBigManCharges: number;
   blackLittleBigManCharges: number;
+  // Full undo: augments, spells, auction, undos
+  whiteAugments: Augment[];
+  blackAugments: Augment[];
+  whiteTierBought: TierBought;
+  blackTierBought: TierBought;
+  whiteMilestones: Milestones;
+  blackMilestones: Milestones;
+  whiteFreezeCharges: number;
+  blackFreezeCharges: number;
+  whiteNecroCharges: number;
+  blackNecroCharges: number;
+  whiteNecroPlusCharges: number;
+  blackNecroPlusCharges: number;
+  whiteBlessedWaterCharges: number;
+  blackBlessedWaterCharges: number;
+  whitePuppetUsed: boolean;
+  blackPuppetUsed: boolean;
+  whiteDNUsed: boolean;
+  blackDNUsed: boolean;
+  whiteWhatUsed: boolean;
+  blackWhatUsed: boolean;
+  whiteSakoUsed: boolean;
+  blackSakoUsed: boolean;
+  whiteSwapUsed: boolean;
+  blackSwapUsed: boolean;
+  whiteRoyalHouseholdUsed: boolean;
+  blackRoyalHouseholdUsed: boolean;
+  whiteIcUsed: boolean;
+  blackIcUsed: boolean;
+  whiteUndosLeft: number;
+  blackUndosLeft: number;
+  nextAuctionTurn: number;
+  activeAuction: AuctionState | null;
+  auctionPlaceFor: { color: Color; pieceType: PieceType } | null;
+  whiteHeldAuctionPieces: AuctionPieceType[];
+  blackHeldAuctionPieces: AuctionPieceType[];
+  pawnPlaceFor: Color | null;
+  pawnPlaceSlot: PlayerSlot | null;
 };
 
 const EMPTY_MILESTONES: Milestones = {
@@ -1803,6 +1841,12 @@ export default function ChessGame({
     color: Color;
     pieceType: PieceType;
   } | null>(null);
+  const [whiteHeldAuctionPieces, setWhiteHeldAuctionPieces] = useState<
+    AuctionPieceType[]
+  >([]);
+  const [blackHeldAuctionPieces, setBlackHeldAuctionPieces] = useState<
+    AuctionPieceType[]
+  >([]);
   const [auctionAnnouncement, setAuctionAnnouncement] = useState<string | null>(
     null,
   );
@@ -2152,6 +2196,43 @@ export default function ChessGame({
     blackNecroPPCharges,
     whiteLittleBigManCharges,
     blackLittleBigManCharges,
+    whiteAugments,
+    blackAugments,
+    whiteTierBought,
+    blackTierBought,
+    whiteMilestones,
+    blackMilestones,
+    whiteFreezeCharges,
+    blackFreezeCharges,
+    whiteNecroCharges,
+    blackNecroCharges,
+    whiteNecroPlusCharges,
+    blackNecroPlusCharges,
+    whiteBlessedWaterCharges,
+    blackBlessedWaterCharges,
+    whitePuppetUsed,
+    blackPuppetUsed,
+    whiteDNUsed,
+    blackDNUsed,
+    whiteWhatUsed,
+    blackWhatUsed,
+    whiteSakoUsed,
+    blackSakoUsed,
+    whiteSwapUsed,
+    blackSwapUsed,
+    whiteRoyalHouseholdUsed,
+    blackRoyalHouseholdUsed,
+    whiteIcUsed,
+    blackIcUsed,
+    whiteUndosLeft,
+    blackUndosLeft,
+    nextAuctionTurn,
+    activeAuction,
+    auctionPlaceFor,
+    whiteHeldAuctionPieces,
+    blackHeldAuctionPieces,
+    pawnPlaceFor,
+    pawnPlaceSlot,
   }), [
     frozenSquare, frozenExpireAfter, frozenTurnsLeft,
     whiteDomainUsed, blackDomainUsed,
@@ -2172,6 +2253,17 @@ export default function ChessGame({
     whiteBloodbendingPlusCharges, blackBloodbendingPlusCharges,
     whiteNecroPPCharges, blackNecroPPCharges,
     whiteLittleBigManCharges, blackLittleBigManCharges,
+    whiteAugments, blackAugments, whiteTierBought, blackTierBought,
+    whiteMilestones, blackMilestones,
+    whiteFreezeCharges, blackFreezeCharges, whiteNecroCharges, blackNecroCharges,
+    whiteNecroPlusCharges, blackNecroPlusCharges,
+    whiteBlessedWaterCharges, blackBlessedWaterCharges,
+    whitePuppetUsed, blackPuppetUsed, whiteDNUsed, blackDNUsed,
+    whiteWhatUsed, blackWhatUsed, whiteSakoUsed, blackSakoUsed,
+    whiteSwapUsed, blackSwapUsed, whiteRoyalHouseholdUsed, blackRoyalHouseholdUsed,
+    whiteIcUsed, blackIcUsed, whiteUndosLeft, blackUndosLeft,
+    nextAuctionTurn, activeAuction, auctionPlaceFor,
+    whiteHeldAuctionPieces, blackHeldAuctionPieces, pawnPlaceFor, pawnPlaceSlot,
   ]);
 
   // Build a plain-JSON snapshot of all game state
@@ -2294,6 +2386,8 @@ export default function ChessGame({
     nextAuctionTurn,
     activeAuction,
     auctionPlaceFor,
+    whiteHeldAuctionPieces,
+    blackHeldAuctionPieces,
   };
   };
 
@@ -2381,6 +2475,14 @@ export default function ChessGame({
     setAuctionPlaceFor(
       (g as { auctionPlaceFor?: { color: Color; pieceType: PieceType } | null })
         .auctionPlaceFor ?? null,
+    );
+    setWhiteHeldAuctionPieces(
+      (g as { whiteHeldAuctionPieces?: AuctionPieceType[] })
+        .whiteHeldAuctionPieces ?? [],
+    );
+    setBlackHeldAuctionPieces(
+      (g as { blackHeldAuctionPieces?: AuctionPieceType[] })
+        .blackHeldAuctionPieces ?? [],
     );
     setChaosEventTiming(
       typeof g.chaosEventTiming === "boolean"
@@ -2753,22 +2855,25 @@ export default function ChessGame({
         winner,
         auctionBlockedSquare,
       );
+      setGame((g) => ({
+        ...g,
+        goldWhite:
+          winner === "white"
+            ? Math.max(0, g.goldWhite - activeAuction.highBid)
+            : g.goldWhite,
+        goldBlack:
+          winner === "black"
+            ? Math.max(0, g.goldBlack - activeAuction.highBid)
+            : g.goldBlack,
+      }));
       if (spots.length === 0) {
+        if (winner === "white")
+          setWhiteHeldAuctionPieces((q) => [...q, activeAuction.pieceType]);
+        else setBlackHeldAuctionPieces((q) => [...q, activeAuction.pieceType]);
         setAuctionAnnouncement(
-          `No room for the ${piece} — ${winner} keeps their ${activeAuction.highBid}g.`,
+          `SOLD! ${winner === "white" ? "White" : "Black"} hires the ${piece} for ${activeAuction.highBid}g — home squares full, held in the spell bar.`,
         );
       } else {
-        setGame((g) => ({
-          ...g,
-          goldWhite:
-            winner === "white"
-              ? Math.max(0, g.goldWhite - activeAuction.highBid)
-              : g.goldWhite,
-          goldBlack:
-            winner === "black"
-              ? Math.max(0, g.goldBlack - activeAuction.highBid)
-              : g.goldBlack,
-        }));
         setAuctionPlaceFor({
           color: winner,
           pieceType: activeAuction.pieceType,
@@ -4341,6 +4446,49 @@ export default function ChessGame({
         (augRestored as { blackLittleBigManCharges?: number })
           .blackLittleBigManCharges ?? 0,
       );
+      setWhiteAugments(augRestored.whiteAugments ?? []);
+      setBlackAugments(augRestored.blackAugments ?? []);
+      setWhiteTierBought(augRestored.whiteTierBought ?? EMPTY_TIER);
+      setBlackTierBought(augRestored.blackTierBought ?? EMPTY_TIER);
+      setWhiteMilestones(augRestored.whiteMilestones ?? EMPTY_MILESTONES);
+      setBlackMilestones(augRestored.blackMilestones ?? EMPTY_MILESTONES);
+      setWhiteFreezeCharges(augRestored.whiteFreezeCharges ?? 0);
+      setBlackFreezeCharges(augRestored.blackFreezeCharges ?? 0);
+      setWhiteNecroCharges(augRestored.whiteNecroCharges ?? 0);
+      setBlackNecroCharges(augRestored.blackNecroCharges ?? 0);
+      setWhiteNecroPlusCharges(augRestored.whiteNecroPlusCharges ?? 0);
+      setBlackNecroPlusCharges(augRestored.blackNecroPlusCharges ?? 0);
+      setWhiteBlessedWaterCharges(augRestored.whiteBlessedWaterCharges ?? 0);
+      setBlackBlessedWaterCharges(augRestored.blackBlessedWaterCharges ?? 0);
+      setWhitePuppetUsed(augRestored.whitePuppetUsed ?? false);
+      setBlackPuppetUsed(augRestored.blackPuppetUsed ?? false);
+      setWhiteDNUsed(augRestored.whiteDNUsed ?? false);
+      setBlackDNUsed(augRestored.blackDNUsed ?? false);
+      setWhiteWhatUsed(augRestored.whiteWhatUsed ?? false);
+      setBlackWhatUsed(augRestored.blackWhatUsed ?? false);
+      setWhiteSakoUsed(augRestored.whiteSakoUsed ?? false);
+      setBlackSakoUsed(augRestored.blackSakoUsed ?? false);
+      setWhiteSwapUsed(augRestored.whiteSwapUsed ?? false);
+      setBlackSwapUsed(augRestored.blackSwapUsed ?? false);
+      setWhiteRoyalHouseholdUsed(augRestored.whiteRoyalHouseholdUsed ?? false);
+      setBlackRoyalHouseholdUsed(augRestored.blackRoyalHouseholdUsed ?? false);
+      setWhiteIcUsed(augRestored.whiteIcUsed ?? false);
+      setBlackIcUsed(augRestored.blackIcUsed ?? false);
+      setNextAuctionTurn(augRestored.nextAuctionTurn ?? nextAuctionTurn);
+      setActiveAuction(augRestored.activeAuction ?? null);
+      setAuctionPlaceFor(augRestored.auctionPlaceFor ?? null);
+      setWhiteHeldAuctionPieces(augRestored.whiteHeldAuctionPieces ?? []);
+      setBlackHeldAuctionPieces(augRestored.blackHeldAuctionPieces ?? []);
+      setPawnPlaceFor(augRestored.pawnPlaceFor ?? null);
+      setPawnPlaceSlot(augRestored.pawnPlaceSlot ?? null);
+      // Restore undos, then spend the one just used.
+      if (game.turn === "white") {
+        setWhiteUndosLeft(Math.max(0, (augRestored.whiteUndosLeft ?? 1) - 1));
+        setBlackUndosLeft(augRestored.blackUndosLeft ?? 0);
+      } else {
+        setBlackUndosLeft(Math.max(0, (augRestored.blackUndosLeft ?? 1) - 1));
+        setWhiteUndosLeft(augRestored.whiteUndosLeft ?? 0);
+      }
     }
     setSelected(null);
     setValidMoves([]);
@@ -4354,16 +4502,15 @@ export default function ChessGame({
     setRoyalEdMode(false);
     setWhatMode(false);
     setWhatSelected(null);
+    setPuppetMode(false);
     if (game.turn === "white") {
-      setWhiteUndosLeft((u) => u - 1);
       setWhiteTurnCount((c) => Math.max(0, c - 1));
       setBlackTurnCount((c) => Math.max(0, c - 1));
     } else {
-      setBlackUndosLeft((u) => u - 1);
       setBlackTurnCount((c) => Math.max(0, c - 1));
       setWhiteTurnCount((c) => Math.max(0, c - 1));
     }
-  }, [game, gameHistory, augmentHistory]);
+  }, [game, gameHistory, augmentHistory, nextAuctionTurn]);
 
   // ── Mode toggles ─────────────────────────────────────────────────────────
 
@@ -5101,17 +5248,59 @@ export default function ChessGame({
       }
 
       if (puppetMode || botForcedSpell === "puppet") {
-        if (
+        const validTarget =
           piece &&
           piece.color !== game.turn &&
           piece.color !== "orange" &&
           piece.type !== "K" &&
-          piece.type !== "M"
-        ) {
+          piece.type !== "M";
+        if (validTarget && piece) {
+          // Target must have a legal (check-safe) move for its owner.
+          const preview = (
+            gameIs2v2 && piece.slot
+              ? { ...game, turn: piece.color, turnSlot: piece.slot }
+              : { ...game, turn: piece.color }
+          ) as ChessState;
+          if (getLegalMoves(preview, r, c).length === 0) {
+            // Stay in puppet mode for humans so they can pick another piece.
+            if (botForcedSpell) {
+              setPuppetMode(false);
+              setSelected(null);
+              setValidMoves([]);
+            }
+            return;
+          }
+          const movingColor = game.turn as PlayerColor;
+          const newTurnCount =
+            (movingColor === "white" ? whiteTurnCount : blackTurnCount) + 1;
+          if (movingColor === "white") setWhiteTurnCount(newTurnCount);
+          else setBlackTurnCount(newTurnCount);
+          setGameHistory((h) => [...h, game]);
+          setAugmentHistory((h) => [...h, captureAugmentSnapshot()]);
           setActivePuppetSquare([r, c]);
-          setActivePuppetColor(opp(game.turn));
-          if (game.turn === "white") setWhitePuppetUsed(true);
+          setActivePuppetColor(opp(movingColor));
+          if (movingColor === "white") setWhitePuppetUsed(true);
           else setBlackPuppetUsed(true);
+          const newG = commitSpellHalfMove(
+            game,
+            cloneBoard(getDerivedBoard(game)),
+            movingColor,
+            {
+              from: [r, c],
+              to: [r, c],
+              piece,
+              captured: null,
+            },
+            newTurnCount,
+            whiteTurnCount,
+            blackTurnCount,
+            whiteAugments,
+            blackAugments,
+            whiteDoubleGoldFullRoundsLeft,
+            blackDoubleGoldFullRoundsLeft,
+            movingColor === "white" ? whiteAugmentLevels : blackAugmentLevels,
+          );
+          setGame(newG);
         }
         setPuppetMode(false);
         setSelected(null);
@@ -5882,6 +6071,12 @@ export default function ChessGame({
       puppetMode,
       whiteTurnCount,
       blackTurnCount,
+      whiteAugmentLevels,
+      blackAugmentLevels,
+      whiteDoubleGoldFullRoundsLeft,
+      blackDoubleGoldFullRoundsLeft,
+      captureAugmentSnapshot,
+      gameIs2v2,
       peaceTreatyRoundsLeft,
       coldWindsMovesLeft,
       coldWindsSquares,
@@ -6022,6 +6217,13 @@ export default function ChessGame({
       !gameOver &&
       auctionPlaceFor?.color === "black";
 
+    const shouldPlaceHeldAuction =
+      phase === "playing" &&
+      !gameOver &&
+      !auctionPlaceFor &&
+      blackHeldAuctionPieces.length > 0 &&
+      game.turn === "black";
+
     const shouldShopBuy =
       phase === "playing" &&
       game.turn === "black" &&
@@ -6055,6 +6257,7 @@ export default function ChessGame({
     const shouldAct =
       shouldAuctionBid ||
       shouldAuctionPlace ||
+      shouldPlaceHeldAuction ||
       shouldShopBuy ||
       shouldPickAugment ||
       shouldPickMidGame ||
@@ -6113,6 +6316,21 @@ export default function ChessGame({
             auctionBlockedSquare,
           );
           if (sq) botSquareClickRef.current(sq[0], sq[1]);
+          return;
+        }
+
+        if (shouldPlaceHeldAuction) {
+          const pieceType = blackHeldAuctionPieces[0]!;
+          const spots = listAuctionPlacements(
+            gameRef.current,
+            pieceType,
+            "black",
+            auctionBlockedSquare,
+          );
+          if (spots.length > 0) {
+            setBlackHeldAuctionPieces((q) => q.slice(1));
+            setAuctionPlaceFor({ color: "black", pieceType });
+          }
           return;
         }
 
@@ -6210,7 +6428,6 @@ export default function ChessGame({
             if (action.type === "castSpell") {
               runBotSpell(action.spellId, action.target);
               const freeSameTurnMark =
-                action.spellId === "puppet" ||
                 action.spellId === "death-note" ||
                 action.spellId === "frost" ||
                 action.spellId === "blessed-water-spell";
@@ -6301,6 +6518,7 @@ export default function ChessGame({
     promotionPending,
     activeAuction,
     auctionPlaceFor,
+    blackHeldAuctionPieces,
     shopOpen,
     isLocalAugmentPicker,
     wallSquares,
@@ -6421,6 +6639,8 @@ export default function ChessGame({
     setNextAuctionTurn(rollFullRoundsUntilNextAuction());
     setActiveAuction(null);
     setAuctionPlaceFor(null);
+    setWhiteHeldAuctionPieces([]);
+    setBlackHeldAuctionPieces([]);
     setSacrificeMode(false);
     setBlessedSquares([]);
     setColdWindsSquares([]);
@@ -6796,6 +7016,31 @@ export default function ChessGame({
         : !blackPuppetUsed && blackAugments.some((a) => a.id === "puppet"),
     puppetActive: puppetMode && canUseSpells,
     onPuppet: spellGuard(handleTogglePuppet),
+    heldAuctionPieces:
+      color === "white" ? whiteHeldAuctionPieces : blackHeldAuctionPieces,
+    onPlaceHeldAuction: spellGuard(() => {
+      const queue =
+        color === "white" ? whiteHeldAuctionPieces : blackHeldAuctionPieces;
+      if (!queue.length || auctionPlaceFor) return;
+      const pieceType = queue[0]!;
+      const spots = listAuctionPlacements(
+        game,
+        pieceType,
+        color as AuctionSide,
+        auctionBlockedSquare,
+      );
+      if (spots.length === 0) {
+        setAuctionAnnouncement(
+          `No free home square for the ${AUCTION_PIECE_LABEL[pieceType]} yet.`,
+        );
+        return;
+      }
+      if (color === "white") setWhiteHeldAuctionPieces((q) => q.slice(1));
+      else setBlackHeldAuctionPieces((q) => q.slice(1));
+      setAuctionPlaceFor({ color, pieceType });
+      setShopOpen(false);
+      requestSnapshot();
+    }),
     evadeCharges:
       color === "white" ? whiteEvadeCharges : blackEvadeCharges,
     evadeActive: false,
@@ -6936,7 +7181,7 @@ export default function ChessGame({
       };
     if (puppetMode)
       return {
-        text: "🪆 PUPPET — Click an enemy piece to force them to play it next turn",
+        text: "🪆 PUPPET — Spend your turn: click an enemy piece that has a legal move (not king)",
         color: "#f97316",
       };
     if (

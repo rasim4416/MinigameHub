@@ -119,7 +119,17 @@ export function PlayerBar({
         <SpellButton icon="💧" label="BLESS" count={spells.blessedWaterCharges} active={spells.blessedWaterActive} onClick={spells.onBlessedWater} title="Bless a square for 2 rounds" />
       )}
       {canAct && spells.puppetAvailable && (
-        <SpellButton icon="🪆" label="PUPPET" active={spells.puppetActive} onClick={spells.onPuppet} title="Force opponent to move a piece next turn" />
+        <SpellButton icon="🪆" label="PUPPET" active={spells.puppetActive} onClick={spells.onPuppet} title="Spend your turn to force opponent to move a piece (must have a legal move)" />
+      )}
+      {canAct && spells.heldAuctionPieces.length > 0 && (
+        <SpellButton
+          icon="🏷️"
+          label="HIRE"
+          count={spells.heldAuctionPieces.length}
+          active={false}
+          onClick={spells.onPlaceHeldAuction}
+          title={`Place hired ${spells.heldAuctionPieces[0]} on an empty home square`}
+        />
       )}
       {canAct && spells.evadeCharges > 0 && (
         <SpellButton icon="💨" label="EVADE" active={spells.evadeActive} count={spells.evadeCharges} onClick={spells.onEvade} title="Block opponent spells/shop next turn" />

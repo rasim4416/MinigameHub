@@ -595,7 +595,7 @@ export const AUGMENT_POOL: Augment[] = [
   { id:"internal-combustion", name:"Internal Combustion", rarity:"epic", icon:"💥", description:"The first enemy piece that checks your king explodes — removed, granting no gold." },
   { id:"royal-education", name:"Royal Education", rarity:"epic", icon:"♞👑", description:"Once, your king may move like a knight — even while in check." },
   { id:"death-note", name:"Death Note", rarity:"epic", icon:"☠️", description:"Choose an enemy piece (not king or queen). It dies after 16 turns (each half-move ticks the timer); the curse follows that piece by identity. Pieces killed this way grant no gold, no augment, and don't count as captures." },
-  { id:"puppet",     name:"Puppet",    rarity:"epic", icon:"🪆",  description:"Once per game: mark any enemy piece (not king). On their next turn, the opponent MUST move that piece." },
+  { id:"puppet",     name:"Puppet",    rarity:"epic", icon:"🪆",  description:"Once per game: spend your turn to mark an enemy piece (not king) that has a legal move. The opponent MUST move that piece on their turn." },
   // ── Legendary ─────────────────────────────────────────────────────────────
   { id:"sako-bosphorus", name:"Şako Bosphorus", rarity:"legendary", icon:"⚓", description:"Buy the Experience — once, teleport any of your pieces to an unoccupied square (spends your turn)." },
   { id:"emperor-of-the-hill", name:"Emperor of the Hill", rarity:"legendary", icon:"👑⛰️", description:"Gain King of the Hill. If a pawn stays on a hill square for 2 full rounds, it promotes to a queen." },
