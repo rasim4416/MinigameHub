@@ -8,13 +8,14 @@ import SimplifiedSpeedTyper from "./SpeedTyper/SimplifiedSpeedTyper";
 import BarricadeGame from "./Barricade/BarricadeGame";
 import BlackjackGame from "./Blackjack/BlackjackGame";
 import ChessHub from "./Chess/ChessHub";
+import SimplifiedReactionTest from "./ReactionTest/SimplifiedReactionTest";
 
 interface GameAreaProps {
   game: GameType;
 }
 
 const GameArea = ({ game }: GameAreaProps) => {
-  const isDedicatedGame = game.id === "speed-typer" || game.id === "barricade" || game.id === "blackjack" || game.id === "chess";
+  const isDedicatedGame = game.id === "speed-typer" || game.id === "barricade" || game.id === "blackjack" || game.id === "chess" || game.id === "reaction-test";
   const [isLoading, setIsLoading] = useState(!isDedicatedGame);
   const [gameStarted, setGameStarted] = useState(false);
   const [score, setScore] = useState(0);
@@ -86,6 +87,10 @@ const GameArea = ({ game }: GameAreaProps) => {
     // Speed Typer Game
     if (game.id === "speed-typer") {
       return <SimplifiedSpeedTyper />;
+    }
+
+    if (game.id === "reaction-test") {
+      return <SimplifiedReactionTest />;
     }
 
     // Barricade Game
@@ -182,7 +187,7 @@ const GameArea = ({ game }: GameAreaProps) => {
   
   const isChess = game.id === "chess";
   const isBlackjack = game.id === "blackjack";
-  const isFullHeight = isBlackjack || game.id === "speed-typer";
+  const isFullHeight = isBlackjack || game.id === "speed-typer" || game.id === "reaction-test";
 
   return (
     <Card className={cn(
