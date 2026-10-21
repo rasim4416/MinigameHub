@@ -1,6 +1,8 @@
 import {
   AUGMENT_POOL,
   augmentUnlockedForShop,
+  canImproveAugment,
+  getNextImproveTier,
   getShopCost,
   MAX_STACK,
   NON_PURCHASABLE,
@@ -8,22 +10,16 @@ import {
   type AugmentUpgradeLevels,
 } from "../augments";
 import type { TierBought } from "../chessTypes";
-import {
-  BOT_AUGMENT_DENYLIST,
-  priorityIndex,
-  rarityRank,
-} from "./augmentPriority";
-import {
-  meetsMinShopRarity,
-  minShopRarity,
-  spendableGold,
-} from "./constants";
+import { BOT_AUGMENT_DENYLIST } from "./augmentPriority";
+import { augmentValue, CP_PER_GOLD, improveValue, type AugmentContext } from "./augmentValue";
+import { spendableGold } from "./constants";
 import type { PositionAssessment } from "./assessPosition";
 
-function catalogBuyOnly(
-  ownedAugments: Augment[],
-  augmentLevels: AugmentUpgradeLevels,
-): Augment[] {
+export type ShopChoice =
+  | { kind: "buy"; aug: Augment; cost: number; net: number }
+  | { kind: "improve"; augId: string; cost: number; net: number };
+
+function catalogBuyOnly(ownedAugments: Augment[]): Augment[] {
   const counts: Record<string, number> = {};
   for (const a of ownedAugments) counts[a.id] = (counts[a.id] || 0) + 1;
   const ownedIds = Object.keys(counts);
@@ -34,62 +30,52 @@ function catalogBuyOnly(
     if (BOT_AUGMENT_DENYLIST.has(a.id)) return false;
     if (!augmentUnlockedForShop(a.id, ownedIds)) return false;
     if (atMax(a.id)) return false;
-    void augmentLevels;
     return true;
   });
 }
 
+/** Minimum surplus (cp) over the gold's worth before the bot spends. */
+const MIN_SHOP_SURPLUS_CP = 15;
+
+/**
+ * Best shop action by value minus the gold's opportunity cost. Gold kept in
+ * reserve funds auctions, so only the spendable share is considered.
+ */
 export function pickShopBuy(input: {
   goldBlack: number;
   blackTierBought: TierBought;
   blackAugments: Augment[];
   blackAugmentLevels: AugmentUpgradeLevels;
   position: PositionAssessment;
-}): { aug: Augment; cost: number } | null {
-  const { goldBlack, blackTierBought, blackAugments, position } = input;
+  context?: AugmentContext;
+}): ShopChoice | null {
+  const { goldBlack, blackTierBought, blackAugments, blackAugmentLevels, position } = input;
   const budget = spendableGold(goldBlack, position.scoreCp);
   if (budget <= 0) return null;
+  const ctx: AugmentContext = {
+    ...input.context,
+    scoreCp: position.scoreCp,
+    levels: blackAugmentLevels,
+  };
 
-  const minRarity = minShopRarity(position.scoreCp);
-  const catalog = catalogBuyOnly(blackAugments, input.blackAugmentLevels).filter(
-    (a) => meetsMinShopRarity(a.rarity, minRarity),
-  );
-  if (catalog.length === 0) return null;
-
-  const affordable: Augment[] = [];
-  const costs = new Map<string, number>();
-  for (const a of catalog) {
-    const cost = getShopCost(a.rarity, blackTierBought[a.rarity]);
-    if (cost <= budget) {
-      affordable.push(a);
-      costs.set(a.id, cost);
-    }
+  const options: ShopChoice[] = [];
+  for (const aug of catalogBuyOnly(blackAugments)) {
+    const cost = getShopCost(aug.rarity, blackTierBought[aug.rarity]);
+    if (cost > budget) continue;
+    const net = augmentValue(aug, blackAugments, ctx) - cost * CP_PER_GOLD;
+    options.push({ kind: "buy", aug, cost, net });
   }
-  if (affordable.length === 0) return null;
+  const owned = [...new Set(blackAugments.map((a) => a.id))];
+  for (const augId of owned) {
+    if (!canImproveAugment(blackAugmentLevels, augId, blackAugments)) continue;
+    const tier = getNextImproveTier(augId, blackAugmentLevels);
+    if (!tier || tier.cost > budget) continue;
+    const net = improveValue(augId, blackAugments, ctx) - tier.cost * CP_PER_GOLD;
+    options.push({ kind: "improve", augId, cost: tier.cost, net });
+  }
 
-  // A shop offer charges for rarity again for every prior tier purchase.  The
-  // usual pick order is right for free rewards, but can spend nearly all gold
-  // on a marginal legendary here. Rank the legal affordable catalog by useful
-  // priority per actual price instead.
-  const pick = [...affordable].sort((a, b) => {
-    const value = (aug: Augment) => {
-      const tierValue = (rarityRank(aug.rarity) + 1) * 100;
-      const orderValue = Math.max(0, 20 - priorityIndex(aug.rarity, aug.id)) * 4;
-      return tierValue + orderValue;
-    };
-    const aCost = costs.get(a.id)!;
-    const bCost = costs.get(b.id)!;
-    const efficiency = value(b) / bCost - value(a) / aCost;
-    if (efficiency !== 0) return efficiency;
-    // Keep the free-pick strategy as a deterministic tie breaker.
-    return (
-      rarityRank(b.rarity) - rarityRank(a.rarity) ||
-      priorityIndex(a.rarity, a.id) - priorityIndex(b.rarity, b.id) ||
-      a.id.localeCompare(b.id)
-    );
-  })[0];
-  if (!pick) return null;
-  const cost = costs.get(pick.id);
-  if (cost === undefined) return null;
-  return { aug: pick, cost };
+  options.sort((a, b) => b.net - a.net || a.cost - b.cost);
+  const best = options[0];
+  if (!best || best.net < MIN_SHOP_SURPLUS_CP) return null;
+  return best;
 }

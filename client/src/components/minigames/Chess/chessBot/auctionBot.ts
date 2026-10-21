@@ -3,12 +3,9 @@ import {
   type AuctionPieceType,
 } from "../augments";
 import type { AuctionState } from "../ui/AuctionPanel";
-import {
-  auctionAggression,
-  reserveFraction,
-} from "./constants";
+import { auctionAggression } from "./constants";
 import type { PositionAssessment } from "./assessPosition";
-import { getBoardRows, type ChessState } from "../engine";
+import { getBoardRows, PIECE_VALUE, type ChessState } from "../engine";
 import { listAuctionPlacements, minNextBid } from "../auctionRules";
 
 export function computeAuctionBid(input: {
@@ -23,30 +20,27 @@ export function computeAuctionBid(input: {
 
   if (auction.passed?.includes("black")) return null;
   const minNext = minNextBid(auction);
-  const reserve = Math.floor(goldBlack * reserveFraction(position.scoreCp));
-  const budget = goldBlack - reserve;
-  if (minNext > budget) return null;
-
-  const aggression = auctionAggression(position.scoreCp);
-  const pieceType = auction.pieceType as AuctionPieceType;
-  const pieceFloor = AUCTION_MIN_BID[pieceType];
-  const maxWilling =
-    pieceFloor * (1 + aggression * 2) + Math.floor(goldBlack * 0.12 * aggression);
-
-  if (aggression < 0.25) {
-    if (pieceType !== "Q" && pieceType !== "R") return null;
-    if (minNext > budget || minNext > maxWilling) return null;
-    if (minNext > pieceFloor * 1.1) return null;
-    return minNext;
-  }
-
+  const budget = goldBlack - Math.floor(goldBlack * AUCTION_RESERVE);
+  const maxWilling = auctionMaxBid(auction.pieceType as AuctionPieceType, position.scoreCp);
   if (minNext > budget || minNext > maxWilling) return null;
-  const bid = Math.min(
-    minNext + Math.floor(aggression * 6),
-    budget,
-    Math.floor(maxWilling),
-  );
-  return bid >= minNext ? bid : null;
+  // Ascending auction: raising by the minimum always wins at the lowest price.
+  return minNext;
+}
+
+/** Gold the bot keeps out of auctions (shop money, next auction). */
+const AUCTION_RESERVE = 0.1;
+/** Gold per pawn of material the bot will pay at an even score. */
+const AUCTION_GOLD_PER_PAWN = 11;
+
+/**
+ * Highest price worth paying for a piece: its material in gold, more when
+ * behind (material decides lost games), less when already winning.
+ */
+export function auctionMaxBid(pieceType: AuctionPieceType, scoreCp: number): number {
+  const pawns = PIECE_VALUE[pieceType] ?? 1;
+  const urgency = 1 + auctionAggression(scoreCp) * 0.5 - (scoreCp > 600 ? 0.3 : 0);
+  const willing = Math.round(pawns * AUCTION_GOLD_PER_PAWN * urgency);
+  return Math.max(AUCTION_MIN_BID[pieceType], willing);
 }
 
 export function pickAuctionPlacement(
