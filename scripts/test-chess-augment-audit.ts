@@ -146,7 +146,7 @@ assert.ok(
   !freeSpellBranch.includes('"necromancer'),
   "revival consumes a turn and must not be repeated as a free spell",
 );
-const contextCall = chessGame.slice(chessGame.indexOf("const spellCtx = buildBotSpellContext"));
+const contextCall = chessGame.slice(chessGame.indexOf("const buildSpellCtx = (g: ChessState) =>"));
 for (const field of ["blackNecroCharges", "blackLostPawnCols", "blackNecroPlusCharges", "blackLostMinors", "blackNecroPPCharges"]) {
   assert.ok(contextCall.slice(0, contextCall.indexOf("});")).includes(field), `bot context receives ${field}`);
 }

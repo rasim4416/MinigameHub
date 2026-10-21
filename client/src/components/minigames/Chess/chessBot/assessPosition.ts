@@ -1,4 +1,4 @@
-import { materialAdvantage, type ChessState } from "../engine";
+import { getDerivedBoard, PIECE_VALUE, type ChessState } from "../engine";
 import type { BotMoveContext } from "./legalMoves";
 import { moveOnlySpellContext } from "./pickBotMove";
 import { probe } from "./probe";
@@ -15,6 +15,17 @@ export type PositionAssessment = {
   isAdvantaged: boolean;
   isDisadvantaged: boolean;
 };
+
+/** Black-minus-white material on the board (auction pieces included). */
+export function boardMaterialCp(game: ChessState): number {
+  let cp = 0;
+  for (const row of getDerivedBoard(game))
+    for (const p of row) {
+      if (!p || p.type === "K" || p.type === "M" || p.color === "orange") continue;
+      cp += (p.color === "black" ? 1 : -1) * (PIECE_VALUE[p.type] ?? 0) * 100;
+    }
+  return cp;
+}
 
 function build(materialCp: number, evalCp: number | null): PositionAssessment {
   const scoreCp = Math.max(-3000, Math.min(3000, evalCp ?? materialCp));
@@ -37,8 +48,7 @@ export async function assessPosition(
   game: ChessState,
   ctx: BotMoveContext | BotSpellContext,
 ): Promise<PositionAssessment> {
-  const adv = materialAdvantage(game);
-  const materialCp = (adv.black - adv.white) * 100;
+  const materialCp = boardMaterialCp(game);
   const spellCtx = moveOnlySpellContext(ctx);
   try {
     if (game.turn === "black") {

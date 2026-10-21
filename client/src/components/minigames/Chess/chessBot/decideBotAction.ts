@@ -26,9 +26,16 @@ import { sameMove } from "./uciParse";
 
 /** Move chosen together with a free spell; played on the very next call. */
 let pendingFollowUp: { key: string; move: BotMove } | null = null;
+/** Last cast in this position: if the game ignored it, never retry it. */
+let lastCast: string | null = null;
 
 export function resetBotMemory(): void {
   pendingFollowUp = null;
+  lastCast = null;
+}
+
+function castSignature(game: ChessState, spellId: string, target: [number, number]): string {
+  return `${positionKey(game, "black")}|${spellId}|${target[0]},${target[1]}`;
 }
 
 export type BotDecisionTrace = {
@@ -111,7 +118,13 @@ export async function decideBotAction(
 
   if (spellsOpen) {
     const deathTarget = pickDeathNoteTarget(game, ctx);
-    if (deathTarget) return { type: "castSpell", spellId: "death-note", target: deathTarget };
+    if (deathTarget) {
+      const sig = castSignature(game, "death-note", deathTarget);
+      if (sig !== lastCast) {
+        lastCast = sig;
+        return { type: "castSpell", spellId: "death-note", target: deathTarget };
+      }
+    }
   }
 
   const root = await analyseRoot(game, ctx, { legal, rules });
@@ -157,6 +170,7 @@ export async function decideBotAction(
     plans = await evaluatePlans({ game, ctx, rules, legal, candidates, budget, icDefender });
     const baseline = best ? best.cp : -Infinity;
     for (const plan of plans) {
+      if (castSignature(game, plan.spellId, plan.target) === lastCast) continue;
       const net = plan.value - plan.cost;
       const margin = plan.followUp ? FREE_SPELL_THRESHOLD_CP : TURN_SPELL_THRESHOLD_CP;
       if (net < baseline + margin) continue;
@@ -168,8 +182,10 @@ export async function decideBotAction(
   let action: BotAction | null;
   if (chosenPlan) {
     pendingFollowUp = chosenPlan.followUp;
+    lastCast = castSignature(game, chosenPlan.spellId, chosenPlan.target);
     action = planAction(chosenPlan);
   } else if (fallbackMove) {
+    lastCast = null;
     const contract = spellsOpen ? contractCaptureMove(game, ctx, fallbackMove) : null;
     action = contract
       ? { type: "castSpellThenMove", spellId: "contract-killer", target: contract.target, move: contract.move }

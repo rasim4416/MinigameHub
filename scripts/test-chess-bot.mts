@@ -138,6 +138,11 @@ function spellContext(
   assert.equal(
     pickAugmentForBot([aug("bloodbending"), aug("death-note")], []),
     aug("death-note"),
+    "a stronger epic beats the weaker one",
+  );
+  assert.equal(
+    pickAugmentForBot([aug("sacrifice"), aug("miner")], [])?.id,
+    "miner",
     "bot must not select an active it cannot execute",
   );
   assert.equal(

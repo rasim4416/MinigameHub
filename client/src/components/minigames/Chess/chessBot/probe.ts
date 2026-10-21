@@ -3,7 +3,7 @@ import { PROBE_MAX_DEPTH, PROBE_MOVETIME_MS, PROBE_RESERVE_MS } from "./constant
 import { isFenSafe, toStockfishFen } from "./fen";
 import { MATE_CP, jsSearch } from "./jsSearch";
 import { legalMovesFor, matchUci, toUci, withWalls, type RuleSet, type Side } from "./botRules";
-import { analyse } from "./stockfishEngine";
+import { abortSearches, analyse } from "./stockfishEngine";
 import type { BotMove } from "./types";
 
 export type ProbeLine = {
@@ -30,19 +30,33 @@ export type ProbeOptions = {
   depth?: number;
 };
 
+let generation = 0;
+
+/** Stop every in-flight bot decision (its result will be discarded). */
+export function cancelBotSearches(): void {
+  generation++;
+  abortSearches();
+}
+
 /** Wall-clock budget shared by every search in one bot decision. */
 export class Budget {
   readonly deadline: number;
+  private readonly gen = generation;
   constructor(ms: number) {
     this.deadline = Date.now() + ms;
   }
+  get cancelled(): boolean {
+    return this.gen !== generation;
+  }
   left(): number {
-    return this.deadline - Date.now();
+    return this.cancelled ? 0 : this.deadline - Date.now();
   }
   canProbe(ms = PROBE_MOVETIME_MS): boolean {
     return this.left() > ms + PROBE_RESERVE_MS;
   }
 }
+
+class SearchAborted extends Error {}
 
 const toBlack = (stm: Side, cp: number) => (stm === "black" ? cp : -cp);
 
@@ -62,6 +76,7 @@ async function stockfishProbe(
   const fen = toStockfishFen(game, stm);
   const ucis = moves.map((m) => toUci(game, m));
   let res;
+  const gen = generation;
   try {
     res = await analyse(fen, {
       movetimeMs: opts.movetimeMs ?? PROBE_MOVETIME_MS,
@@ -70,6 +85,8 @@ async function stockfishProbe(
       searchmoves: ucis,
     });
   } catch {
+    // A cancelled turn must not fall through to the (synchronous) JS search.
+    if (gen !== generation) throw new SearchAborted("Search aborted");
     return null;
   }
   const lines: ProbeLine[] = [];
@@ -124,9 +141,15 @@ export async function probe(
 ): Promise<ProbeResult> {
   const moves = opts.moves ?? legalMovesFor(game, stm, rules);
   if (moves.length === 0) return terminal(game, stm);
-  const sf = await stockfishProbe(game, stm, moves, {
-    ...opts,
-    depth: opts.depth ?? (opts.movetimeMs ? undefined : PROBE_MAX_DEPTH),
-  });
+  let sf: ProbeResult | null;
+  try {
+    sf = await stockfishProbe(game, stm, moves, {
+      ...opts,
+      depth: opts.depth ?? (opts.movetimeMs ? undefined : PROBE_MAX_DEPTH),
+    });
+  } catch (err) {
+    if (!(err instanceof SearchAborted)) throw err;
+    return { cp: 0, best: moves[0]!, lines: [], source: "terminal", depth: 0 };
+  }
   return sf ?? fallbackProbe(game, stm, moves, rules, opts);
 }

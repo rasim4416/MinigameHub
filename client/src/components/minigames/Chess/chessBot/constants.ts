@@ -1,6 +1,3 @@
-import type { Rarity } from "../augments";
-import { rarityRank } from "./augmentPriority";
-
 /** Minimum centipawn gain to cast a free spell (frost, blessed water). */
 export const FREE_SPELL_THRESHOLD_CP = 30;
 
@@ -57,16 +54,6 @@ export function reserveFraction(scoreCp: number): number {
 export function spendableGold(gold: number, scoreCp: number): number {
   const reserve = Math.floor(gold * reserveFraction(scoreCp));
   return Math.max(0, gold - reserve);
-}
-
-export function minShopRarity(scoreCp: number): Rarity {
-  if (scoreCp >= 100) return "rare";
-  if (scoreCp <= -100) return "common";
-  return "uncommon";
-}
-
-export function meetsMinShopRarity(rarity: Rarity, min: Rarity): boolean {
-  return rarityRank(rarity) >= rarityRank(min);
 }
 
 export function auctionAggression(scoreCp: number): number {

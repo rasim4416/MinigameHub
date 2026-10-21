@@ -21,6 +21,8 @@ export function buildBotSpellContext(input: {
   blackLostMinors?: import("../engine").PieceType[];
   blackNecroPPCharges?: number;
   game: ChessState;
+  /** Opponent spell state and the newer own-spell charges. */
+  extra?: Partial<BotSpellContext>;
 }): BotSpellContext {
   const { game, move, blackMonolithPermRemoved } = input;
   const hasImpassable = input.blackAugments.some((a) => a.id === "impassable");
@@ -51,5 +53,6 @@ export function buildBotSpellContext(input: {
     blackNecroPlusCharges: input.blackNecroPlusCharges,
     blackLostMinors: input.blackLostMinors,
     blackNecroPPCharges: input.blackNecroPPCharges,
+    ...input.extra,
   };
 }

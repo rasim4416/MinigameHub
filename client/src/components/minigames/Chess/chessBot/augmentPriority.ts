@@ -15,13 +15,10 @@ export const BOT_AUGMENT_DENYLIST = new Set([
   "domain-expansion",
   // These actives need a multi-click executor or a special move generator.
   // Do not let the bot buy a dead augment while that support is absent.
-  "bloodbending",
-  "bloodbending-plus",
   "royal-education",
   "royal-household",
   "sacrifice",
   "sako-bosphorus",
-  "little-big-man",
   "what",
   "evade",
 ]);

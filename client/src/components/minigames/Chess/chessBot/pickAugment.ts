@@ -3,14 +3,8 @@ import {
   MAX_STACK,
   type Augment,
 } from "../augments";
-import {
-  BOT_AUGMENT_DENYLIST,
-  isPlusAugmentId,
-  isPlusEligible,
-  plusUpgradeTier,
-  priorityIndex,
-  rarityRank,
-} from "./augmentPriority";
+import { BOT_AUGMENT_DENYLIST, priorityIndex, rarityRank } from "./augmentPriority";
+import { augmentValue, type AugmentContext } from "./augmentValue";
 
 function isLegalPick(aug: Augment, owned: Augment[]): boolean {
   if (BOT_AUGMENT_DENYLIST.has(aug.id)) return false;
@@ -21,43 +15,24 @@ function isLegalPick(aug: Augment, owned: Augment[]): boolean {
   return true;
 }
 
-function pickBestAmong(candidates: Augment[]): Augment {
-  return candidates.reduce((best, a) => {
-    const pi = priorityIndex(a.rarity, a.id);
-    const bi = priorityIndex(best.rarity, best.id);
-    if (pi !== bi) return pi < bi ? a : best;
-    return a.id < best.id ? a : best;
-  });
-}
-
 /**
- * Pick highest-rarity legal augment; prefer + upgrades when parent owned;
- * then use BOT_AUGMENT_PRIORITY within tier.
+ * Pick the offered augment worth the most to the bot right now (phase,
+ * lost pieces, enemy spells, prerequisite chains), not just the rarest one.
  */
 export function pickAugmentForBot(
   offered: Augment[],
   owned: Augment[],
+  ctx: AugmentContext = {},
 ): Augment | null {
   const legal = offered.filter((a) => isLegalPick(a, owned));
   if (legal.length === 0) return null;
-
-  const ownedIds = owned.map((a) => a.id);
-  const plusEligible = legal.filter(
-    (a) => isPlusAugmentId(a.id) && isPlusEligible(a.id, ownedIds),
+  const scored = legal.map((aug) => ({ aug, v: augmentValue(aug, owned, ctx) }));
+  scored.sort(
+    (a, b) =>
+      b.v - a.v ||
+      rarityRank(b.aug.rarity) - rarityRank(a.aug.rarity) ||
+      priorityIndex(a.aug.rarity, a.aug.id) - priorityIndex(b.aug.rarity, b.aug.id) ||
+      a.aug.id.localeCompare(b.aug.id),
   );
-  if (plusEligible.length > 0) {
-    plusEligible.sort((a, b) => {
-      const tier = plusUpgradeTier(b.id) - plusUpgradeTier(a.id);
-      if (tier !== 0) return tier;
-      return priorityIndex(a.rarity, a.id) - priorityIndex(b.rarity, b.id);
-    });
-    return plusEligible[0]!;
-  }
-
-  const topRarity = legal.reduce(
-    (best, a) => (rarityRank(a.rarity) > rarityRank(best) ? a.rarity : best),
-    legal[0]!.rarity,
-  );
-  const atTop = legal.filter((a) => a.rarity === topRarity);
-  return pickBestAmong(atTop);
+  return scored[0]!.aug;
 }
