@@ -138,24 +138,3 @@ export function previewSpell(
       return null;
   }
 }
-
-/** Frost preview: remove frozen white piece from board for SF approx. */
-export function gameForFrostEval(preview: SpellPreview): ChessState {
-  const [r, c] = preview.ctx.frozenSquare ?? [-1, -1];
-  if (r < 0) return preview.game;
-  const nb = cloneBoard(getDerivedBoard(preview.game));
-  const p = nb[r][c];
-  if (p && p.color === "white") nb[r][c] = null;
-  return syncStateFromBoard({ ...preview.game, turn: "black" }, nb);
-}
-
-/** Monolith: block square in FEN by placing a black pawn for SF occupancy. */
-export function gameForMonolithEval(preview: SpellPreview): ChessState {
-  const wall = preview.ctx.wallSquares[preview.ctx.wallSquares.length - 1];
-  if (!wall) return preview.game;
-  const nb = cloneBoard(getDerivedBoard(preview.game));
-  if (!nb[wall.row][wall.col]) {
-    nb[wall.row][wall.col] = { type: "P", color: "black" };
-  }
-  return syncStateFromBoard(preview.game, nb);
-}

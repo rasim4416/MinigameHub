@@ -9,17 +9,6 @@ export type BotMove = {
   promotion?: PieceType;
 };
 
-export type RankedSearchOptions = {
-  multiPv?: number;
-  depth?: number;
-  movetimeMs?: number;
-};
-
-export type EvalSearchOptions = {
-  depth?: number;
-  movetimeMs?: number;
-};
-
 export type BotSpellContext = BotMoveContext & {
   blackFreezeCharges: number;
   blackBlessedWaterCharges: number;
@@ -40,6 +29,24 @@ export type BotSpellContext = BotMoveContext & {
   blackNecroPlusCharges?: number;
   blackLostMinors?: PieceType[];
   blackNecroPPCharges?: number;
+  blackLittleBigManCharges?: number;
+  blackBloodbendingCharges?: number;
+  blackBloodbendingPlusCharges?: number;
+  /** Half-moves the current frost still holds (ChessGame frozenTurnsLeft). */
+  frozenTurnsLeft?: number;
+  /** Black pieces cursed by White's Death Note — they die anyway. */
+  blackDoomedPieceIds?: string[];
+
+  /* What the opponent (white) can still throw at us. */
+  whiteAugments?: Augment[];
+  whiteAugmentLevels?: AugmentUpgradeLevels;
+  whiteFreezeCharges?: number;
+  whiteBlessedWaterCharges?: number;
+  whitePuppetAvailable?: boolean;
+  whiteLittleBigManCharges?: number;
+  whiteBloodbendingPlusCharges?: number;
+  /** White still has an unused Internal Combustion: our checking piece explodes. */
+  whiteIcAvailable?: boolean;
 };
 
 export type BotAction =
@@ -49,12 +56,6 @@ export type BotAction =
   | { type: "castSpellThenMove"; spellId: string; target: [number, number]; move: BotMove }
   | { type: "shopBuy"; aug: import("../augments").Augment }
   | { type: "move"; move: BotMove };
-
-export type SpellCandidate = {
-  spellId: string;
-  target: [number, number];
-  gainCp: number;
-};
 
 export type SpellPreview = {
   game: import("../engine").ChessState;

@@ -1,16 +1,11 @@
 import {
   getDerivedBoard,
   getLegalMoves,
-  isSquareAttackedBy,
   PIECE_VALUE,
   type ChessState,
 } from "../engine";
 import type { BotMove, BotSpellContext } from "./types";
-import type { PositionAssessment } from "./assessPosition";
-import {
-  enumerateDeathNoteTargets,
-  enumeratePuppetTargets,
-} from "./spellTargets";
+import { enumerateDeathNoteTargets } from "./spellTargets";
 
 function pieceValueAt(
   game: ChessState,
@@ -52,36 +47,10 @@ export function pickDeathNoteTarget(
   ranked.sort(
     (a, b) => pieceValueAt(game, b) - pieceValueAt(game, a),
   );
-  return ranked[0] ?? null;
-}
-
-export function pickPuppetTarget(
-  game: ChessState,
-  ctx: BotSpellContext,
-  position: PositionAssessment,
-): [number, number] | null {
-  if (ctx.augmentSpellBlockedFor === "black") return null;
-  if (!ctx.puppetAvailable) return null;
-  if (!position.isAttacking) return null;
-
-  const targets = enumeratePuppetTargets(game, ctx);
-  if (targets.length === 0) return null;
-
-  targets.sort((a, b) => {
-    const whiteTurnGame = { ...game, turn: "white" as const };
-    const aMoves = getLegalMoves(whiteTurnGame, a[0], a[1]).length;
-    const bMoves = getLegalMoves(whiteTurnGame, b[0], b[1]).length;
-    const aScore =
-      pieceValueAt(game, a) * 100 -
-      aMoves * 15 -
-      (isSquareAttackedBy(game, a[0], a[1], "black") ? 250 : 0);
-    const bScore =
-      pieceValueAt(game, b) * 100 -
-      bMoves * 15 -
-      (isSquareAttackedBy(game, b[0], b[1], "black") ? 250 : 0);
-    return bScore - aScore;
-  });
-  return targets[0] ?? null;
+  const best = ranked[0];
+  // Holding the curse for a rook beats burning it on a pawn in the opening.
+  if (!best || (pieceValueAt(game, best) < 3 && (game.fullMoveNumber ?? 1) < 20)) return null;
+  return best;
 }
 
 export function contractCaptureMove(
@@ -93,8 +62,13 @@ export function contractCaptureMove(
   if (!ctx.contractAvailable) return null;
 
   const cap = getDerivedBoard(game)[move.to[0]]?.[move.to[1]];
-  if (!cap || cap.color !== "white") return null;
-  if (cap.type !== "Q" && cap.type !== "R") return null;
+  if (!cap || cap.color !== "white" || !cap.id) return null;
+  // One contract per game: spend it on a heavy piece, or on a minor once the
+  // game is long enough that a heavier capture is unlikely to come along.
+  const lateGame = (game.fullMoveNumber ?? 1) >= 25;
+  const heavy = cap.type === "Q" || cap.type === "R";
+  const minor = cap.type === "N" || cap.type === "B";
+  if (!heavy && !(lateGame && minor)) return null;
 
   return { target: move.to, move };
 }

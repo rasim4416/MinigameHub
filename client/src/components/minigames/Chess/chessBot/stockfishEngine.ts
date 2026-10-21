@@ -1,52 +1,87 @@
-import type { EvalSearchOptions, RankedSearchOptions } from "./types";
-import {
-  SPELL_EVAL_DEPTH,
-  SPELL_EVAL_MOVETIME_MS,
-} from "./constants";
-
 const ENGINE_URL = "/stockfish/stockfish-18-lite-single.js";
 
-type PendingMoves = {
-  kind: "moves";
-  resolve: (moves: string[]) => void;
-  reject: (err: Error) => void;
-  pvMap: Map<number, string>;
+/** Minimal UCI pipe so the same engine driver runs in a Worker or in Node. */
+export type EngineTransport = {
+  post: (line: string) => void;
+  onLine: (cb: (line: string) => void) => void;
+  onError: (cb: (err: Error) => void) => void;
+  terminate: () => void;
+};
+
+export type EngineLine = {
+  multipv: number;
+  uci: string;
+  /** Side-to-move POV; mate scores are folded into ±(10000 − 10·plies). */
+  cp: number;
+  mate: number | null;
+  depth: number;
+  pv: string[];
+};
+
+export type AnalyseResult = {
   bestmove: string | null;
-  multiPv: number;
+  lines: EngineLine[];
+  depth: number;
+  elapsedMs: number;
+  cached: boolean;
 };
 
-type PendingEval = {
-  kind: "eval";
-  resolve: (cp: number) => void;
+export type AnalyseOptions = {
+  movetimeMs: number;
+  depth?: number;
+  multiPv?: number;
+  /** Restrict the root to these UCI moves (our augment-aware legal list). */
+  searchmoves?: string[];
+};
+
+type Job = {
+  key: string;
+  fen: string;
+  opts: AnalyseOptions;
+  resolve: (r: AnalyseResult) => void;
   reject: (err: Error) => void;
-  lastCp: number | null;
-  lastMate: number | null;
+  lines: Map<number, EngineLine>;
+  maxDepth: number;
+  startedAt: number;
+  timers: ReturnType<typeof setTimeout>[];
 };
 
-type PendingOp = PendingMoves | PendingEval;
+function workerTransport(): EngineTransport {
+  const worker = new Worker(ENGINE_URL);
+  return {
+    post: (line) => worker.postMessage(line),
+    onLine: (cb) => {
+      worker.onmessage = (e: MessageEvent<string>) => cb(String(e.data));
+    },
+    onError: (cb) => {
+      worker.onerror = (e) => {
+        // A failed WASM worker becomes a normal engine failure so callers can
+        // fall back to the built-in search instead of leaking a page error.
+        e.preventDefault();
+        cb(new Error(e.message || "Stockfish worker error"));
+      };
+    },
+    terminate: () => worker.terminate(),
+  };
+}
 
-let worker: Worker | null = null;
+let transportFactory: () => EngineTransport = workerTransport;
+let transport: EngineTransport | null = null;
 let ready = false;
 let initPromise: Promise<void> | null = null;
-let pending: PendingOp | null = null;
+let current: Job | null = null;
+const queue: Job[] = [];
+/** bestmove lines still owed by searches we stopped; their output is ignored. */
+let staleSearches = 0;
+let currentMultiPv = 1;
 
-function post(line: string) {
-  worker?.postMessage(line);
-}
+const CACHE_LIMIT = 600;
+const cache = new Map<string, { result: AnalyseResult; movetimeMs: number }>();
 
-function parsePvMove(line: string): { multipv: number; move: string } | null {
-  const mp = line.match(/\bmultipv (\d+)\b/);
-  const pv = line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-  if (!mp || !pv) return null;
-  return { multipv: Number(mp[1]), move: pv[1]! };
-}
-
-function parseScore(line: string): { cp: number | null; mate: number | null } {
-  const mate = line.match(/\bscore mate (-?\d+)\b/);
-  if (mate) return { cp: null, mate: Number(mate[1]) };
-  const cp = line.match(/\bscore cp (-?\d+)\b/);
-  if (cp) return { cp: Number(cp[1]), mate: null };
-  return { cp: null, mate: null };
+/** Tests (Node) swap the Worker for a child-process pipe. */
+export function setEngineTransportFactory(factory: () => EngineTransport) {
+  terminateStockfish();
+  transportFactory = factory;
 }
 
 function mateToCp(mate: number): number {
@@ -54,116 +89,147 @@ function mateToCp(mate: number): number {
   return sign * (10000 - Math.abs(mate) * 10);
 }
 
-function finishPendingMoves() {
-  if (!pending || pending.kind !== "moves") return;
-  const { pvMap, bestmove, multiPv, resolve } = pending;
-  const ordered: string[] = [];
-  for (let i = 1; i <= multiPv; i++) {
-    const m = pvMap.get(i);
-    if (m) ordered.push(m);
-  }
-  if (bestmove && bestmove !== "(none)" && !ordered.includes(bestmove)) {
-    ordered.unshift(bestmove);
-  }
-  const uniq = [...new Set(ordered)];
-  pending = null;
-  resolve(uniq);
+/** FEN without move clocks, so transpositions share cache entries. */
+function fenKey(fen: string): string {
+  return fen.split(" ").slice(0, 4).join(" ");
 }
 
-function finishPendingEval() {
-  if (!pending || pending.kind !== "eval") return;
-  const { lastCp, lastMate, resolve } = pending;
-  pending = null;
-  if (lastMate !== null) {
-    resolve(mateToCp(lastMate));
-    return;
+function jobKey(fen: string, opts: AnalyseOptions): string {
+  const moves = opts.searchmoves ? [...opts.searchmoves].sort().join(",") : "*";
+  return `${fenKey(fen)}|${opts.multiPv ?? 1}|${moves}`;
+}
+
+function parseInfo(line: string): EngineLine | null {
+  if (!line.includes(" pv ") || line.includes("bound")) return null;
+  const depth = Number(line.match(/\bdepth (\d+)/)?.[1] ?? 0);
+  const multipv = Number(line.match(/\bmultipv (\d+)/)?.[1] ?? 1);
+  const mateM = line.match(/\bscore mate (-?\d+)/);
+  const cpM = line.match(/\bscore cp (-?\d+)/);
+  if (!mateM && !cpM) return null;
+  const mate = mateM ? Number(mateM[1]) : null;
+  const cp = mate !== null ? mateToCp(mate === 0 ? -1 : mate) : Number(cpM![1]);
+  const pv = line.slice(line.indexOf(" pv ") + 4).trim().split(/\s+/);
+  if (!pv[0]) return null;
+  return { multipv, uci: pv[0], cp, mate, depth, pv };
+}
+
+function finishJob(job: Job, bestmove: string | null) {
+  job.timers.forEach(clearTimeout);
+  const lines = [...job.lines.values()].sort((a, b) => a.multipv - b.multipv);
+  const result: AnalyseResult = {
+    bestmove: bestmove && bestmove !== "(none)" ? bestmove : lines[0]?.uci ?? null,
+    lines,
+    depth: job.maxDepth,
+    elapsedMs: Date.now() - job.startedAt,
+    cached: false,
+  };
+  if (lines.length > 0) {
+    if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+    cache.set(job.key, { result, movetimeMs: job.opts.movetimeMs });
   }
-  resolve(lastCp ?? 0);
+  job.resolve(result);
 }
 
-function cancelPending(err: Error) {
-  if (!pending) return;
-  const op = pending;
-  pending = null;
-  op.reject(err);
-}
-
-function onWorkerMessage(raw: string) {
+function onLine(raw: string) {
   const line = raw.trim();
   if (!line) return;
-
-  if (line === "uciok") {
+  if (line === "uciok" || line === "readyok") {
     ready = true;
     return;
   }
-
-  if (!pending) return;
-
-  if (pending.kind === "moves") {
-    if (line.startsWith("info ")) {
-      const parsed = parsePvMove(line);
-      if (parsed) pending.pvMap.set(parsed.multipv, parsed.move);
-      return;
-    }
-    if (line.startsWith("bestmove ")) {
-      const parts = line.split(/\s+/);
-      pending.bestmove = parts[1] ?? null;
-      finishPendingMoves();
+  if (staleSearches > 0) {
+    if (line.startsWith("bestmove")) {
+      staleSearches--;
+      if (staleSearches === 0) pump();
     }
     return;
   }
-
+  const job = current;
+  if (!job) return;
   if (line.startsWith("info ")) {
-    const { cp, mate } = parseScore(line);
-    if (mate !== null) pending.lastMate = mate;
-    else if (cp !== null) pending.lastCp = cp;
+    const parsed = parseInfo(line);
+    if (!parsed) return;
+    job.maxDepth = Math.max(job.maxDepth, parsed.depth);
+    job.lines.set(parsed.multipv, parsed);
     return;
   }
-
-  if (line.startsWith("bestmove ")) {
-    finishPendingEval();
+  if (line.startsWith("bestmove")) {
+    current = null;
+    finishJob(job, line.split(/\s+/)[1] ?? null);
+    pump();
   }
 }
 
+function startJob(job: Job) {
+  current = job;
+  job.startedAt = Date.now();
+  const multiPv = job.opts.multiPv ?? 1;
+  if (multiPv !== currentMultiPv) {
+    transport!.post(`setoption name MultiPV value ${multiPv}`);
+    currentMultiPv = multiPv;
+  }
+  transport!.post(`position fen ${job.fen}`);
+  let go = `go movetime ${Math.max(10, Math.round(job.opts.movetimeMs))}`;
+  if (job.opts.depth) go += ` depth ${job.opts.depth}`;
+  if (job.opts.searchmoves?.length) go += ` searchmoves ${job.opts.searchmoves.join(" ")}`;
+  transport!.post(go);
+  // The engine always answers `go movetime`; these guards only cover a wedged
+  // WASM instance so a bot turn can never hang forever.
+  job.timers.push(
+    setTimeout(() => {
+      if (current === job) transport?.post("stop");
+    }, job.opts.movetimeMs + 1200),
+    setTimeout(() => {
+      if (current !== job) return;
+      current = null;
+      staleSearches++;
+      finishJob(job, null);
+      pump();
+    }, job.opts.movetimeMs + 3000),
+  );
+}
+
+function pump() {
+  if (current || staleSearches > 0 || !ready || !transport) return;
+  const next = queue.shift();
+  if (next) startJob(next);
+}
+
 async function ensureEngine(): Promise<void> {
-  if (ready && worker) return;
+  if (ready && transport) return;
   if (initPromise) return initPromise;
 
   initPromise = new Promise<void>((resolve, reject) => {
     try {
-      worker = new Worker(ENGINE_URL);
-      worker.onmessage = (e: MessageEvent<string>) => onWorkerMessage(e.data);
-      worker.onerror = (e) => {
-        // A failed WASM worker must become a normal engine failure so callers
-        // can use their legal-move fallback, rather than leaking an uncaught
-        // worker error into the page.
-        e.preventDefault();
-        reject(new Error(e.message || "Stockfish worker error"));
-      };
+      transport = transportFactory();
+      transport.onLine(onLine);
+      transport.onError((err) => {
+        failAll(err);
+        reject(err);
+      });
 
       const deviceMemory =
         typeof navigator === "undefined"
           ? undefined
           : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
       // The lite WASM engine can trap while allocating a 256MB hash on
-      // memory-constrained browsers. A 32–128MB hash remains strong enough
-      // for the bot's short searches and leaves room for the application.
-      const hashMb = Math.min(
-        128,
-        Math.max(32, Math.floor((deviceMemory ?? 4) * 16)),
-      );
+      // memory-constrained browsers; 32–128MB is plenty for short searches.
+      const hashMb = Math.min(128, Math.max(32, Math.floor((deviceMemory ?? 4) * 16)));
 
-      post("uci");
-      post("setoption name Skill Level value 20");
-      post(`setoption name Hash value ${hashMb}`);
-      post("isready");
+      transport.post("uci");
+      transport.post("setoption name Skill Level value 20");
+      transport.post(`setoption name Hash value ${hashMb}`);
+      transport.post("setoption name MultiPV value 1");
+      currentMultiPv = 1;
+      transport.post("isready");
 
       const waitReady = setInterval(() => {
         if (ready) {
           clearInterval(waitReady);
           resolve();
+          pump();
         }
-      }, 10);
+      }, 5);
       setTimeout(() => {
         clearInterval(waitReady);
         if (!ready) reject(new Error("Stockfish init timeout"));
@@ -172,89 +238,81 @@ async function ensureEngine(): Promise<void> {
       reject(err instanceof Error ? err : new Error(String(err)));
     }
   });
-
+  initPromise.catch(() => {
+    initPromise = null;
+  });
   return initPromise;
 }
 
-function stopInFlight() {
-  if (!pending) return;
-  post("stop");
-  cancelPending(new Error("Search superseded"));
+function failAll(err: Error) {
+  const pending = [...queue];
+  queue.length = 0;
+  pending.forEach((j) => j.reject(err));
+  if (current) {
+    const job = current;
+    current = null;
+    job.timers.forEach(clearTimeout);
+    job.reject(err);
+  }
 }
 
-export async function getRankedMoves(
-  fen: string,
-  opts: RankedSearchOptions = {},
-): Promise<string[]> {
+/** Start loading the WASM engine before the bot's first turn. */
+export function warmupStockfish(): void {
+  ensureEngine().catch(() => {});
+}
+
+/** Searches are queued (never superseded) so concurrent probes all resolve. */
+export async function analyse(fen: string, opts: AnalyseOptions): Promise<AnalyseResult> {
+  const key = jobKey(fen, opts);
+  const hit = cache.get(key);
+  if (hit && hit.movetimeMs >= opts.movetimeMs * 0.9) {
+    return { ...hit.result, cached: true, elapsedMs: 0 };
+  }
   await ensureEngine();
-  if (!worker) return [];
-
-  const multiPv = opts.multiPv ?? 20;
-  const depth = opts.depth ?? 24;
-  const movetimeMs = opts.movetimeMs ?? 4000;
-
-  stopInFlight();
-
-  return new Promise<string[]>((resolve, reject) => {
-    pending = {
-      kind: "moves",
+  if (!transport) throw new Error("Stockfish unavailable");
+  return new Promise<AnalyseResult>((resolve, reject) => {
+    queue.push({
+      key,
+      fen,
+      opts,
       resolve,
       reject,
-      pvMap: new Map(),
-      bestmove: null,
-      multiPv,
-    };
-
-    post(`setoption name MultiPV value ${multiPv}`);
-    post(`position fen ${fen}`);
-    post(`go depth ${depth} movetime ${movetimeMs}`);
-
-    setTimeout(() => {
-      if (!pending || pending.kind !== "moves") return;
-      post("stop");
-      finishPendingMoves();
-    }, movetimeMs + 500);
+      lines: new Map(),
+      maxDepth: 0,
+      startedAt: 0,
+      timers: [],
+    });
+    pump();
   });
 }
 
-/** Centipawns from side-to-move perspective in FEN. */
-export async function getEval(
-  fen: string,
-  opts: EvalSearchOptions = {},
-): Promise<number> {
-  await ensureEngine();
-  if (!worker) return 0;
+/** Drop queued work and stop the running search (e.g. the bot turn was cancelled). */
+export function abortSearches(): void {
+  const pending = [...queue];
+  queue.length = 0;
+  pending.forEach((j) => j.reject(new Error("Search aborted")));
+  if (current && transport) {
+    const job = current;
+    current = null;
+    job.timers.forEach(clearTimeout);
+    staleSearches++;
+    transport.post("stop");
+    job.reject(new Error("Search aborted"));
+  }
+}
 
-  const depth = opts.depth ?? SPELL_EVAL_DEPTH;
-  const movetimeMs = opts.movetimeMs ?? SPELL_EVAL_MOVETIME_MS;
-
-  stopInFlight();
-
-  return new Promise<number>((resolve, reject) => {
-    pending = {
-      kind: "eval",
-      resolve,
-      reject,
-      lastCp: null,
-      lastMate: null,
-    };
-
-    post("setoption name MultiPV value 1");
-    post(`position fen ${fen}`);
-    post(`go depth ${depth} movetime ${movetimeMs}`);
-
-    setTimeout(() => {
-      if (!pending || pending.kind !== "eval") return;
-      post("stop");
-      finishPendingEval();
-    }, movetimeMs + 500);
-  });
+export function newEngineGame(): void {
+  cache.clear();
+  abortSearches();
+  if (transport && ready) transport.post("ucinewgame");
 }
 
 export function terminateStockfish() {
-  cancelPending(new Error("Engine terminated"));
-  worker?.terminate();
-  worker = null;
+  failAll(new Error("Engine terminated"));
+  transport?.terminate();
+  transport = null;
   ready = false;
   initPromise = null;
+  staleSearches = 0;
+  cache.clear();
 }
