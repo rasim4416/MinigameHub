@@ -48,9 +48,12 @@ export const BASE_COST: Record<Rarity, number> = {
   common: 5, uncommon: 10, rare: 20, epic: 40, legendary: 100,
 };
 
-/** Actual cost = baseCost * (number already bought of that tier + 1). */
-export function getShopCost(rarity: Rarity, tierBought: number): number {
-  return BASE_COST[rarity] * (tierBought + 1);
+/**
+ * Actual cost = baseCost * (1 + tierBought * scaling). `scaling` is 1 for the
+ * normal per-purchase increase; advantage setups lower it (0 = flat price).
+ */
+export function getShopCost(rarity: Rarity, tierBought: number, scaling = 1): number {
+  return Math.round(BASE_COST[rarity] * (1 + tierBought * scaling));
 }
 
 // ─── Shop improve (augment upgrades) ─────────────────────────────────────────
@@ -325,10 +328,20 @@ export const MASTERMIND_PP_MM_WEIGHTS: RarityWeights = { common:6, uncommon:10, 
 /** All three mastermind tiers */
 export const MASTERMIND_TRIPLE_WEIGHTS: RarityWeights = { common:2, uncommon:5, rare:18, epic:35, legendary:40 };
 
-export function getWeightsForPlayer(augments: Augment[]): RarityWeights {
-  const hasPPP = augments.some((a) => a.id === "mastermind-plus-plus");
-  const hasMMP = augments.some((a) => a.id === "mastermind-plus");
-  const hasMM = augments.some((a) => a.id === "mastermind");
+/** 0 = none, 1 = Mastermind, 2 = Mastermind+, 3 = Mastermind++. */
+export type MastermindTier = 0 | 1 | 2 | 3;
+
+/**
+ * `bonusTier` rolls as if that one Mastermind augment were also owned (advantage
+ * setups), stacking with any Mastermind augments actually held.
+ */
+export function getWeightsForPlayer(
+  augments: Augment[],
+  bonusTier: MastermindTier = 0,
+): RarityWeights {
+  const hasPPP = bonusTier === 3 || augments.some((a) => a.id === "mastermind-plus-plus");
+  const hasMMP = bonusTier === 2 || augments.some((a) => a.id === "mastermind-plus");
+  const hasMM = bonusTier === 1 || augments.some((a) => a.id === "mastermind");
   if (hasPPP && hasMMP && hasMM) return MASTERMIND_TRIPLE_WEIGHTS;
   if (hasPPP && hasMMP) return MASTERMIND_PP_PLUS_WEIGHTS;
   if (hasPPP && hasMM) return MASTERMIND_PP_MM_WEIGHTS;
@@ -418,8 +431,9 @@ export function rollBonusAugments(
   count: number,
   owned: Augment[],
   weights?: RarityWeights,
+  extraExclude: string[] = [],
 ): Augment[] {
-  const exclude = getRollExcludeIds(owned);
+  const exclude = [...getRollExcludeIds(owned), ...extraExclude];
   const w = weights ?? getWeightsForPlayer(owned);
   const rolled = rollAugments(count, exclude, w);
   return applyGuaranteedUpgradeSlot(rolled, owned, exclude);

@@ -96,7 +96,7 @@ function fenKey(fen: string): string {
 
 function jobKey(fen: string, opts: AnalyseOptions): string {
   const moves = opts.searchmoves ? [...opts.searchmoves].sort().join(",") : "*";
-  return `${fenKey(fen)}|${opts.multiPv ?? 1}|${moves}`;
+  return `${fenKey(fen)}|${opts.multiPv ?? 1}|d${opts.depth ?? 0}|${moves}`;
 }
 
 function parseInfo(line: string): EngineLine | null {

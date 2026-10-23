@@ -19,6 +19,18 @@ export const PROBE_RESERVE_MS = 140;
 /** Root alternatives kept when augments can change the best move. */
 export const ROOT_MULTI_PV = 3;
 
+export type BotDifficulty = "easy" | "medium" | "hard";
+export const BOT_DIFFICULTIES: BotDifficulty[] = ["easy", "medium", "hard"];
+/** Stockfish "Skill Level" (0–20) per tier; 20 is full strength. */
+export const BOT_SKILL_LEVEL: Record<BotDifficulty, number> = {
+  easy: 7,
+  medium: 12,
+  hard: 20,
+};
+export const MAX_SKILL_LEVEL = 20;
+/** Stockfish's weakened picker always chooses among at least this many lines. */
+export const SKILL_MULTI_PV = 4;
+
 /** Weight applied to an enemy spell threat (a human may not see it). */
 export const THREAT_WEIGHT = 0.85;
 

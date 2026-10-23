@@ -48,6 +48,8 @@ export function pickShopBuy(input: {
   blackAugmentLevels: AugmentUpgradeLevels;
   position: PositionAssessment;
   context?: AugmentContext;
+  /** Per-purchase price increase multiplier from the advantage setup. */
+  costScaling?: number;
 }): ShopChoice | null {
   const { goldBlack, blackTierBought, blackAugments, blackAugmentLevels, position } = input;
   const budget = spendableGold(goldBlack, position.scoreCp);
@@ -60,7 +62,7 @@ export function pickShopBuy(input: {
 
   const options: ShopChoice[] = [];
   for (const aug of catalogBuyOnly(blackAugments)) {
-    const cost = getShopCost(aug.rarity, blackTierBought[aug.rarity]);
+    const cost = getShopCost(aug.rarity, blackTierBought[aug.rarity], input.costScaling);
     if (cost > budget) continue;
     const net = augmentValue(aug, blackAugments, ctx) - cost * CP_PER_GOLD;
     options.push({ kind: "buy", aug, cost, net });

@@ -18,6 +18,7 @@ import { positionKey } from "./fen";
 import { value } from "./heuristics";
 import { Budget, probe } from "./probe";
 import { analyseRoot, enemyThreatsPresent } from "./rootAnalysis";
+import { isWeakened, pickWithSkill, skillLevel } from "./skill";
 import { assessThreats, type Candidate } from "./threats";
 import { evaluatePlans, planAction, type Plan } from "./plans";
 import { contractCaptureMove, pickDeathNoteTarget } from "./evaluateMarkingSpells";
@@ -40,6 +41,7 @@ function castSignature(game: ChessState, spellId: string, target: [number, numbe
 
 export type BotDecisionTrace = {
   elapsedMs: number;
+  skillLevel: number;
   source: string;
   depth: number;
   candidates: { uci: string; cp: number; score: number; risk: string | null }[];
@@ -178,7 +180,9 @@ export async function decideBotAction(
     }
   }
 
-  const fallbackMove = best?.move ?? legal[0] ?? null;
+  const level = skillLevel(ctx);
+  const played = isWeakened(level) ? pickWithSkill(candidates, level) : best;
+  const fallbackMove = played?.move ?? legal[0] ?? null;
   let action: BotAction | null;
   if (chosenPlan) {
     pendingFollowUp = chosenPlan.followUp;
@@ -196,6 +200,7 @@ export async function decideBotAction(
 
   lastTrace = {
     elapsedMs: Date.now() - started,
+    skillLevel: level,
     source: root.result?.source ?? "none",
     depth: root.result?.depth ?? 0,
     candidates: candidates.map((c) => ({

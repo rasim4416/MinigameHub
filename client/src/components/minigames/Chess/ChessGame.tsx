@@ -49,6 +49,7 @@ import { PlayerBar } from "./ui/PlayerBar";
 import { ShopPanel } from "./ui/ShopPanel";
 import { AugmentSelector } from "./ui/AugmentSelector";
 import { StartScreen } from "./ui/StartScreen";
+import { useChessLanguage } from "./ChessLanguageContext";
 import { EventReveal } from "./ui/EventReveal";
 import {
   buildBotMoveContext,
@@ -63,8 +64,17 @@ import {
   newEngineGame,
   resetBotMemory,
   warmupStockfish,
+  BOT_DIFFICULTIES,
+  BOT_SKILL_LEVEL,
   type BotAction,
+  type BotDifficulty,
 } from "./chessBot";
+import {
+  isAdvantageSetting,
+  parseAdvantage,
+  sideAdvantage,
+  type AdvantageSetting,
+} from "./advantage";
 import {
   useTutorial,
   useTutorialRestrictions,
@@ -155,6 +165,29 @@ import {
 import { ChessEffects } from "./ui/ChessEffects";
 
 type PlayerColor = "white" | "black";
+
+const DIFFICULTY_STORAGE_KEY = "chess.botDifficulty";
+const ADVANTAGE_STORAGE_KEY = "chess.advantage";
+
+function readStored<T>(key: string, valid: (v: unknown) => v is T, fallback: T): T {
+  try {
+    const v = typeof window === "undefined" ? null : window.localStorage.getItem(key);
+    return valid(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable (private mode) */
+  }
+}
+
+const isBotDifficulty = (v: unknown): v is BotDifficulty =>
+  typeof v === "string" && (BOT_DIFFICULTIES as string[]).includes(v);
 
 function getExcludeForPlayer(augments: Augment[]): string[] {
   return getRollExcludeIds(augments);
@@ -1691,6 +1724,31 @@ export default function ChessGame({
   }, [game]);
   const [offeredToWhite, setOfferedToWhite] = useState<Augment[]>([]);
   const [offeredToBlack, setOfferedToBlack] = useState<Augment[]>([]);
+  const [botDifficulty, setBotDifficultyState] = useState<BotDifficulty>(() =>
+    readStored(DIFFICULTY_STORAGE_KEY, isBotDifficulty, "hard"),
+  );
+  const [advantageSetting, setAdvantageSettingState] = useState<AdvantageSetting>(() =>
+    readStored(ADVANTAGE_STORAGE_KEY, isAdvantageSetting, "neutral"),
+  );
+  const setBotDifficulty = (d: BotDifficulty) => {
+    setBotDifficultyState(d);
+    writeStored(DIFFICULTY_STORAGE_KEY, d);
+  };
+  const setAdvantageSetting = (a: AdvantageSetting) => {
+    setAdvantageSettingState(a);
+    writeStored(ADVANTAGE_STORAGE_KEY, a);
+  };
+  /** Pre-game picks made so far; advantage setups add bonus picks after the first. */
+  const [preGamePicked, setPreGamePicked] = useState({ white: 0, black: 0 });
+  const trUi = useChessLanguage() === "türkçe";
+  const setupAllowed = !mpConfig && !tutorialMode && !is2v2;
+  const activeAdvantage: AdvantageSetting = setupAllowed ? advantageSetting : "neutral";
+  const advantageFor = (color: PlayerColor) => sideAdvantage(activeAdvantage, color);
+  // Memoized roll callbacks read the setup through a ref.
+  const advantageRef = useRef(activeAdvantage);
+  advantageRef.current = activeAdvantage;
+  const rollWeightsFor = (color: PlayerColor, owned: Augment[]) =>
+    getWeightsForPlayer(owned, sideAdvantage(advantageRef.current, color).mastermindTier);
   const [whiteAugments, setWhiteAugments] = useState<Augment[]>(
     mpConfig?.initialWhiteAugment ? [mpConfig.initialWhiteAugment] : [],
   );
@@ -2743,8 +2801,24 @@ export default function ChessGame({
 
   // ── Pre-game picks ───────────────────────────────────────────────────────
 
+  /** Ids White already holds at max stack: Black's opening roll skips them. */
+  const maxedIdsOf = (augs: Augment[]) =>
+    getRollExcludeIds(augs).filter((id) => augs.some((a) => a.id === id));
+
   const handleStart = () => {
-    setOfferedToWhite(rollBonusAugments(pickAugmentCount([]), []));
+    const w = advantageFor("white");
+    const b = advantageFor("black");
+    if (w.startGold > 0 || b.startGold > 0) {
+      setGame((g) => ({
+        ...g,
+        goldWhite: g.goldWhite + w.startGold,
+        goldBlack: g.goldBlack + b.startGold,
+      }));
+    }
+    setPreGamePicked({ white: 0, black: 0 });
+    setOfferedToWhite(
+      rollBonusAugments(pickAugmentCount([]), [], rollWeightsFor("white", [])),
+    );
     setPhase("white-augment");
   };
   const handleWhitePick = (aug: Augment) => {
@@ -2755,19 +2829,49 @@ export default function ChessGame({
     ) {
       return;
     }
-    setWhiteAugments([aug]);
-    grantPickedEffects(aug, "white", [aug], []);
+    const made = preGamePicked.white;
+    const newW = made === 0 ? [aug] : [...whiteAugments, aug];
+    setWhiteAugments(newW);
+    grantPickedEffects(aug, "white", newW, []);
     if (tutorialMode) {
       tutorialEmit?.({ type: "augment", id: aug.id });
       setPhase("playing");
       return;
     }
-    setOfferedToBlack(rollBonusAugments(pickAugmentCount([aug]), [aug]));
+    setPreGamePicked((p) => ({ ...p, white: made + 1 }));
+    if (made < advantageFor("white").bonusPicks) {
+      setOfferedToWhite(
+        rollBonusAugments(pickAugmentCount(newW), newW, rollWeightsFor("white", newW)),
+      );
+      return;
+    }
+    setOfferedToBlack(
+      rollBonusAugments(
+        pickAugmentCount([]),
+        [],
+        rollWeightsFor("black", []),
+        maxedIdsOf(newW),
+      ),
+    );
     setPhase("black-augment");
   };
   const handleBlackPick = (aug: Augment) => {
-    setBlackAugments([aug]);
-    grantPickedEffects(aug, "black", whiteAugments, [aug]);
+    const made = preGamePicked.black;
+    const newB = made === 0 ? [aug] : [...blackAugments, aug];
+    setBlackAugments(newB);
+    grantPickedEffects(aug, "black", whiteAugments, newB);
+    setPreGamePicked((p) => ({ ...p, black: made + 1 }));
+    if (made < advantageFor("black").bonusPicks) {
+      setOfferedToBlack(
+        rollBonusAugments(
+          pickAugmentCount(newB),
+          newB,
+          rollWeightsFor("black", newB),
+          maxedIdsOf(whiteAugments),
+        ),
+      );
+      return;
+    }
     setPhase("playing");
   };
 
@@ -2779,12 +2883,16 @@ export default function ChessGame({
       setCurrentTrigger(trigger);
       const playerAugs = trigger.color === "white" ? wAugs : bAugs;
       const count = pickAugmentCount(playerAugs);
+      const weights = rollWeightsFor(trigger.color as PlayerColor, playerAugs);
       if (trigger.eventRollFilter) {
         setMidGameOffered(
-          rollBonusAugmentsFiltered(count, playerAugs, trigger.eventRollFilter),
+          rollBonusAugmentsFiltered(count, playerAugs, {
+            ...trigger.eventRollFilter,
+            weights,
+          }),
         );
       } else {
-        setMidGameOffered(rollBonusAugments(count, playerAugs));
+        setMidGameOffered(rollBonusAugments(count, playerAugs, weights));
       }
     },
     [tutorialMode],
@@ -3012,7 +3120,13 @@ export default function ChessGame({
         setCurrentTrigger(first);
         setAugmentPickSlot(pickSlotHeld);
         const pAugs = first.color === "white" ? newWAugs : newBAugs;
-        setMidGameOffered(rollBonusAugments(pickAugmentCount(pAugs), pAugs));
+        setMidGameOffered(
+          rollBonusAugments(
+            pickAugmentCount(pAugs),
+            pAugs,
+            rollWeightsFor(first.color as PlayerColor, pAugs),
+          ),
+        );
         setAugmentQueue(rest);
       }
       requestSnapshot();
@@ -3046,7 +3160,11 @@ export default function ChessGame({
       const ownedIds = playerAugs.map((a) => a.id);
       if (!augmentUnlockedForShop(aug.id, ownedIds)) return;
       const tierBought = color === "white" ? whiteTierBought : blackTierBought;
-      const cost = getShopCost(aug.rarity, tierBought[aug.rarity]);
+      const cost = getShopCost(
+        aug.rarity,
+        tierBought[aug.rarity],
+        sideAdvantage(advantageRef.current, color).shopScaling,
+      );
       const currentGold = color === "white" ? game.goldWhite : game.goldBlack;
       if (currentGold < cost) return;
 
@@ -4183,7 +4301,11 @@ export default function ChessGame({
         setBlindRagePickColor(movingColor);
         setBlindRagePickSlot(moverSlot);
         setBlindRageOffered(
-          rollBonusAugments(pickAugmentCount(pAugsForRoll), pAugsForRoll),
+          rollBonusAugments(
+            pickAugmentCount(pAugsForRoll),
+            pAugsForRoll,
+            rollWeightsFor(movingColor as PlayerColor, pAugsForRoll),
+          ),
         );
       } else if (
         (eventAugmentTriggers.length > 0 || milestoneTriggers.length > 0) &&
@@ -6332,6 +6454,7 @@ export default function ChessGame({
           whiteIcAvailable:
             !whiteIcUsed &&
             whiteAugments.some((a) => a.id === "internal-combustion"),
+          difficulty: botDifficulty,
         },
       });
     const augmentCtx = () => ({
@@ -6404,6 +6527,7 @@ export default function ChessGame({
             blackAugmentLevels,
             position,
             context: augmentCtx(),
+            costScaling: advantageFor("black").shopScaling,
           });
           if (choice) {
             botEconomyRef.current.toggleShop();
@@ -6547,6 +6671,8 @@ export default function ChessGame({
     game.occupancy,
     game.littleBigManBlackId,
     botNudge,
+    botDifficulty,
+    activeAdvantage,
     blackTierBought,
     freezeMode,
     blessedWaterMode,
@@ -7205,6 +7331,31 @@ export default function ChessGame({
     return null;
   })();
 
+  const bonusPickBadge = trUi ? "⚖️ Avantaj — bonus seçim!" : "⚖️ Advantage — bonus pick!";
+  const playerTags = (color: PlayerColor) => {
+    const tags: { label: string; title?: string; tone: "gold" | "violet" }[] = [];
+    if (botMode && color === "black" && setupAllowed) {
+      tags.push({
+        label: `${botDifficulty} · ${BOT_SKILL_LEVEL[botDifficulty]}`,
+        title: trUi
+          ? `Stockfish beceri seviyesi ${BOT_SKILL_LEVEL[botDifficulty]}`
+          : `Stockfish skill level ${BOT_SKILL_LEVEL[botDifficulty]}`,
+        tone: "violet",
+      });
+    }
+    const favoured = parseAdvantage(activeAdvantage);
+    if (favoured?.color === color) {
+      tags.push({
+        label: trUi
+          ? `▲ ${{ high: "Yüksek", medium: "Orta", low: "Düşük" }[favoured.level]} avantaj`
+          : `▲ ${favoured.level} adv`,
+        title: trUi ? "Avantaj ayarı" : "Advantage setup",
+        tone: "gold",
+      });
+    }
+    return tags;
+  };
+
   const activePlayerGold =
     game.turn === "white" ? game.goldWhite : game.goldBlack;
   const activeTierBought =
@@ -7441,6 +7592,7 @@ export default function ChessGame({
         statusLabel={botThinking ? "Thinking…" : undefined}
         statusColor={botThinking ? "#f97316" : undefined}
         statusBadge={botThinking}
+        tags={playerTags("black")}
       />
 
       <div
@@ -7621,6 +7773,7 @@ export default function ChessGame({
         capturedPieces={game.capturedByWhite}
         advantage={adv.white > 0 ? adv.white : 0}
         spells={makeSpells("white")}
+        tags={playerTags("white")}
         statusLabel={
           phase === "playing" &&
           !isOver &&
@@ -7656,6 +7809,7 @@ export default function ChessGame({
         playerColor={game.turn}
         gold={activePlayerGold}
         tierBought={activeTierBought}
+        costScaling={advantageFor(game.turn as PlayerColor).shopScaling}
         playerAugments={game.turn === "white" ? whiteAugments : blackAugments}
         augmentLevels={
           game.turn === "white" ? whiteAugmentLevels : blackAugmentLevels
@@ -7686,15 +7840,32 @@ export default function ChessGame({
         <div className="absolute inset-0 z-[100]">
           {phase === "start" && (
             <div className="pointer-events-auto h-full w-full">
-              <StartScreen onStart={handleStart} botMode={botMode} />
+              <StartScreen
+                onStart={handleStart}
+                botMode={botMode}
+                setup={
+                  setupAllowed
+                    ? {
+                        advantage: advantageSetting,
+                        onAdvantage: setAdvantageSetting,
+                        difficulty: botMode ? botDifficulty : undefined,
+                        onDifficulty: botMode ? setBotDifficulty : undefined,
+                      }
+                    : undefined
+                }
+              />
             </div>
           )}
           {phase === "white-augment" && (
             <div className="pointer-events-auto h-full w-full">
               <AugmentSelector
+                key={`white-pregame-${preGamePicked.white}`}
                 playerColor="white"
                 offered={offeredToWhite}
                 onSelect={handleWhitePick}
+                bonusBadge={
+                  preGamePicked.white > 0 ? bonusPickBadge : undefined
+                }
                 enabledIds={
                   tutorialRestrictions?.allowedAugmentIds
                     ? new Set(tutorialRestrictions.allowedAugmentIds)
@@ -7706,9 +7877,13 @@ export default function ChessGame({
           {phase === "black-augment" && (
             <div className="pointer-events-auto h-full w-full">
               <AugmentSelector
+                key={`black-pregame-${preGamePicked.black}`}
                 playerColor="black"
                 offered={offeredToBlack}
                 onSelect={handleBlackPick}
+                bonusBadge={
+                  preGamePicked.black > 0 ? bonusPickBadge : undefined
+                }
               />
             </div>
           )}

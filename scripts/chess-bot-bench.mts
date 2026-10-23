@@ -27,11 +27,12 @@ import {
   resetBotMemory,
 } from "../client/src/components/minigames/Chess/chessBot/decideBotAction";
 import { buildBotMoveContext } from "../client/src/components/minigames/Chess/chessBot/legalMoves";
-import { cancelBotSearches } from "../client/src/components/minigames/Chess/chessBot/probe";
+import { cancelBotSearches, probe } from "../client/src/components/minigames/Chess/chessBot/probe";
+import { applyMove, EMPTY_RULES } from "../client/src/components/minigames/Chess/chessBot/botRules";
 import { pickShopBuy } from "../client/src/components/minigames/Chess/chessBot/pickShopBuy";
 import { computeAuctionBid } from "../client/src/components/minigames/Chess/chessBot/auctionBot";
 import { moveToUci } from "../client/src/components/minigames/Chess/chessBot/uciParse";
-import type { BotAction, BotSpellContext } from "../client/src/components/minigames/Chess/chessBot/types";
+import type { BotAction, BotMove, BotSpellContext } from "../client/src/components/minigames/Chess/chessBot/types";
 
 setEngineTransportFactory(() => {
   const child = spawn(process.execPath, ["node_modules/stockfish/src/stockfish-18-lite-single.js"], {
@@ -311,6 +312,89 @@ async function main() {
     const ok = a?.type === "move" && ms < 2900;
     if (!ok) failures++;
     console.log(`${ok ? "ok  " : "FAIL"} ${String(ms).padStart(5)}ms  10x10 fallback: ${describe(a)}`);
+  }
+
+  // Difficulty tiers: Stockfish Skill Level 7 / 12 depth caps and weakened picks.
+  {
+    const positions = [
+      "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b",
+      "r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2Q1RK1 b",
+      "r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R b",
+      "2rq1rk1/pp1bppbp/3p1np1/8/3NP3/1BN1BP2/PPPQ2PP/R3K2R b",
+      "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 b",
+      "rnbq1rk1/ppp1ppbp/3p1np1/8/2PPP3/2N2N2/PP2BPPP/R1BQK2R b",
+    ];
+    const tiers = ["hard", "medium", "easy"] as const;
+    // Full-strength verdict on the position after Black's chosen move.
+    const judged = new Map<string, number>();
+    const judge = async (fen: string, move: BotMove) => {
+      const key = `${fen}|${moveToUci(move)}`;
+      const hit = judged.get(key);
+      if (hit !== undefined) return hit;
+      const after = applyMove(fromFen(fen), move, null)!.state;
+      const res = await probe(after, "white", EMPTY_RULES, { movetimeMs: 300 });
+      judged.set(key, res.cp);
+      return res.cp;
+    };
+    const hardCp: number[] = [];
+    const acpl: Record<string, number> = {};
+    for (const tier of tiers) {
+      let maxMs = 0;
+      let maxDepth = 0;
+      let loss = 0;
+      let n = 0;
+      for (const [pi, fen] of positions.entries()) {
+        newEngineGame();
+        for (let i = 0; i < (tier === "hard" ? 1 : 6); i++) {
+          resetBotMemory();
+          const t0 = Date.now();
+          const a = await decideBotAction(fromFen(fen), ctxWith({ difficulty: tier }));
+          maxMs = Math.max(maxMs, Date.now() - t0);
+          maxDepth = Math.max(maxDepth, getLastBotTrace()?.depth ?? 0);
+          assert.ok(a?.type === "move");
+          const cp = await judge(fen, a.move);
+          if (tier === "hard") hardCp[pi] = cp;
+          loss += Math.max(0, hardCp[pi]! - cp);
+          n++;
+        }
+      }
+      acpl[tier] = Math.round(loss / n);
+      const level = tier === "easy" ? 7 : tier === "medium" ? 12 : 20;
+      const depthOk = tier === "hard" || maxDepth <= level + 1;
+      const timeOk = maxMs < (tier === "hard" ? 1300 : 900);
+      if (!depthOk || !timeOk) failures++;
+      console.log(
+        `${depthOk && timeOk ? "ok  " : "FAIL"} ${String(maxMs).padStart(5)}ms  ${tier} (skill ${level}): max depth ${maxDepth}, avg loss vs hard ${acpl[tier]}cp`,
+      );
+    }
+    const orderOk = acpl.easy! > acpl.medium! && acpl.medium! > 0;
+    if (!orderOk) failures++;
+    console.log(`${orderOk ? "ok  " : "FAIL"} strength order hard > medium > easy`);
+
+    newEngineGame();
+    let took = 0;
+    for (let i = 0; i < 12; i++) {
+      resetBotMemory();
+      const a = await decideBotAction(
+        fromFen("rnbqkbnr/pppp1ppp/8/4p3/3Q4/8/PPP1PPPP/RNB1KBNR b", { fullMoveNumber: 3 }),
+        ctxWith({ difficulty: "easy" }),
+      );
+      if (describe(a) === "e5d4") took++;
+    }
+    const queenOk = took === 12;
+    if (!queenOk) failures++;
+    console.log(`${queenOk ? "ok  " : "FAIL"} easy never ignores a hanging queen: ${took}/12`);
+
+    newEngineGame();
+    resetBotMemory();
+    const frostGame = fromFen("3rk3/8/8/8/3N4/2P5/8/4K3 b");
+    const frost = await decideBotAction(
+      frostGame,
+      ctxWith({ blackFreezeCharges: 1, blackAugments: [aug("frost")], difficulty: "easy" }),
+    );
+    const spellOk = frost?.type === "castSpell" && frost.spellId === "frost";
+    if (!spellOk) failures++;
+    console.log(`${spellOk ? "ok  " : "FAIL"} easy still plans spells: ${describe(frost)}`);
   }
 
   terminateStockfish();
