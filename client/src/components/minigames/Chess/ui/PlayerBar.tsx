@@ -20,6 +20,7 @@ export function PlayerBar({
   statusLabel,
   statusColor,
   statusBadge,
+  tags = [],
 }: {
   color: Color;
   isActive: boolean;
@@ -33,6 +34,8 @@ export function PlayerBar({
   statusLabel?: string;
   statusColor?: string;
   statusBadge?: boolean;
+  /** Small setup labels beside the name (bot difficulty, advantage). */
+  tags?: { label: string; title?: string; tone: "gold" | "violet" }[];
 }) {
   const captureColor = opp(color);
   const sorted = [...capturedPieces].sort(
@@ -190,6 +193,19 @@ export function PlayerBar({
               </span>
             )}
           </div>
+          {tags.map((t) => (
+            <span
+              key={t.label}
+              title={t.title}
+              className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.14em] ${
+                t.tone === "gold"
+                  ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+                  : "border-violet-400/40 bg-violet-500/10 text-violet-200"
+              }`}
+            >
+              {t.label}
+            </span>
+          ))}
           {ordered.length > 0 && (
             <div className="hidden items-center gap-1 sm:flex">
               {ordered.map((a) => (

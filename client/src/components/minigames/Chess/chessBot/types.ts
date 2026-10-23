@@ -47,6 +47,8 @@ export type BotSpellContext = BotMoveContext & {
   whiteBloodbendingPlusCharges?: number;
   /** White still has an unused Internal Combustion: our checking piece explodes. */
   whiteIcAvailable?: boolean;
+  /** Move-strength tier; spell and economy logic is the same on every tier. */
+  difficulty?: import("./constants").BotDifficulty;
 };
 
 export type BotAction =

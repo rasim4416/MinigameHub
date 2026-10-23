@@ -4,9 +4,11 @@ import {
   OPENING_ROOT_MOVETIME_MS,
   ROOT_MOVETIME_MS,
   ROOT_MULTI_PV,
+  SKILL_MULTI_PV,
 } from "./constants";
 import { applyMove, legalMovesFor, rulesFromCtx, type RuleSet } from "./botRules";
 import { probe, type ProbeResult } from "./probe";
+import { isWeakened, skillDepth, skillLevel } from "./skill";
 import type { BotMove, BotSpellContext } from "./types";
 
 export type RootAnalysis = {
@@ -81,7 +83,13 @@ export async function analyseRoot(
     });
     if (safe.length > 0) searched = safe;
   }
-  const multiPv = augmentsInPlay(game, ctx) ? ROOT_MULTI_PV : 1;
+  const level = skillLevel(ctx);
+  const weakened = isWeakened(level);
+  const multiPv = weakened
+    ? SKILL_MULTI_PV
+    : augmentsInPlay(game, ctx)
+      ? ROOT_MULTI_PV
+      : 1;
   const movetimeMs = rootMovetime(game, searched.length);
   if (searched.length === 0) return { rules, legal, searched, result: null, multiPv };
   if (movetimeMs === 0) {
@@ -103,6 +111,7 @@ export async function analyseRoot(
     moves: searched,
     multiPv,
     movetimeMs,
+    depth: weakened ? skillDepth(level) : undefined,
   });
   return { rules, legal, searched, result, multiPv };
 }

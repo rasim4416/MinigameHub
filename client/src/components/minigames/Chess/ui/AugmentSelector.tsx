@@ -39,6 +39,7 @@ export function AugmentSelector({
   trigger,
   pickMode = "normal",
   enabledIds,
+  bonusBadge,
 }: {
   playerColor: Color;
   offered: Augment[];
@@ -46,12 +47,15 @@ export function AugmentSelector({
   trigger?: AugmentTrigger | null;
   pickMode?: "normal" | "blind-rage";
   enabledIds?: Set<string>;
+  /** Badge for an extra pre-game pick (advantage setups). */
+  bonusBadge?: string;
 }) {
   const tr = useChessLanguage() === "türkçe";
   const isWhite = playerColor === "white";
 
-  const badge: { label: string; tone: string } | null =
-    pickMode === "blind-rage"
+  const badge: { label: string; tone: string } | null = bonusBadge
+    ? { label: bonusBadge, tone: "gold" }
+    : pickMode === "blind-rage"
       ? { label: tr ? "😤 Kör Öfke — bonus seçim!" : "😤 Blind Rage — horse-rible for them!", tone: "rage" }
       : trigger?.reason === "event"
         ? { label: tr ? "✨ Etkinlik bonusu!" : "✨ Event bonus — eventful!", tone: "event" }

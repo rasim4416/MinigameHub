@@ -32,6 +32,7 @@ export function ShopPanel({
   pawnShopNextPrice,
   onBuyPawn,
   pawnPlacePending,
+  costScaling = 1,
 }: {
   open: boolean;
   playerColor: Color;
@@ -46,6 +47,8 @@ export function ShopPanel({
   pawnShopNextPrice: number | null;
   onBuyPawn: (() => void) | null;
   pawnPlacePending: boolean;
+  /** Per-purchase price increase multiplier (advantage setups lower it). */
+  costScaling?: number;
 }) {
   const lang = useChessLanguage();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -165,7 +168,7 @@ export function ShopPanel({
               {grouped.map(({ rarity, augments }) => {
                 const m = RARITY_META[rarity];
                 const bought = tierBought[rarity];
-                const nextCost = getShopCost(rarity, bought);
+                const nextCost = getShopCost(rarity, bought, costScaling);
                 return (
                   <section key={rarity}>
                     <div className="mb-2 flex items-center gap-2">
@@ -191,7 +194,7 @@ export function ShopPanel({
                     </div>
                     <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-1">
                       {augments.map((aug) => {
-                        const cost = getShopCost(aug.rarity, bought);
+                        const cost = getShopCost(aug.rarity, bought, costScaling);
                         const isMaxed =
                           (counts[aug.id] ?? 0) >= (MAX_STACK[aug.id] ?? 1);
                         return renderShopRow(aug, cost, !isMaxed);

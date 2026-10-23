@@ -13,3 +13,5 @@ export type { BotMoveContext } from "./legalMoves";
 export type { BotMove, BotAction, BotSpellContext } from "./types";
 export type { PositionAssessment } from "./assessPosition";
 export type { AugmentContext } from "./augmentValue";
+export { BOT_DIFFICULTIES, BOT_SKILL_LEVEL } from "./constants";
+export type { BotDifficulty } from "./constants";
