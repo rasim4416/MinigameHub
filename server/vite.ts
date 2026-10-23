@@ -11,17 +11,9 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
-/**
- * Do not serve SPA HTML for static public assets (mercenary SVGs, audio,
- * Godot Web export binaries, etc.).
- */
+/** Do not serve SPA HTML for static public assets (mercenary SVGs, audio, wasm, etc.). */
 const STATIC_PUBLIC_FILE =
-  /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json|wasm|pck|js)(\?.*)?$/i;
-
-/** Godot export paths under /rootbound/* must never fall through to the SPA. */
-function isRootboundAssetPath(pathname: string): boolean {
-  return pathname.startsWith("/rootbound/") && pathname !== "/rootbound/";
-}
+  /\.(svg|png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp3|wav|ogg|gltf|glb|json|wasm|js)(\?.*)?$/i;
 
 /** Express `app.use("*")` sets req.path to "/"; prefer originalUrl for routing checks. */
 function requestPathname(req: Request): string {
@@ -40,13 +32,6 @@ function resolveProductionDistDir(): string {
   const repoDist = path.resolve(__dirname, "..", "dist", "public");
   if (fs.existsSync(repoDist)) return repoDist;
   return nextToBundle;
-}
-
-/** Ensure Godot .pck packs are served as binary downloads. */
-function setGodotStaticHeaders(res: Response, filePath: string) {
-  if (filePath.endsWith(".pck")) {
-    res.setHeader("Content-Type", "application/octet-stream");
-  }
 }
 
 export function log(message: string, source = "express") {
@@ -83,7 +68,7 @@ export async function setupVite(app: Express, server: Server) {
 
   const sendDevSpa = async (req: Request, res: Response, next: NextFunction) => {
     const pathname = requestPathname(req);
-    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
+    if (STATIC_PUBLIC_FILE.test(pathname)) {
       return next();
     }
     const url = req.originalUrl;
@@ -110,18 +95,10 @@ export async function setupVite(app: Express, server: Server) {
     }
   };
 
-  // Prefer the React /rootbound shell over Godot's directory index on refresh.
-  // Godot assets remain available at /rootbound/index.html, *.js, *.pck, *.wasm, etc.
-  app.get(["/rootbound", "/rootbound/"], sendDevSpa);
-
   app.use(vite.middlewares);
 
   const clientPublic = resolveClientPublicDir();
-  app.use(
-    express.static(clientPublic, {
-      setHeaders: setGodotStaticHeaders,
-    }),
-  );
+  app.use(express.static(clientPublic));
 
   app.use("*", sendDevSpa);
 }
@@ -135,22 +112,12 @@ export function serveStatic(app: Express) {
     );
   }
 
-  // React shell must win over express.static directory-index for /rootbound/.
-  app.get(["/rootbound", "/rootbound/"], (_req, res) => {
-    res.setHeader("Cache-Control", "no-cache");
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
-
-  app.use(
-    express.static(distPath, {
-      setHeaders: setGodotStaticHeaders,
-    }),
-  );
+  app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
     const pathname = requestPathname(req);
-    if (STATIC_PUBLIC_FILE.test(pathname) || isRootboundAssetPath(pathname)) {
+    if (STATIC_PUBLIC_FILE.test(pathname)) {
       res.status(404).end();
       return;
     }

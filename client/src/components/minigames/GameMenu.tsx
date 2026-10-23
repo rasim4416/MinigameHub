@@ -11,7 +11,6 @@ const GAME_ACCENTS: Record<string, { from: string; to: string; tagline: string }
   "speed-typer": { from: "#38bdf8", to: "#6366f1", tagline: "Fingers of fury" },
   barricade: { from: "#f97316", to: "#ef4444", tagline: "Block, bluff, break through" },
   blackjack: { from: "#22c55e", to: "#0f766e", tagline: "Hit me. Gently." },
-  rootbound: { from: "#84cc16", to: "#15803d", tagline: "Put down some roots" },
   "reaction-test": { from: "#facc15", to: "#f97316", tagline: "Blink and you lose" },
 };
 
@@ -138,8 +137,7 @@ const GameCard = ({ game, index }: { game: GameType; index: number }) => {
 
   const openGame = () => {
     playHit();
-    // Rootbound is a standalone Godot Web export at /rootbound (not /minigames/:id).
-    navigate(game.id === "rootbound" ? "/rootbound" : `/minigames/${game.id}`);
+    navigate(`/minigames/${game.id}`);
   };
 
   return (
